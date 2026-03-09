@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/bluez-shared",
+    "crates/bluez-emulator",
+    "crates/btmon",
+    "crates/bluetoothd",
+    "crates/bluetoothctl",
+    "crates/bluez-tools",
+    "crates/bluetooth-meshd",
+    "crates/obexd",
+]
+
+[workspace.package]
+version = "5.86.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+
+[workspace.dependencies]
+thiserror = "2"
+bitflags = "2"
+tokio = { version = "1", features = ["rt-multi-thread", "net", "time", "signal", "io-util", "macros", "sync"] }
+nix = { version = "0.29", features = ["socket", "uio", "signal"] }
+libc = "0.2"
+tracing = "0.1"
+aes = "0.8"
+cmac = "0.7"
+cipher = "0.4"
+rand = "0.8"
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+serde = { version = "1", features = ["derive"] }
+rust-ini = "0.21"
+inventory = "0.3"
+rustyline = { version = "14", features = ["derive"] }
+criterion = { version = "0.5", features = ["html_reports"] }

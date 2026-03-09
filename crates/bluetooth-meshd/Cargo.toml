@@ -1,0 +1,24 @@
+[package]
+name = "bluetooth-meshd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "bluetooth-meshd"
+path = "src/main.rs"
+
+[lib]
+name = "bluetooth_meshd_lib"
+path = "src/lib.rs"
+
+[dependencies]
+bluez-shared = { path = "../bluez-shared" }
+tokio = { workspace = true }
+zbus = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = "0.3"
+aes = { workspace = true }
+cmac = { workspace = true }
+cipher = { workspace = true }

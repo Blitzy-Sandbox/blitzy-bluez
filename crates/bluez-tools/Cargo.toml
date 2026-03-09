@@ -1,0 +1,61 @@
+[package]
+name = "bluez-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "mgmt-tester"
+path = "src/mgmt_tester.rs"
+
+[[bin]]
+name = "l2cap-tester"
+path = "src/l2cap_tester.rs"
+
+[[bin]]
+name = "sco-tester"
+path = "src/sco_tester.rs"
+
+[[bin]]
+name = "iso-tester"
+path = "src/iso_tester.rs"
+
+[[bin]]
+name = "bnep-tester"
+path = "src/bnep_tester.rs"
+
+[[bin]]
+name = "smp-tester"
+path = "src/smp_tester.rs"
+
+[[bin]]
+name = "gap-tester"
+path = "src/gap_tester.rs"
+
+[[bin]]
+name = "userchan-tester"
+path = "src/userchan_tester.rs"
+
+[[bin]]
+name = "hci-tester"
+path = "src/hci_tester.rs"
+
+[[bin]]
+name = "rfcomm-tester"
+path = "src/rfcomm_tester.rs"
+
+[lib]
+name = "bluez_tools_lib"
+path = "src/lib.rs"
+
+[dependencies]
+bluez-shared = { path = "../bluez-shared" }
+bluez-emulator = { path = "../bluez-emulator" }
+tokio = { workspace = true }
+nix = { workspace = true }
+libc = { workspace = true }
+
+[dev-dependencies]
+bluetoothd_lib = { path = "../bluetoothd", package = "bluetoothd" }
+bluetooth_meshd_lib = { path = "../bluetooth-meshd", package = "bluetooth-meshd" }
+obexd_lib = { path = "../obexd", package = "obexd" }

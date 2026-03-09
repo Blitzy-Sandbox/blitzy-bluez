@@ -1,0 +1,19 @@
+[package]
+name = "obexd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "obexd"
+path = "src/main.rs"
+
+[lib]
+name = "obexd_lib"
+path = "src/lib.rs"
+
+[dependencies]
+bluez-shared = { path = "../bluez-shared" }
+tokio = { workspace = true }
+zbus = { workspace = true }
+tracing = { workspace = true }

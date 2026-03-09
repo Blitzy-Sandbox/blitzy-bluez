@@ -1,0 +1,25 @@
+[package]
+name = "bluetoothd"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "bluetoothd_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bluetoothd"
+path = "src/main.rs"
+
+[dependencies]
+bluez-shared = { path = "../bluez-shared" }
+thiserror.workspace = true
+tokio.workspace = true
+nix.workspace = true
+libc.workspace = true
+tracing.workspace = true
+zbus.workspace = true
+serde.workspace = true
+rust-ini.workspace = true
+inventory.workspace = true

@@ -1,0 +1,15 @@
+[package]
+name = "bluez-emulator"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "BlueZ HCI emulator for testing"
+
+[dependencies]
+bluez-shared = { path = "../bluez-shared" }
+thiserror.workspace = true
+tokio.workspace = true
+nix.workspace = true
+libc.workspace = true
+tracing.workspace = true
+rand.workspace = true

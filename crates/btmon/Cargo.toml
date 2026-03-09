@@ -1,0 +1,22 @@
+[package]
+name = "btmon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "BlueZ Bluetooth monitor (packet sniffer and analyzer)"
+
+[[bin]]
+name = "btmon"
+path = "src/main.rs"
+
+[lib]
+name = "btmon_lib"
+path = "src/lib.rs"
+
+[dependencies]
+bluez-shared = { path = "../bluez-shared" }
+thiserror.workspace = true
+tokio.workspace = true
+nix.workspace = true
+libc.workspace = true
+tracing.workspace = true

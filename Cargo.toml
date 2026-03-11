@@ -71,6 +71,9 @@ zbus = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 bluez-shared = { path = "crates/bluez-shared" }
+aes = { workspace = true }
+cmac = { workspace = true }
+ccm = { workspace = true }
 
 [[test]]
 name = "test_gdbus_client"
@@ -87,6 +90,10 @@ path = "tests/unit/test_ringbuf.rs"
 [[test]]
 name = "test_ecc"
 path = "tests/unit/test_ecc.rs"
+
+[[test]]
+name = "test_mesh_crypto"
+path = "tests/unit/test_mesh_crypto.rs"
 
 [lints]
 workspace = true

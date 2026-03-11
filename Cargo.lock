@@ -183,7 +183,10 @@ dependencies = [
 name = "bluez"
 version = "5.86.0"
 dependencies = [
+ "aes",
  "bluez-shared",
+ "ccm",
+ "cmac",
  "futures",
  "tokio",
  "zbus",

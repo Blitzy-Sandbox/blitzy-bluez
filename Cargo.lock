@@ -167,6 +167,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bluez"
+version = "5.86.0"
+dependencies = [
+ "futures",
+ "tokio",
+ "zbus",
+]
+
+[[package]]
 name = "bluez-emulator"
 version = "5.86.0"
 dependencies = [

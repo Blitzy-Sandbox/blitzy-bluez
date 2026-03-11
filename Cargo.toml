@@ -45,6 +45,31 @@ cmac = "0.7"
 md-5 = "0.10"
 p256 = { version = "0.13", features = ["ecdh"] }
 
+# Root package — enables workspace-level integration tests in tests/
+[package]
+name = "bluez"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+name = "bluez"
+path = "src/lib.rs"
+
+[dev-dependencies]
+zbus = { workspace = true }
+tokio = { workspace = true }
+futures = { workspace = true }
+
+[[test]]
+name = "test_gdbus_client"
+path = "tests/unit/test_gdbus_client.rs"
+
+[lints]
+workspace = true
+
 [workspace.lints.rust]
 unsafe_code = "deny"
 

@@ -524,8 +524,8 @@ mod tests {
         assert_eq!(bytes[55], b'o');
 
         // Remaining ASCII positions should be spaces
-        for pos in 56..67 {
-            assert_eq!(bytes[pos], b' ', "position {pos} should be space for padding");
+        for (pos, &byte) in bytes.iter().enumerate().take(67).skip(56) {
+            assert_eq!(byte, b' ', "position {pos} should be space for padding");
         }
     }
 }

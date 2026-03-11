@@ -409,8 +409,8 @@ mod tests {
     fn test_pubkey_roundtrip() {
         // Create a known public key pattern in BlueZ format
         let mut bluez_pk = [0u8; 64];
-        for i in 0..64 {
-            bluez_pk[i] = i as u8;
+        for (i, byte) in bluez_pk.iter_mut().enumerate() {
+            *byte = i as u8;
         }
 
         let sec1 = bluez_pubkey_to_sec1(&bluez_pk);
@@ -495,8 +495,8 @@ mod tests {
 
         // Random bytes are extremely unlikely to be on the curve
         let mut garbage = [0u8; 64];
-        for i in 0..64 {
-            garbage[i] = (i * 37 + 13) as u8;
+        for (i, byte) in garbage.iter_mut().enumerate() {
+            *byte = (i * 37 + 13) as u8;
         }
         assert!(!ecc_valid_public_key(&garbage));
     }

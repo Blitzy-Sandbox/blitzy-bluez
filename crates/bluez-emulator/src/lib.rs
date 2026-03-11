@@ -1,2 +1,9 @@
-// BlueZ HCI emulator library
-// Stub file - will be replaced by implementation agents
+// SPDX-License-Identifier: LGPL-2.1-or-later
+//
+// crates/bluez-emulator/src/lib.rs — BlueZ HCI emulator library
+//
+// Provides virtual Bluetooth controllers via VHCI for integration testing.
+// This crate replaces the C emulator/ directory from the BlueZ source tree.
+
+/// Simulated PHY layer for inter-emulator communication over UDP broadcast.
+pub mod phy;

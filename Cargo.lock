@@ -198,6 +198,7 @@ dependencies = [
  "rust-ini",
  "rustyline",
  "serde",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-stream",

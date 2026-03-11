@@ -7,3 +7,6 @@
 
 pub mod endian;
 pub mod queue;
+pub mod ringbuf;
+
+pub use self::ringbuf::RingBuf;

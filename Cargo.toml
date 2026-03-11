@@ -83,6 +83,10 @@ path = "tests/unit/test_queue.rs"
 name = "test_ringbuf"
 path = "tests/unit/test_ringbuf.rs"
 
+[[test]]
+name = "test_ecc"
+path = "tests/unit/test_ecc.rs"
+
 [lints]
 workspace = true
 

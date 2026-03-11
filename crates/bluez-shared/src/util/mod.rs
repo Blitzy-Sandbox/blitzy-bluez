@@ -6,3 +6,4 @@
 // string utilities, and general-purpose functions used across the stack.
 
 pub mod endian;
+pub mod queue;

@@ -8,5 +8,6 @@
 pub mod endian;
 pub mod queue;
 pub mod ringbuf;
+pub mod uuid;
 
 pub use self::ringbuf::RingBuf;

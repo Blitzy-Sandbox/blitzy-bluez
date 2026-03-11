@@ -13,6 +13,10 @@ pub mod config;
 /// Consumed by mesh, node, and manager subsystems.
 pub mod provisioning;
 
+/// Mesh-specific cryptographic functions: KDFs, AES-CCM, nonce builders,
+/// network packet encode/decode, privacy obfuscation, FCS computation.
+pub mod crypto;
+
 fn main() {
     println!("bluetooth-meshd stub");
 }

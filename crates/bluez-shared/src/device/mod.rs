@@ -16,9 +16,15 @@
 //!
 //! Replaces C source files: `src/shared/uhid.c/h`, `src/shared/uinput.c/h`.
 
+pub mod uhid;
 pub mod uinput;
 
 // Re-export primary types for ergonomic access.
+pub use uhid::BtUhid;
+pub use uhid::UhidCallback;
+pub use uhid::UhidDeviceType;
+pub use uhid::UhidEvent;
+pub use uhid::UhidEventType;
 pub use uinput::BUS_BLUETOOTH;
 pub use uinput::BtUinput;
 pub use uinput::BtUinputKeyMap;

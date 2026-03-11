@@ -189,9 +189,11 @@ impl RingBuf {
 
     /// Return the number of free bytes available for writing.
     ///
-    /// Matches C `ringbuf_avail()`: `size - in + out`.
+    /// Matches C `ringbuf_avail()`: `size - in_len`.  Computed as
+    /// `size - len()` to avoid unsigned underflow when `write_pos > size`
+    /// (which happens after data wraps around the ring boundary).
     pub fn avail(&self) -> usize {
-        self.size - self.write_pos + self.read_pos
+        self.size - self.len()
     }
 
     /// Consume up to `count` bytes without reading data.

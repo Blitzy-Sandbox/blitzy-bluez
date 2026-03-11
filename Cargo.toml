@@ -79,6 +79,10 @@ path = "tests/unit/test_gdbus_client.rs"
 name = "test_queue"
 path = "tests/unit/test_queue.rs"
 
+[[test]]
+name = "test_ringbuf"
+path = "tests/unit/test_ringbuf.rs"
+
 [lints]
 workspace = true
 

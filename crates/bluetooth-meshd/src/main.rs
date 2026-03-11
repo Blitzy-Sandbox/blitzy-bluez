@@ -6,6 +6,11 @@
 #[allow(dead_code)]
 mod util;
 
+// config module: mesh configuration persistence layer (mod.rs + json.rs).
+// allow(dead_code) until sibling modules (node, mesh, etc.) are implemented.
+#[allow(dead_code)]
+mod config;
+
 fn main() {
     println!("bluetooth-meshd stub");
 }

@@ -5,6 +5,7 @@ pub mod backends;
 pub mod crc;
 pub mod display;
 pub mod hwdb;
+pub mod keys;
 pub mod sys;
 
 fn main() {

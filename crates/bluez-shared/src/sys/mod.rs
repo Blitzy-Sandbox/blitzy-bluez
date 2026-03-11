@@ -13,3 +13,4 @@
 pub mod bluetooth;
 pub mod bnep;
 pub mod cmtp;
+pub mod hidp;

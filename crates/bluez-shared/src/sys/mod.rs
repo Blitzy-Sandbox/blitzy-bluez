@@ -17,5 +17,6 @@ pub mod hci;
 pub mod hidp;
 pub mod iso;
 pub mod l2cap;
+pub mod mgmt;
 pub mod rfcomm;
 pub mod sco;

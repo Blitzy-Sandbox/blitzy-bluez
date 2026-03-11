@@ -15,5 +15,6 @@ pub mod bnep;
 pub mod cmtp;
 pub mod hidp;
 pub mod iso;
+pub mod l2cap;
 pub mod rfcomm;
 pub mod sco;

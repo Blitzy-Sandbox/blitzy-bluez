@@ -15,3 +15,4 @@ pub mod bnep;
 pub mod cmtp;
 pub mod hidp;
 pub mod iso;
+pub mod sco;

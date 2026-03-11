@@ -9,6 +9,7 @@
 pub mod att;
 pub mod capture;
 pub mod crypto;
+pub mod device;
 pub mod profiles;
 pub mod sys;
 pub mod util;

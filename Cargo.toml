@@ -95,6 +95,10 @@ path = "tests/unit/test_ecc.rs"
 name = "test_mesh_crypto"
 path = "tests/unit/test_mesh_crypto.rs"
 
+[[test]]
+name = "test_crypto"
+path = "tests/unit/test_crypto.rs"
+
 [lints]
 workspace = true
 

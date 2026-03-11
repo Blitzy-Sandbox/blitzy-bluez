@@ -11,6 +11,11 @@ mod util;
 #[allow(dead_code)]
 mod config;
 
+// provisioning module: provisioning subsystem (mod.rs, pb_adv.rs, acceptor.rs, initiator.rs).
+// allow(dead_code) until mesh/node/manager modules are implemented.
+#[allow(dead_code)]
+mod provisioning;
+
 fn main() {
     println!("bluetooth-meshd stub");
 }

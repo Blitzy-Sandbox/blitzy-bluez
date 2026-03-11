@@ -71,6 +71,7 @@ zbus = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 bluez-shared = { path = "crates/bluez-shared" }
+obexd = { path = "crates/obexd" }
 aes = { workspace = true }
 cmac = { workspace = true }
 ccm = { workspace = true }
@@ -102,6 +103,10 @@ path = "tests/unit/test_crypto.rs"
 [[test]]
 name = "test_battery"
 path = "tests/unit/test_battery.rs"
+
+[[test]]
+name = "test_gobex_apparam"
+path = "tests/unit/test_gobex_apparam.rs"
 
 [lints]
 workspace = true

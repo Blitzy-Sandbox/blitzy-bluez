@@ -6,6 +6,10 @@ description = "BlueZ OBEX daemon — Object Exchange protocol server and client 
 license = "GPL-2.0-or-later"
 publish = false
 
+[lib]
+name = "obexd"
+path = "src/lib.rs"
+
 [[bin]]
 name = "obexd"
 path = "src/main.rs"

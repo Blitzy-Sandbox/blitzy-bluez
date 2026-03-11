@@ -69,10 +69,15 @@ path = "src/lib.rs"
 zbus = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
+bluez-shared = { path = "crates/bluez-shared" }
 
 [[test]]
 name = "test_gdbus_client"
 path = "tests/unit/test_gdbus_client.rs"
+
+[[test]]
+name = "test_queue"
+path = "tests/unit/test_queue.rs"
 
 [lints]
 workspace = true

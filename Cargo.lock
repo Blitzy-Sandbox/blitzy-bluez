@@ -170,6 +170,7 @@ dependencies = [
 name = "bluez"
 version = "5.86.0"
 dependencies = [
+ "bluez-shared",
  "futures",
  "tokio",
  "zbus",

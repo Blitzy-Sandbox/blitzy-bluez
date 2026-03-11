@@ -11,3 +11,4 @@
 #![allow(non_upper_case_globals)]
 
 pub mod bluetooth;
+pub mod bnep;

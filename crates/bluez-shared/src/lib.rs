@@ -8,5 +8,6 @@
 
 pub mod att;
 pub mod crypto;
+pub mod profiles;
 pub mod sys;
 pub mod util;

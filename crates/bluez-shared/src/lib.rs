@@ -6,5 +6,6 @@
 // transport abstractions, and utility functions shared across all BlueZ
 // workspace crates.
 
+pub mod crypto;
 pub mod sys;
 pub mod util;

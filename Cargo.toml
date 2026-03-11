@@ -43,6 +43,7 @@ quick-xml = "0.37"
 aes = "0.8"
 cmac = "0.7"
 md-5 = "0.10"
+p256 = { version = "0.13", features = ["ecdh"] }
 
 [workspace.lints.rust]
 unsafe_code = "deny"

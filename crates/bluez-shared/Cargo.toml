@@ -28,6 +28,7 @@ tokio-stream = "0.1"
 futures = "0.3"
 aes = "0.8"
 cmac = "0.7"
+p256 = { version = "0.13", features = ["ecdh"] }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }

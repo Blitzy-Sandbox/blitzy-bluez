@@ -2,6 +2,7 @@
 // Stub file - will be replaced by implementation agents
 
 pub mod crc;
+pub mod hwdb;
 
 fn main() {
     println!("btmon stub");

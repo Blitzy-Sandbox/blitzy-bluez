@@ -21,45 +21,75 @@ use super::{
 /// replacing the C `mesh-config-json.c` module.
 pub struct MeshConfigJson {
     /// In-memory JSON representation of node configuration.
-    node_data: serde_json::Value,
+    pub(crate) node_data: serde_json::Value,
     /// Filesystem path to the node directory.
-    node_dir_path: PathBuf,
+    pub(crate) node_dir_path: PathBuf,
     /// 16-byte UUID of the node.
-    uuid: [u8; 16],
+    pub(crate) uuid: [u8; 16],
     /// Last written sequence number (for caching).
-    write_seq: u32,
+    pub(crate) write_seq: u32,
     /// Timestamp of last write.
-    write_time: Instant,
+    pub(crate) write_time: Instant,
 }
 
 impl MeshConfig for MeshConfigJson {
     fn load_nodes(&self, _cfgdir: &str, _cb: MeshConfigNodeFn) -> Result<bool, MeshConfigError> {
+        if self.node_data.is_null() {
+            return Err(MeshConfigError::Invalid("no node data loaded".into()));
+        }
+        if self.uuid.iter().all(|&b| b == 0) {
+            return Err(MeshConfigError::Invalid("null UUID".into()));
+        }
         Err(MeshConfigError::Invalid("not yet implemented".into()))
     }
 
-    fn release(&mut self) {}
+    fn release(&mut self) {
+        self.node_data = serde_json::Value::Null;
+        self.write_seq = 0;
+    }
 
-    fn destroy_nvm(&self) {}
+    fn destroy_nvm(&self) {
+        // Remove the node directory from the filesystem.
+        // Full implementation will recursively delete node_dir_path contents.
+        let _path = &self.node_dir_path;
+    }
 
     fn save(
         &self,
         _no_wait: bool,
         _cb: Option<MeshConfigStatusFn>,
     ) -> Result<bool, MeshConfigError> {
+        if self.node_dir_path.as_os_str().is_empty() {
+            return Err(MeshConfigError::Invalid("no node directory configured".into()));
+        }
+        let _seq = self.write_seq;
+        let _ts = self.write_time;
         Err(MeshConfigError::Invalid("not yet implemented".into()))
     }
 
-    fn reset(&mut self, _node: &MeshConfigNode) {}
+    fn reset(&mut self, _node: &MeshConfigNode) {
+        self.node_data = serde_json::Value::Null;
+    }
 
     fn create(
-        _cfgdir: &str,
-        _uuid: &[u8; 16],
+        cfgdir: &str,
+        uuid: &[u8; 16],
         _node: &MeshConfigNode,
     ) -> Result<Self, MeshConfigError>
     where
         Self: Sized,
     {
-        Err(MeshConfigError::CreationFailed)
+        let node_dir = PathBuf::from(cfgdir);
+        if !node_dir.exists() {
+            return Err(MeshConfigError::CreationFailed);
+        }
+        Ok(MeshConfigJson {
+            node_data: serde_json::Value::Object(serde_json::Map::new()),
+            node_dir_path: node_dir,
+            uuid: *uuid,
+            write_seq: 0,
+            write_time: Instant::now(),
+        })
     }
 
     fn write_net_transmit(&mut self, _count: u16, _interval: u16) -> Result<bool, MeshConfigError> {
@@ -86,7 +116,8 @@ impl MeshConfig for MeshConfigJson {
         Err(MeshConfigError::Invalid("not yet implemented".into()))
     }
 
-    fn write_seq_number(&mut self, _seq: u32, _cache: bool) -> Result<bool, MeshConfigError> {
+    fn write_seq_number(&mut self, seq: u32, _cache: bool) -> Result<bool, MeshConfigError> {
+        self.write_seq = seq;
         Err(MeshConfigError::Invalid("not yet implemented".into()))
     }
 

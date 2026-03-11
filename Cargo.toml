@@ -40,9 +40,16 @@ thiserror = "2.0"
 tokio-stream = "0.1"
 futures = "0.3"
 quick-xml = "0.37"
+md-5 = "0.10"
+# AAP 0.6.1 deviation: aes, cmac, and p256 are justified additions not in the
+# original dependency inventory.  ring 0.17 (the AAP-specified crypto crate)
+# only exposes AES-GCM — it cannot perform the raw AES-ECB block cipher needed
+# by Bluetooth SMP functions e(), ah(), c1(), s1(), etc.  Similarly,
+# ring::agreement::EphemeralPrivateKey does not expose raw private key bytes
+# required for BT HCI LE Generate DHKey.  These three crates fill those gaps
+# with minimal additional dependency surface.
 aes = "0.8"
 cmac = "0.7"
-md-5 = "0.10"
 p256 = { version = "0.13", features = ["ecdh"] }
 
 # Root package — enables workspace-level integration tests in tests/

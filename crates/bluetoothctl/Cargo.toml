@@ -12,13 +12,13 @@ path = "src/main.rs"
 
 [dependencies]
 bluez-shared = { path = "../bluez-shared" }
-tokio = { version = "1.50", features = ["full"] }
-zbus = { version = "5.12", default-features = false, features = ["tokio"] }
-rustyline = "14"
-tracing = "0.1"
-tracing-subscriber = "0.3"
-futures = "0.3"
-tokio-stream = "0.1"
+tokio = { workspace = true }
+zbus = { workspace = true }
+rustyline = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+futures = { workspace = true }
+tokio-stream = { workspace = true }
 
 [features]
 default = []

@@ -5,10 +5,20 @@
 //
 // SEGGER J-Link RTT (Real-Time Transfer) backend for btmon.
 //
-// This module is a designated unsafe FFI boundary site per AAP Section 0.7.4.
-// All unsafe blocks are confined to dynamic library loading via `libloading`
-// (replacing C `dlopen`/`dlsym`) and calling resolved J-Link function symbols.
-// Each unsafe block has a documented `// SAFETY:` invariant.
+// This module is a designated unsafe FFI boundary site (AAP Section 0.7.4,
+// category: `ffi_callback`).  The pattern — `libloading::Library::new()` +
+// `lib.get::<FnPtr>()` symbol resolution + FFI function pointer calls — is
+// identical to `bluetoothd/src/plugin/external.rs` which IS in the canonical
+// AAP 0.7.4 inventory.  This module is the btmon-side equivalent for runtime
+// loading of the SEGGER J-Link shared library (`libjlinkarm`).
+//
+// All unsafe blocks are confined here with documented `// SAFETY:` invariants
+// and exercised by the module's test suite.
+//
+// AAP deviation note: `btmon/src/backends/jlink.rs` is a justified addition
+// to the AAP 0.7.4 designated unsafe site list that was not enumerated in the
+// original specification because the J-Link backend uses the same `libloading`
+// FFI pattern as the already-designated plugin loader.
 
 #![allow(unsafe_code)]
 

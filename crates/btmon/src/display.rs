@@ -259,15 +259,10 @@ pub fn num_columns() -> i32 {
 /// Query the terminal width via TIOCGWINSZ ioctl on stdout.
 /// Returns `None` if the ioctl fails or reports zero columns.
 ///
-/// This is a designated FFI boundary function: the TIOCGWINSZ ioctl is a
-/// direct kernel system call with no safe Rust wrapper available.
-#[allow(unsafe_code)]
+/// Delegates to `sys::terminal::get_terminal_width()` — the actual unsafe
+/// ioctl call is confined to the designated FFI boundary module.
 fn get_terminal_width() -> Option<u16> {
-    let mut ws = libc::winsize { ws_row: 0, ws_col: 0, ws_xpixel: 0, ws_ypixel: 0 };
-    // SAFETY: ioctl with TIOCGWINSZ reads terminal dimensions into a valid,
-    // fully-initialised winsize struct.  STDOUT_FILENO is a well-known fd.
-    let ret = unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut ws) };
-    if ret < 0 || ws.ws_col == 0 { None } else { Some(ws.ws_col) }
+    crate::sys::terminal::get_terminal_width()
 }
 
 // ============================================================================
@@ -339,10 +334,8 @@ enum PagerCandidate {
 /// Attempt to spawn a pager subprocess and redirect stdout to its stdin pipe.
 /// Returns `true` on success.
 ///
-/// This is a designated FFI boundary function: dup2 and close are POSIX
-/// syscalls used to redirect the process's stdout file descriptor to the
-/// pager pipe.
-#[allow(unsafe_code)]
+/// Fd redirection (dup2/close) is delegated to `sys::terminal::redirect_stdout`
+/// — the designated FFI boundary module.
 fn try_spawn_pager(candidate: &PagerCandidate) -> bool {
     let mut cmd = match candidate {
         PagerCandidate::Direct(prog) => Command::new(prog),
@@ -367,27 +360,12 @@ fn try_spawn_pager(candidate: &PagerCandidate) -> bool {
             if let Some(stdin) = child.stdin.take() {
                 let write_fd = stdin.into_raw_fd();
 
-                // Redirect our stdout to the write end of the pipe connected
-                // to the pager's stdin.
-                // SAFETY: dup2 is a well-defined POSIX syscall; write_fd is a
-                // valid open fd from the just-spawned child's stdin pipe, and
-                // STDOUT_FILENO (1) is a well-known fd number.
-                let dup_result = unsafe { libc::dup2(write_fd, libc::STDOUT_FILENO) };
-                if dup_result < 0 {
-                    // dup2 failed — clean up and abort
-                    // SAFETY: write_fd is a valid open fd.
-                    unsafe {
-                        libc::close(write_fd);
-                    }
+                // Redirect our stdout to the pager pipe — all unsafe dup2/close
+                // operations are confined to the sys::terminal FFI boundary.
+                if !crate::sys::terminal::redirect_stdout(write_fd) {
                     let _ = child.kill();
                     let _ = child.wait();
                     return false;
-                }
-
-                // Close the original write_fd — stdout now owns the pipe end.
-                // SAFETY: write_fd is a valid open fd that has been dup'd.
-                unsafe {
-                    libc::close(write_fd);
                 }
             }
 
@@ -416,9 +394,8 @@ fn try_spawn_pager(candidate: &PagerCandidate) -> bool {
 ///  2. Send SIGCONT to wake the pager (it may be stopped/paused).
 ///  3. Wait for the pager process to terminate.
 ///
-/// This is a designated FFI boundary function: close(STDOUT_FILENO) is a
-/// direct POSIX syscall.
-#[allow(unsafe_code)]
+/// Stdout close is delegated to `sys::terminal::close_stdout` — the
+/// designated FFI boundary module.
 pub fn close_pager() {
     let pid = PAGER_PID.lock().map(|p| *p).unwrap_or(None);
 
@@ -430,11 +407,7 @@ pub fn close_pager() {
 
     // Flush any buffered output, then close stdout fd to signal EOF to pager.
     let _ = io::stdout().flush();
-    // SAFETY: STDOUT_FILENO (1) is a well-known fd that we previously dup2'd
-    // to the pager pipe.  Closing it signals EOF to the pager's stdin.
-    unsafe {
-        libc::close(libc::STDOUT_FILENO);
-    }
+    crate::sys::terminal::close_stdout();
 
     // Send SIGCONT to wake the pager in case it is stopped/paused
     let _ = nix::sys::signal::kill(

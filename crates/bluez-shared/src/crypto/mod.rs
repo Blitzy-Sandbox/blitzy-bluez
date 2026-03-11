@@ -14,7 +14,9 @@
 //! - **ECC** (`ecc`) — P-256 elliptic curve operations for LE Secure
 //!   Connections key exchange
 
+pub mod aes_cmac;
 pub mod ecc;
 
-// Re-export the ECC error type for convenient access
+// Re-export error types for convenient access
+pub use aes_cmac::CryptoError;
 pub use ecc::EccError;

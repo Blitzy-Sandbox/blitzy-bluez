@@ -13,6 +13,7 @@
 pub mod bluetooth;
 pub mod bnep;
 pub mod cmtp;
+pub mod hci;
 pub mod hidp;
 pub mod iso;
 pub mod l2cap;

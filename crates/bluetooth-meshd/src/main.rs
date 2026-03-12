@@ -25,6 +25,10 @@ pub mod rpl;
 /// backend implementations (generic, mgmt, unit).
 pub mod io;
 
+/// Mesh coordinator: singleton state, configuration parsing, D-Bus Network1
+/// interface, constants from mesh-defs.h/mesh.h, and protocol helpers.
+pub mod mesh;
+
 fn main() {
     println!("bluetooth-meshd stub");
 }

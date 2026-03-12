@@ -4,6 +4,7 @@
 pub mod backends;
 pub mod crc;
 pub mod display;
+pub mod dissectors;
 pub mod hwdb;
 pub mod keys;
 pub mod sys;

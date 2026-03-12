@@ -12,13 +12,14 @@
 //! dissector serves as the central routing hub, dispatching to other
 //! dissectors based on CID and PSM values.
 
-pub mod l2cap;
-pub mod att;
-pub mod sdp;
-pub mod rfcomm;
-pub mod bnep;
-pub mod avctp;
-pub mod avdtp;
-pub mod a2dp;
+// Dissector sub-modules — uncommented as each implementation is created.
+// pub mod l2cap;
+// pub mod att;
+// pub mod sdp;
+// pub mod rfcomm;
+// pub mod bnep;
+// pub mod avctp;
+// pub mod avdtp;
+// pub mod a2dp;
 pub mod ll;
-pub mod lmp;
+// pub mod lmp;

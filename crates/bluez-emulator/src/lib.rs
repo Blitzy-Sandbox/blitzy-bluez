@@ -14,3 +14,8 @@ pub mod bthost;
 
 /// Simulated PHY layer for inter-emulator communication over UDP broadcast.
 pub mod phy;
+
+/// LE-specific HCI controller emulator — opens /dev/vhci and emulates
+/// a Bluetooth Low Energy controller with advertising, scanning,
+/// accept list, resolving list, and all LE HCI commands.
+pub mod le;

@@ -31,3 +31,9 @@ pub mod vhci;
 /// the PTY and a [`btdev::BtDev`] virtual controller. Supports
 /// reconnect-on-hangup behavior for continuous emulation.
 pub mod serial;
+
+/// Socket server transport — exposes emulated HCI controllers to external
+/// H:4 clients over UNIX-domain sockets or loopback TCP.  Each accepted
+/// connection creates a [`btdev::BtDev`] virtual controller with an async
+/// read loop and a non-blocking send handler.
+pub mod server;

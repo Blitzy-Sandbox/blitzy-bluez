@@ -188,7 +188,9 @@ dependencies = [
  "ccm",
  "cmac",
  "futures",
+ "libc",
  "obexd",
+ "tempfile",
  "tokio",
  "zbus",
 ]

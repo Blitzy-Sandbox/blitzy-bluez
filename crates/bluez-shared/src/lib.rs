@@ -11,5 +11,6 @@ pub mod capture;
 pub mod crypto;
 pub mod device;
 pub mod profiles;
+pub mod socket;
 pub mod sys;
 pub mod util;

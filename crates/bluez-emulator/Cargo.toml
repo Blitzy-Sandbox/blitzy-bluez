@@ -13,7 +13,7 @@ path = "src/lib.rs"
 [dependencies]
 bluez-shared = { path = "../bluez-shared" }
 tokio = { workspace = true }
-nix = { workspace = true, features = ["uio"] }
+nix = { workspace = true, features = ["uio", "term"] }
 libc = { workspace = true }
 tracing = { workspace = true }
 bitflags = { workspace = true }

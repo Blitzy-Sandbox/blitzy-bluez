@@ -25,3 +25,9 @@ pub mod le;
 /// and a [`btdev::BtDev`] virtual controller through `AsyncFd`.
 /// This is a **designated `unsafe` boundary module** for kernel device I/O.
 pub mod vhci;
+
+/// PTY-backed H:4 HCI transport — creates a pseudo-terminal, prints the
+/// slave path for external tools, and forwards HCI command packets between
+/// the PTY and a [`btdev::BtDev`] virtual controller. Supports
+/// reconnect-on-hangup behavior for continuous emulation.
+pub mod serial;

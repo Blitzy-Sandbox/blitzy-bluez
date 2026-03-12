@@ -8,5 +8,9 @@
 /// Virtual HCI controller — core emulation of BR/EDR + LE behavior.
 pub mod btdev;
 
+/// In-memory Bluetooth Host model: H:4 transport, HCI command/event processing,
+/// L2CAP signaling (BR/EDR and LE), minimal RFCOMM, SCO, and ISO support.
+pub mod bthost;
+
 /// Simulated PHY layer for inter-emulator communication over UDP broadcast.
 pub mod phy;

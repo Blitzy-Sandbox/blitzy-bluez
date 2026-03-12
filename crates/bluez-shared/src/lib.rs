@@ -10,6 +10,7 @@ pub mod att;
 pub mod capture;
 pub mod crypto;
 pub mod device;
+pub mod log;
 pub mod profiles;
 pub mod socket;
 pub mod sys;

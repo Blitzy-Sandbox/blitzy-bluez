@@ -22,4 +22,4 @@ pub mod avctp;
 // pub mod avdtp;
 // pub mod a2dp;
 pub mod ll;
-// pub mod lmp;
+pub mod lmp;

@@ -5,6 +5,7 @@
 // Provides endianness helpers, IoBuf buffer abstraction, LTV helpers,
 // string utilities, and general-purpose functions used across the stack.
 
+pub mod crc;
 pub mod endian;
 pub mod queue;
 pub mod ringbuf;

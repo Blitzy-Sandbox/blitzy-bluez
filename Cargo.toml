@@ -108,6 +108,10 @@ path = "tests/unit/test_battery.rs"
 name = "test_gobex_apparam"
 path = "tests/unit/test_gobex_apparam.rs"
 
+[[test]]
+name = "test_crc"
+path = "tests/unit/test_crc.rs"
+
 [lints]
 workspace = true
 

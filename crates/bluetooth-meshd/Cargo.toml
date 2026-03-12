@@ -24,6 +24,7 @@ libc = { workspace = true }
 thiserror = { workspace = true }
 bitflags = { workspace = true }
 futures = { workspace = true }
+rand = { workspace = true }
 tokio-stream = { workspace = true }
 aes = { workspace = true }
 cmac = { workspace = true }

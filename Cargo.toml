@@ -52,6 +52,7 @@ aes = "0.8"
 cmac = "0.7"
 ccm = "0.5"
 p256 = { version = "0.13", features = ["ecdh"] }
+rand = "0.8"
 
 # Root package — enables workspace-level integration tests in tests/
 [package]

@@ -3,6 +3,7 @@
 
 pub mod dbus_common;
 pub mod error;
+pub mod gatt;
 pub mod legacy_gatt;
 pub mod log;
 pub mod plugins;

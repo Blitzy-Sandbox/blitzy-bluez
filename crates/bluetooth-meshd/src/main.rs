@@ -21,6 +21,10 @@ pub mod crypto;
 /// high-water-marks stored on disk, keyed by IV index.
 pub mod rpl;
 
+/// Mesh I/O subsystem: backend trait, broker, type definitions, and
+/// backend implementations (generic, mgmt, unit).
+pub mod io;
+
 fn main() {
     println!("bluetooth-meshd stub");
 }

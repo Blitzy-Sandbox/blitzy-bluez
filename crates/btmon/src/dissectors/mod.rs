@@ -16,9 +16,9 @@
 // pub mod l2cap;
 // pub mod att;
 // pub mod sdp;
-pub mod rfcomm;
-// pub mod bnep;
 pub mod avctp;
+pub mod bnep;
+pub mod rfcomm;
 // pub mod avdtp;
 // pub mod a2dp;
 pub mod ll;

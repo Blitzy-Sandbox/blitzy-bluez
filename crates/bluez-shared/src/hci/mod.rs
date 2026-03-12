@@ -5,7 +5,9 @@
 //! Bluetooth controllers via the HCI protocol, and HCI-assisted LE
 //! cryptographic operations.
 
+pub mod crypto;
 pub mod transport;
 
 // Re-export primary public types for ergonomic access.
+pub use crypto::{HciCryptoError, crypto_ah, crypto_d1, crypto_dm, crypto_e, crypto_prand};
 pub use transport::{HciError, HciEvent, HciResponse, HciTransport};

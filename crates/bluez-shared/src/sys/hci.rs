@@ -4,6 +4,18 @@
 //!
 //! All structs use `#[repr(C, packed)]` for kernel ABI wire compatibility.
 //! Constant values are exact matches of the C header definitions.
+//!
+//! # Safety
+//!
+//! This module is a designated FFI boundary for kernel HCI socket
+//! operations (`AF_BLUETOOTH / BTPROTO_HCI`).  The Linux kernel does not
+//! expose HCI sockets through any safe Rust abstraction, so raw `libc`
+//! calls with `unsafe` blocks are required for socket creation, binding,
+//! and `setsockopt`.  Every `unsafe` block contains a `// SAFETY:` comment
+//! documenting the invariant that makes it sound.
+#![allow(unsafe_code)]
+
+use std::os::unix::io::{AsFd, AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
 
 use super::bluetooth::bdaddr_t;
 use zerocopy::{FromBytes, Immutable, IntoBytes, KnownLayout};
@@ -2122,4 +2134,83 @@ pub fn hci_vertostr(ver: u8) -> &'static str {
         14 => "6.0",
         _ => "UNKNOWN",
     }
+}
+
+// ===========================================================================
+// FFI Socket Helpers
+// ===========================================================================
+
+/// Create an HCI socket and bind it to the given address.
+///
+/// Opens an `AF_BLUETOOTH / SOCK_RAW | SOCK_CLOEXEC | SOCK_NONBLOCK /
+/// BTPROTO_HCI` socket, then binds it to `addr`.  Returns an `OwnedFd`
+/// wrapping the new file descriptor.
+///
+/// # Errors
+///
+/// Returns `nix::errno::Errno` if `socket()` or `bind()` fails.
+pub fn create_hci_socket(addr: &sockaddr_hci) -> Result<OwnedFd, nix::errno::Errno> {
+    // SAFETY: libc::socket is always safe to call. We pass valid constants
+    // for an AF_BLUETOOTH HCI raw socket with CLOEXEC and NONBLOCK flags.
+    let fd: RawFd = unsafe {
+        libc::socket(
+            libc::AF_BLUETOOTH,
+            libc::SOCK_RAW | libc::SOCK_CLOEXEC | libc::SOCK_NONBLOCK,
+            super::bluetooth::BTPROTO_HCI as libc::c_int,
+        )
+    };
+    if fd < 0 {
+        return Err(nix::errno::Errno::last());
+    }
+
+    // SAFETY: fd is a valid open file descriptor from the socket() call above.
+    // We transfer ownership to OwnedFd, which will close it on drop if bind fails.
+    let owned = unsafe { OwnedFd::from_raw_fd(fd) };
+
+    let addr_ptr: *const sockaddr_hci = addr;
+    let addr_len = std::mem::size_of::<sockaddr_hci>() as libc::socklen_t;
+
+    // SAFETY: We pass a valid sockaddr_hci pointer and correct length to bind().
+    // The fd is valid and the addr struct uses #[repr(C)] for kernel ABI compat.
+    let ret = unsafe { libc::bind(owned.as_fd().as_raw_fd(), addr_ptr.cast(), addr_len) };
+    if ret < 0 {
+        // OwnedFd will close the socket on drop.
+        return Err(nix::errno::Errno::last());
+    }
+
+    Ok(owned)
+}
+
+/// Set the `HCI_FILTER` socket option on an HCI raw device socket.
+///
+/// Configures which HCI packet types and event codes are delivered to
+/// userspace on the given socket.
+///
+/// # Errors
+///
+/// Returns `nix::errno::Errno` if `setsockopt()` fails.
+pub fn set_hci_filter_sockopt(
+    fd: BorrowedFd<'_>,
+    filter: &hci_filter,
+) -> Result<(), nix::errno::Errno> {
+    let filter_ptr: *const hci_filter = filter;
+    let filter_len = std::mem::size_of::<hci_filter>() as libc::socklen_t;
+
+    // SAFETY: fd is a valid borrowed file descriptor. filter points to a
+    // valid hci_filter struct with #[repr(C)] layout matching the kernel's
+    // expected format. SOL_HCI and HCI_FILTER are the correct socket option
+    // level and name for HCI filter configuration.
+    let ret = unsafe {
+        libc::setsockopt(
+            fd.as_raw_fd(),
+            super::bluetooth::SOL_HCI as libc::c_int,
+            HCI_FILTER as libc::c_int,
+            filter_ptr.cast(),
+            filter_len,
+        )
+    };
+    if ret < 0 {
+        return Err(nix::errno::Errno::last());
+    }
+    Ok(())
 }

@@ -5,5 +5,8 @@
 // Provides virtual Bluetooth controllers via VHCI for integration testing.
 // This crate replaces the C emulator/ directory from the BlueZ source tree.
 
+/// Virtual HCI controller — core emulation of BR/EDR + LE behavior.
+pub mod btdev;
+
 /// Simulated PHY layer for inter-emulator communication over UDP broadcast.
 pub mod phy;

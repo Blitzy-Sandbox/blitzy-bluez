@@ -5,7 +5,9 @@
 // Declares and re-exports the profile sub-modules: GAP, HFP, Battery, RAP.
 
 pub mod battery;
+pub mod gap;
 pub mod hfp;
 
 // Re-export primary public types for convenient access.
 pub use battery::BtBattery;
+pub use gap::{BtGap, GapError, IrkEntry};

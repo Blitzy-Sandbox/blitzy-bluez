@@ -10,6 +10,7 @@ pub mod att;
 pub mod capture;
 pub mod crypto;
 pub mod device;
+pub mod gatt;
 pub mod hci;
 pub mod log;
 pub mod mgmt;

@@ -3,6 +3,7 @@
 //! This module provides SDP record management including XML
 //! serialisation/deserialisation, SDP server, client, and database.
 
+pub mod client;
 pub mod xml;
 
 // Re-export the primary XML conversion API.

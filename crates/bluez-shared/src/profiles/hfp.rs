@@ -283,7 +283,7 @@ pub struct HfpContext {
 
 impl HfpContext {
     /// Create a new context wrapping the given data slice.
-    fn new(data: &[u8]) -> Self {
+    pub fn new(data: &[u8]) -> Self {
         Self { data: data.to_vec(), offset: 0 }
     }
 
@@ -904,12 +904,16 @@ impl HfpGw {
                 total_drain += 1;
             }
 
+            // Drain the consumed bytes BEFORE dispatching the command.
+            // `send_result()` / `send_error()` re-enter `process_input()`
+            // to flush follow-on commands; the data must already be consumed
+            // so the recursive call does not re-process the same line.
+            self.read_buf.drain(total_drain);
+
             if !line.is_empty() {
                 debug!("GW: received AT command ({} bytes)", line.len());
                 self.handle_at_command(&line);
             }
-
-            self.read_buf.drain(total_drain);
         }
     }
 
@@ -1377,6 +1381,13 @@ impl HfpHf {
     }
 
     /// Process +CIND=? response: parse indicator descriptions.
+    ///
+    /// Indicators come in two value-range formats:
+    ///   - Dash range:   `("callsetup",(0-3))`  — parsed by `get_range()`
+    ///   - Comma pair:   `("service",(0,1))`     — fallback to two `get_number()` calls
+    ///
+    /// The C original (`src/shared/hfp.c` `slc_cind_cb`) tries `get_range`
+    /// first, and falls back to two `get_number` calls when the dash is absent.
     fn slc_cind_cb(&mut self, ctx: &mut HfpContext) {
         let mut index: u8 = 1;
         while ctx.has_next() {
@@ -1390,7 +1401,18 @@ impl HfpHf {
             if !ctx.open_container() {
                 break;
             }
-            let range = ctx.get_range();
+            // Try dash-range first (e.g. 0-3), then fall back to comma pair (e.g. 0,1)
+            let range = match ctx.get_range() {
+                Some(r) => Some(r),
+                None => {
+                    let min = ctx.get_number();
+                    let max = ctx.get_number();
+                    match (min, max) {
+                        (Some(mn), Some(mx)) => Some((mn, mx)),
+                        _ => None,
+                    }
+                }
+            };
             if !ctx.close_container() {
                 break;
             }
@@ -1651,7 +1673,7 @@ impl HfpHf {
             None => return,
         };
 
-        // Find the indicator with matching index
+        // Find the indicator with matching wire index.
         for i in 0..INDICATOR_COUNT {
             if self.ag_ind[i].index == index && self.ag_ind[i].active {
                 self.dispatch_indicator(i, val);

@@ -116,6 +116,10 @@ name = "test_crc"
 path = "tests/unit/test_crc.rs"
 
 [[test]]
+name = "test_hfp"
+path = "tests/unit/test_hfp.rs"
+
+[[test]]
 name = "test_uhid"
 path = "tests/unit/test_uhid.rs"
 

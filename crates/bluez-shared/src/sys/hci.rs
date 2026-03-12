@@ -2214,3 +2214,63 @@ pub fn set_hci_filter_sockopt(
     }
     Ok(())
 }
+
+/// Get the `BT_SNDMTU` socket option value (Bluetooth send MTU).
+///
+/// This is used by the MGMT client to determine the negotiated MTU for
+/// command parameter payloads.
+///
+/// # Errors
+///
+/// Returns `nix::errno::Errno` if `getsockopt()` fails (e.g. the kernel
+/// does not support `BT_SNDMTU`).
+pub fn getsockopt_bt_sndmtu(raw_fd: RawFd) -> Result<u16, nix::errno::Errno> {
+    let mut mtu: u16 = 0;
+    let mut optlen = std::mem::size_of::<u16>() as libc::socklen_t;
+
+    // SAFETY: raw_fd is a valid open Bluetooth socket fd. We pass a valid
+    // pointer to a u16 and its size. SOL_BLUETOOTH and BT_SNDMTU are the
+    // correct socket option level and name for Bluetooth send MTU.
+    let ret = unsafe {
+        libc::getsockopt(
+            raw_fd,
+            super::bluetooth::SOL_BLUETOOTH as libc::c_int,
+            super::bluetooth::BT_SNDMTU as libc::c_int,
+            (&raw mut mtu).cast(),
+            &raw mut optlen,
+        )
+    };
+    if ret < 0 {
+        return Err(nix::errno::Errno::last());
+    }
+    Ok(mtu)
+}
+
+/// Set the `BT_SNDMTU` socket option value (Bluetooth send MTU).
+///
+/// This is used by the MGMT client to attempt upgrading the send MTU to the
+/// maximum supported value.
+///
+/// # Errors
+///
+/// Returns `nix::errno::Errno` if `setsockopt()` fails.
+pub fn setsockopt_bt_sndmtu(raw_fd: RawFd, mtu: u16) -> Result<(), nix::errno::Errno> {
+    let optlen = std::mem::size_of::<u16>() as libc::socklen_t;
+
+    // SAFETY: raw_fd is a valid open Bluetooth socket fd. We pass a valid
+    // pointer to a u16 and its size. SOL_BLUETOOTH and BT_SNDMTU are the
+    // correct socket option level and name for Bluetooth send MTU.
+    let ret = unsafe {
+        libc::setsockopt(
+            raw_fd,
+            super::bluetooth::SOL_BLUETOOTH as libc::c_int,
+            super::bluetooth::BT_SNDMTU as libc::c_int,
+            (&raw const mtu).cast(),
+            optlen,
+        )
+    };
+    if ret < 0 {
+        return Err(nix::errno::Errno::last());
+    }
+    Ok(())
+}

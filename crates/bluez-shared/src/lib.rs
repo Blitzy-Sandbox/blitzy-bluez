@@ -12,6 +12,7 @@ pub mod crypto;
 pub mod device;
 pub mod hci;
 pub mod log;
+pub mod mgmt;
 pub mod profiles;
 pub mod socket;
 pub mod sys;

@@ -11,7 +11,7 @@
  * Output is byte-identical to the C version for the same input data.
  */
 
-use crate::display::{print_hexdump, COLOR_ERROR, COLOR_WHITE_BG};
+use crate::display::{COLOR_ERROR, COLOR_WHITE_BG, print_hexdump};
 use crate::dissectors::ll::llcp_packet;
 use crate::dissectors::lmp::lmp_packet;
 use crate::{print_field, print_text};
@@ -266,8 +266,14 @@ fn packet_print_addr(label: &str, data: &[u8], addr_type: u8) {
 fn packet_print_features_lmp(features: &[u8], page: u8) {
     print_field!(
         "Features: 0x{:02x} 0x{:02x} 0x{:02x} 0x{:02x} 0x{:02x} 0x{:02x} 0x{:02x} 0x{:02x} (page {})",
-        features[0], features[1], features[2], features[3],
-        features[4], features[5], features[6], features[7],
+        features[0],
+        features[1],
+        features[2],
+        features[3],
+        features[4],
+        features[5],
+        features[6],
+        features[7],
         page
     );
 }
@@ -278,8 +284,14 @@ fn packet_print_features_lmp(features: &[u8], page: u8) {
 fn packet_print_features_ll(features: &[u8]) {
     print_field!(
         "LE Features: 0x{:02x} 0x{:02x} 0x{:02x} 0x{:02x} 0x{:02x} 0x{:02x} 0x{:02x} 0x{:02x}",
-        features[0], features[1], features[2], features[3],
-        features[4], features[5], features[6], features[7]
+        features[0],
+        features[1],
+        features[2],
+        features[3],
+        features[4],
+        features[5],
+        features[6],
+        features[7]
     );
 }
 
@@ -372,14 +384,7 @@ fn print_version_tlv_cnvi_bt(type_id: u8, val: &[u8], type_str: &str) {
         0x22 => "BlazarIW",
         _ => "Unknown",
     };
-    print_field!(
-        "{}({}): 0x{:08x} - {}(0x{:02x})",
-        type_str,
-        type_id,
-        cnvibt,
-        s,
-        variant
-    );
+    print_field!("{}({}): 0x{:08x} - {}(0x{:02x})", type_str, type_id, cnvibt, s, variant);
 }
 
 fn print_version_tlv_img_type(type_id: u8, val: &[u8], type_str: &str) {
@@ -400,14 +405,7 @@ fn print_version_tlv_timestamp(type_id: u8, val: &[u8], type_str: &str) {
 fn print_version_tlv_min_fw(type_id: u8, val: &[u8], type_str: &str) {
     // C: print_field("%s(%u): %u-%u.%u", type_str, tlv->type,
     //               tlv->val[0], tlv->val[1], 2000 + tlv->val[2]);
-    print_field!(
-        "{}({}): {}-{}.{}",
-        type_str,
-        type_id,
-        val[0],
-        val[1],
-        2000 + u32::from(val[2])
-    );
+    print_field!("{}({}): {}-{}.{}", type_str, type_id, val[0], val[1], 2000 + u32::from(val[2]));
 }
 
 fn print_version_tlv_otp_bdaddr(type_id: u8, val: &[u8], type_str: &str) {
@@ -424,13 +422,7 @@ fn print_version_tlv_unknown(type_id: u8, val: &[u8], type_str: &str) {
 
 fn print_version_tlv_mfg(type_id: u8, val: &[u8], type_str: &str) {
     let mfg_id = get_le16(val, 0);
-    print_field!(
-        "{}({}): {} ({})",
-        type_str,
-        type_id,
-        bt_compidtostr(mfg_id),
-        mfg_id
-    );
+    print_field!("{}({}): {} ({})", type_str, type_id, bt_compidtostr(mfg_id), mfg_id);
 }
 
 // -- TLV table (types 16-49, matching C intel_version_tlv_table[]) -----------
@@ -534,7 +526,12 @@ fn read_version_rsp(_index: u16, data: &[u8]) {
     print_field!("Hardware revision: 0x{:02x}", get_u8(data, 3));
     print_field!("Firmware variant: 0x{:02x}", get_u8(data, 4));
     print_field!("Firmware revision: 0x{:02x}", get_u8(data, 5));
-    print_field!("Firmware build: {}-{}.{}", get_u8(data, 6), get_u8(data, 7), 2000 + u32::from(get_u8(data, 8)));
+    print_field!(
+        "Firmware build: {}-{}.{}",
+        get_u8(data, 6),
+        get_u8(data, 7),
+        2000 + u32::from(get_u8(data, 8))
+    );
     print_field!("Firmware patch: 0x{:02x}", get_u8(data, 9));
 }
 
@@ -730,11 +727,7 @@ fn set_event_mask_cmd(_index: u16, data: &[u8]) {
     }
 
     if mask != 0 {
-        print_text!(
-            COLOR_UNKNOWN_EVENT_MASK,
-            "  Unknown mask (0x{:016x})",
-            mask
-        );
+        print_text!(COLOR_UNKNOWN_EVENT_MASK, "  Unknown mask (0x{:016x})", mask);
     }
 }
 
@@ -783,184 +776,364 @@ fn ppag_enable(_index: u16, data: &[u8]) {
 
 static VENDOR_OCF_TABLE: &[VendorOcf] = &[
     VendorOcf {
-        ocf: 0x001, name: "Reset",
-        cmd_func: reset_cmd, cmd_size: 8, cmd_fixed: true,
-        rsp_func: status_rsp, rsp_size: 1, rsp_fixed: true,
+        ocf: 0x001,
+        name: "Reset",
+        cmd_func: reset_cmd,
+        cmd_size: 8,
+        cmd_fixed: true,
+        rsp_func: status_rsp,
+        rsp_size: 1,
+        rsp_fixed: true,
     },
     VendorOcf {
-        ocf: 0x002, name: "No Operation",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x002,
+        name: "No Operation",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x005, name: "Read Version",
-        cmd_func: read_version_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: read_version_rsp, rsp_size: 1, rsp_fixed: false,
+        ocf: 0x005,
+        name: "Read Version",
+        cmd_func: read_version_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: read_version_rsp,
+        rsp_size: 1,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x006, name: "Set UART Baudrate",
-        cmd_func: set_uart_baudrate_cmd, cmd_size: 1, cmd_fixed: true,
-        rsp_func: status_rsp, rsp_size: 1, rsp_fixed: true,
+        ocf: 0x006,
+        name: "Set UART Baudrate",
+        cmd_func: set_uart_baudrate_cmd,
+        cmd_size: 1,
+        cmd_fixed: true,
+        rsp_func: status_rsp,
+        rsp_size: 1,
+        rsp_fixed: true,
     },
     VendorOcf {
-        ocf: 0x007, name: "Enable LPM",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x007,
+        name: "Enable LPM",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x008, name: "PCM Write Configuration",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x008,
+        name: "PCM Write Configuration",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x009, name: "Secure Send",
-        cmd_func: secure_send_cmd, cmd_size: 1, cmd_fixed: false,
-        rsp_func: status_rsp, rsp_size: 1, rsp_fixed: true,
+        ocf: 0x009,
+        name: "Secure Send",
+        cmd_func: secure_send_cmd,
+        cmd_size: 1,
+        cmd_fixed: false,
+        rsp_func: status_rsp,
+        rsp_size: 1,
+        rsp_fixed: true,
     },
     VendorOcf {
-        ocf: 0x00d, name: "Read Secure Boot Params",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: true,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x00d,
+        name: "Read Secure Boot Params",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: true,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x00e, name: "Write Secure Boot Params",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x00e,
+        name: "Write Secure Boot Params",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x00f, name: "Unlock",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x00f,
+        name: "Unlock",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x010, name: "Change UART Baudrate",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x010,
+        name: "Change UART Baudrate",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x011, name: "Manufacturer Mode",
-        cmd_func: manufacturer_mode_cmd, cmd_size: 2, cmd_fixed: true,
-        rsp_func: status_rsp, rsp_size: 1, rsp_fixed: true,
+        ocf: 0x011,
+        name: "Manufacturer Mode",
+        cmd_func: manufacturer_mode_cmd,
+        cmd_size: 2,
+        cmd_fixed: true,
+        rsp_func: status_rsp,
+        rsp_size: 1,
+        rsp_fixed: true,
     },
     VendorOcf {
-        ocf: 0x012, name: "Read Link RSSI",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x012,
+        name: "Read Link RSSI",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x022, name: "Get Exception Info",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x022,
+        name: "Get Exception Info",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x024, name: "Clear Exception Info",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x024,
+        name: "Clear Exception Info",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x02f, name: "Write BD Data",
-        cmd_func: write_bd_data_cmd, cmd_size: 6, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x02f,
+        name: "Write BD Data",
+        cmd_func: write_bd_data_cmd,
+        cmd_size: 6,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x030, name: "Read BD Data",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: true,
-        rsp_func: read_bd_data_rsp, rsp_size: 7, rsp_fixed: false,
+        ocf: 0x030,
+        name: "Read BD Data",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: true,
+        rsp_func: read_bd_data_rsp,
+        rsp_size: 7,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x031, name: "Write BD Address",
-        cmd_func: write_bd_address_cmd, cmd_size: 6, cmd_fixed: true,
-        rsp_func: status_rsp, rsp_size: 1, rsp_fixed: true,
+        ocf: 0x031,
+        name: "Write BD Address",
+        cmd_func: write_bd_address_cmd,
+        cmd_size: 6,
+        cmd_fixed: true,
+        rsp_func: status_rsp,
+        rsp_size: 1,
+        rsp_fixed: true,
     },
     VendorOcf {
-        ocf: 0x032, name: "Flow Specification",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x032,
+        name: "Flow Specification",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x034, name: "Read Secure ID",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x034,
+        name: "Read Secure ID",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x038, name: "Set Synchronous USB Interface Type",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x038,
+        name: "Set Synchronous USB Interface Type",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x039, name: "Config Synchronous Interface",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x039,
+        name: "Config Synchronous Interface",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x03f, name: "SW RF Kill",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: true,
-        rsp_func: status_rsp, rsp_size: 1, rsp_fixed: true,
+        ocf: 0x03f,
+        name: "SW RF Kill",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: true,
+        rsp_func: status_rsp,
+        rsp_size: 1,
+        rsp_fixed: true,
     },
     VendorOcf {
-        ocf: 0x043, name: "Activate Deactivate Traces",
-        cmd_func: act_deact_traces_cmd, cmd_size: 3, cmd_fixed: true,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x043,
+        name: "Activate Deactivate Traces",
+        cmd_func: act_deact_traces_cmd,
+        cmd_size: 3,
+        cmd_fixed: true,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x04d, name: "Stimulate Exception",
-        cmd_func: stimulate_exception_cmd, cmd_size: 1, cmd_fixed: true,
-        rsp_func: status_rsp, rsp_size: 1, rsp_fixed: true,
+        ocf: 0x04d,
+        name: "Stimulate Exception",
+        cmd_func: stimulate_exception_cmd,
+        cmd_size: 1,
+        cmd_fixed: true,
+        rsp_func: status_rsp,
+        rsp_size: 1,
+        rsp_fixed: true,
     },
     VendorOcf {
-        ocf: 0x050, name: "Read HW Version",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x050,
+        name: "Read HW Version",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x052, name: "Set Event Mask",
-        cmd_func: set_event_mask_cmd, cmd_size: 8, cmd_fixed: true,
-        rsp_func: status_rsp, rsp_size: 1, rsp_fixed: true,
+        ocf: 0x052,
+        name: "Set Event Mask",
+        cmd_func: set_event_mask_cmd,
+        cmd_size: 8,
+        cmd_fixed: true,
+        rsp_func: status_rsp,
+        rsp_size: 1,
+        rsp_fixed: true,
     },
     VendorOcf {
-        ocf: 0x053, name: "Config_Link_Controller",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x053,
+        name: "Config_Link_Controller",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x089, name: "DDC Write",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x089,
+        name: "DDC Write",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x08a, name: "DDC Read",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x08a,
+        name: "DDC Read",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x08b, name: "DDC Config Write",
-        cmd_func: ddc_config_write_cmd, cmd_size: 3, cmd_fixed: false,
-        rsp_func: ddc_config_write_rsp, rsp_size: 3, rsp_fixed: true,
+        ocf: 0x08b,
+        name: "DDC Config Write",
+        cmd_func: ddc_config_write_cmd,
+        cmd_size: 3,
+        cmd_fixed: false,
+        rsp_func: ddc_config_write_rsp,
+        rsp_size: 3,
+        rsp_fixed: true,
     },
     VendorOcf {
-        ocf: 0x08c, name: "DDC Config Read",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x08c,
+        name: "DDC Config Read",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x08d, name: "Memory Read",
-        cmd_func: null_cmd, cmd_size: 0, cmd_fixed: false,
-        rsp_func: null_cmd, rsp_size: 0, rsp_fixed: false,
+        ocf: 0x08d,
+        name: "Memory Read",
+        cmd_func: null_cmd,
+        cmd_size: 0,
+        cmd_fixed: false,
+        rsp_func: null_cmd,
+        rsp_size: 0,
+        rsp_fixed: false,
     },
     VendorOcf {
-        ocf: 0x08e, name: "Memory Write",
-        cmd_func: memory_write_cmd, cmd_size: 6, cmd_fixed: false,
-        rsp_func: status_rsp, rsp_size: 1, rsp_fixed: true,
+        ocf: 0x08e,
+        name: "Memory Write",
+        cmd_func: memory_write_cmd,
+        cmd_size: 6,
+        cmd_fixed: false,
+        rsp_func: status_rsp,
+        rsp_size: 1,
+        rsp_fixed: true,
     },
     VendorOcf {
-        ocf: 0x0a6, name: "Read Supported Features",
-        cmd_func: read_supported_features_cmd, cmd_size: 1, cmd_fixed: true,
-        rsp_func: read_supported_features_rsp, rsp_size: 19, rsp_fixed: true,
+        ocf: 0x0a6,
+        name: "Read Supported Features",
+        cmd_func: read_supported_features_cmd,
+        cmd_size: 1,
+        cmd_fixed: true,
+        rsp_func: read_supported_features_rsp,
+        rsp_size: 19,
+        rsp_fixed: true,
     },
     VendorOcf {
-        ocf: 0x20b, name: "PPAG Enable",
-        cmd_func: ppag_enable, cmd_size: 4, cmd_fixed: true,
-        rsp_func: status_rsp, rsp_size: 1, rsp_fixed: true,
+        ocf: 0x20b,
+        name: "PPAG Enable",
+        cmd_func: ppag_enable,
+        cmd_size: 4,
+        cmd_fixed: true,
+        rsp_func: status_rsp,
+        rsp_size: 1,
+        rsp_fixed: true,
     },
 ];
 
@@ -1065,12 +1238,7 @@ fn secure_send_commands_result_evt(_index: u16, data: &[u8]) {
     // Decode OGF/OCF from the opcode
     let ogf = (opcode >> 10) & 0x3f;
     let ocf = opcode & 0x03ff;
-    print_field!(
-        "Opcode: 0x{:04x} (OGF 0x{:02x}, OCF 0x{:04x})",
-        opcode,
-        ogf,
-        ocf
-    );
+    print_field!("Opcode: 0x{:04x} (OGF 0x{:02x}, OCF 0x{:04x})", opcode, ogf, ocf);
 
     print_status(status);
 }
@@ -1105,11 +1273,7 @@ fn scan_status_evt(_index: u16, data: &[u8]) {
     };
     print_field!("Scan enable: {} (0x{:02x})", s, enable);
     if enable != 0x00 && enable != 0x01 {
-        print_text!(
-            COLOR_UNKNOWN_SCAN_STATUS,
-            "  Unknown scan status (0x{:02x})",
-            enable
-        );
+        print_text!(COLOR_UNKNOWN_SCAN_STATUS, "  Unknown scan status (0x{:02x})", enable);
     }
 }
 
@@ -1262,69 +1426,105 @@ fn system_exception_evt(_index: u16, data: &[u8]) {
 fn null_evt(_index: u16, _data: &[u8]) {}
 
 static VENDOR_EVT_TABLE: &[VendorEvt] = &[
+    VendorEvt { evt: 0x00, name: "Startup", evt_func: startup_evt, evt_size: 0, evt_fixed: true },
     VendorEvt {
-        evt: 0x00, name: "Startup",
-        evt_func: startup_evt, evt_size: 0, evt_fixed: true,
+        evt: 0x01,
+        name: "Fatal Exception",
+        evt_func: fatal_exception_evt,
+        evt_size: 4,
+        evt_fixed: true,
+    },
+    VendorEvt { evt: 0x02, name: "Bootup", evt_func: bootup_evt, evt_size: 6, evt_fixed: true },
+    VendorEvt {
+        evt: 0x05,
+        name: "Default BD Data",
+        evt_func: default_bd_data_evt,
+        evt_size: 1,
+        evt_fixed: true,
     },
     VendorEvt {
-        evt: 0x01, name: "Fatal Exception",
-        evt_func: fatal_exception_evt, evt_size: 4, evt_fixed: true,
+        evt: 0x06,
+        name: "Secure Send Commands Result",
+        evt_func: secure_send_commands_result_evt,
+        evt_size: 4,
+        evt_fixed: true,
     },
     VendorEvt {
-        evt: 0x02, name: "Bootup",
-        evt_func: bootup_evt, evt_size: 6, evt_fixed: true,
+        evt: 0x08,
+        name: "Debug Exception",
+        evt_func: debug_exception_evt,
+        evt_size: 4,
+        evt_fixed: true,
     },
     VendorEvt {
-        evt: 0x05, name: "Default BD Data",
-        evt_func: default_bd_data_evt, evt_size: 1, evt_fixed: true,
+        evt: 0x0f,
+        name: "LE Link Established",
+        evt_func: le_link_established_evt,
+        evt_size: 26,
+        evt_fixed: true,
     },
     VendorEvt {
-        evt: 0x06, name: "Secure Send Commands Result",
-        evt_func: secure_send_commands_result_evt, evt_size: 4, evt_fixed: true,
+        evt: 0x11,
+        name: "Scan Status",
+        evt_func: scan_status_evt,
+        evt_size: 1,
+        evt_fixed: true,
     },
     VendorEvt {
-        evt: 0x08, name: "Debug Exception",
-        evt_func: debug_exception_evt, evt_size: 4, evt_fixed: true,
+        evt: 0x16,
+        name: "Activate Deactivate Traces Complete",
+        evt_func: act_deact_traces_complete_evt,
+        evt_size: 1,
+        evt_fixed: true,
     },
     VendorEvt {
-        evt: 0x0f, name: "LE Link Established",
-        evt_func: le_link_established_evt, evt_size: 26, evt_fixed: true,
+        evt: 0x17,
+        name: "LMP PDU Trace",
+        evt_func: lmp_pdu_trace_evt,
+        evt_size: 3,
+        evt_fixed: false,
     },
     VendorEvt {
-        evt: 0x11, name: "Scan Status",
-        evt_func: scan_status_evt, evt_size: 1, evt_fixed: true,
+        evt: 0x19,
+        name: "Write BD Data Complete",
+        evt_func: write_bd_data_complete_evt,
+        evt_size: 1,
+        evt_fixed: true,
     },
     VendorEvt {
-        evt: 0x16, name: "Activate Deactivate Traces Complete",
-        evt_func: act_deact_traces_complete_evt, evt_size: 1, evt_fixed: true,
+        evt: 0x25,
+        name: "SCO Rejected via LMP",
+        evt_func: sco_rejected_via_lmp_evt,
+        evt_size: 7,
+        evt_fixed: true,
     },
     VendorEvt {
-        evt: 0x17, name: "LMP PDU Trace",
-        evt_func: lmp_pdu_trace_evt, evt_size: 3, evt_fixed: false,
+        evt: 0x26,
+        name: "PTT Switch Notification",
+        evt_func: ptt_switch_notification_evt,
+        evt_size: 3,
+        evt_fixed: true,
     },
     VendorEvt {
-        evt: 0x19, name: "Write BD Data Complete",
-        evt_func: write_bd_data_complete_evt, evt_size: 1, evt_fixed: true,
+        evt: 0x29,
+        name: "System Exception",
+        evt_func: system_exception_evt,
+        evt_size: 133,
+        evt_fixed: true,
     },
     VendorEvt {
-        evt: 0x25, name: "SCO Rejected via LMP",
-        evt_func: sco_rejected_via_lmp_evt, evt_size: 7, evt_fixed: true,
+        evt: 0x2c,
+        name: "FW Trace String",
+        evt_func: null_evt,
+        evt_size: 0,
+        evt_fixed: false,
     },
     VendorEvt {
-        evt: 0x26, name: "PTT Switch Notification",
-        evt_func: ptt_switch_notification_evt, evt_size: 3, evt_fixed: true,
-    },
-    VendorEvt {
-        evt: 0x29, name: "System Exception",
-        evt_func: system_exception_evt, evt_size: 133, evt_fixed: true,
-    },
-    VendorEvt {
-        evt: 0x2c, name: "FW Trace String",
-        evt_func: null_evt, evt_size: 0, evt_fixed: false,
-    },
-    VendorEvt {
-        evt: 0x2e, name: "FW Trace Binary",
-        evt_func: null_evt, evt_size: 0, evt_fixed: false,
+        evt: 0x2e,
+        name: "FW Trace Binary",
+        evt_func: null_evt,
+        evt_size: 0,
+        evt_fixed: false,
     },
 ];
 
@@ -1373,23 +1573,14 @@ fn ext_evt_type(subevent_id: u8, value: &[u8]) {
         return;
     }
 
-    print_field!(
-        "Extended event type (0x{:02x}): {} (0x{:02x})",
-        subevent_id,
-        s,
-        evt_type
-    );
+    print_field!("Extended event type (0x{:02x}): {} (0x{:02x})", subevent_id, s, evt_type);
 }
 
 // -- ACL quality subevent decoders ------------------------------------------
 
 fn ext_acl_evt_conn_handle(subevent_id: u8, value: &[u8]) {
     let conn_handle = get_le16(value, 0);
-    print_field!(
-        "ACL connection handle (0x{:02x}): 0x{:04x}",
-        subevent_id,
-        conn_handle
-    );
+    print_field!("ACL connection handle (0x{:02x}): 0x{:04x}", subevent_id, conn_handle);
 }
 
 fn ext_acl_evt_hec_errors(subevent_id: u8, value: &[u8]) {
@@ -1413,11 +1604,7 @@ fn ext_acl_evt_num_pkt_from_host(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Packets from host (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Packets from host (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_acl_evt_tx_pkt_to_air(subevent_id: u8, value: &[u8]) {
@@ -1425,11 +1612,7 @@ fn ext_acl_evt_tx_pkt_to_air(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Tx packets (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Tx packets (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_acl_evt_tx_pkt_0_retry(subevent_id: u8, value: &[u8]) {
@@ -1437,11 +1620,7 @@ fn ext_acl_evt_tx_pkt_0_retry(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Tx packets 0 retries (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Tx packets 0 retries (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_acl_evt_tx_pkt_1_retry(subevent_id: u8, value: &[u8]) {
@@ -1449,11 +1628,7 @@ fn ext_acl_evt_tx_pkt_1_retry(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Tx packets 1 retries (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Tx packets 1 retries (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_acl_evt_tx_pkt_2_retry(subevent_id: u8, value: &[u8]) {
@@ -1461,11 +1636,7 @@ fn ext_acl_evt_tx_pkt_2_retry(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Tx packets 2 retries (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Tx packets 2 retries (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_acl_evt_tx_pkt_3_retry(subevent_id: u8, value: &[u8]) {
@@ -1473,11 +1644,7 @@ fn ext_acl_evt_tx_pkt_3_retry(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Tx packets 3 retries (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Tx packets 3 retries (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_acl_evt_tx_pkt_4_or_more_retry(subevent_id: u8, value: &[u8]) {
@@ -1485,17 +1652,12 @@ fn ext_acl_evt_tx_pkt_4_or_more_retry(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Tx packets 4 and more retries (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Tx packets 4 and more retries (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_acl_evt_tx_pkt_type(subevent_id: u8, value: &[u8]) {
-    static PKT_TYPES: &[&str] = &[
-        "DH1", "DH3", "DH5", "2-DH1", "2-DH3", "2-DH5", "3-DH1", "3-DH3", "3-DH5",
-    ];
+    static PKT_TYPES: &[&str] =
+        &["DH1", "DH3", "DH5", "2-DH1", "2-DH3", "2-DH5", "3-DH1", "3-DH3", "3-DH5"];
 
     for (i, pkt_name) in PKT_TYPES.iter().enumerate() {
         let off = i * 4;
@@ -1506,12 +1668,7 @@ fn ext_acl_evt_tx_pkt_type(subevent_id: u8, value: &[u8]) {
         if num == 0 {
             continue;
         }
-        print_field!(
-            "Tx {} packets (0x{:02x}): {}",
-            pkt_name,
-            subevent_id,
-            num as i32
-        );
+        print_field!("Tx {} packets (0x{:02x}): {}", pkt_name, subevent_id, num as i32);
     }
 }
 
@@ -1520,11 +1677,7 @@ fn ext_acl_evt_rx_pkt_from_air(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Rx packets (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Rx packets (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_acl_evt_link_throughput(subevent_id: u8, value: &[u8]) {
@@ -1532,11 +1685,7 @@ fn ext_acl_evt_link_throughput(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Link throughput (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Link throughput (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_acl_evt_max_packet_latency(subevent_id: u8, value: &[u8]) {
@@ -1544,11 +1693,7 @@ fn ext_acl_evt_max_packet_latency(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Max packet latency (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Max packet latency (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_acl_evt_avg_packet_latency(subevent_id: u8, value: &[u8]) {
@@ -1556,11 +1701,7 @@ fn ext_acl_evt_avg_packet_latency(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Avg packet latency (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Avg packet latency (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_acl_evt_rssi_moving_avg(subevent_id: u8, value: &[u8]) {
@@ -1623,11 +1764,7 @@ fn ext_acl_evt_tx_rssi_bad_cnt(subevent_id: u8, value: &[u8]) {
 
 fn ext_sco_evt_conn_handle(subevent_id: u8, value: &[u8]) {
     let conn_handle = get_le16(value, 0);
-    print_field!(
-        "SCO/eSCO connection handle (0x{:02x}): 0x{:04x}",
-        subevent_id,
-        conn_handle
-    );
+    print_field!("SCO/eSCO connection handle (0x{:02x}): 0x{:04x}", subevent_id, conn_handle);
 }
 
 fn ext_sco_evt_num_rx_pkt(subevent_id: u8, value: &[u8]) {
@@ -1635,11 +1772,7 @@ fn ext_sco_evt_num_rx_pkt(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Rx packets (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Rx packets (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_sco_evt_num_tx_pkt(subevent_id: u8, value: &[u8]) {
@@ -1647,11 +1780,7 @@ fn ext_sco_evt_num_tx_pkt(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Tx packets (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Tx packets (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_sco_evt_num_rx_pkt_lost(subevent_id: u8, value: &[u8]) {
@@ -1659,11 +1788,7 @@ fn ext_sco_evt_num_rx_pkt_lost(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Rx payload lost (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Rx payload lost (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_sco_evt_num_tx_pkt_lost(subevent_id: u8, value: &[u8]) {
@@ -1671,21 +1796,13 @@ fn ext_sco_evt_num_tx_pkt_lost(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Tx payload lost (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Tx payload lost (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 /// Helper for 5-slot error arrays.
 fn slots_errors(label: &str, subevent_id: u8, value: &[u8]) {
     if value.len() != 5 * 4 {
-        print_text!(
-            COLOR_UNKNOWN_EXT_EVENT,
-            "  Invalid subevent length ({})",
-            value.len()
-        );
+        print_text!(COLOR_UNKNOWN_EXT_EVENT, "  Invalid subevent length ({})", value.len());
         return;
     }
     let s1 = get_le32(value, 0);
@@ -1739,11 +1856,7 @@ fn ext_sco_evt_samples_inserted(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Late samples inserted (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Late samples inserted (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_sco_evt_samples_dropped(subevent_id: u8, value: &[u8]) {
@@ -1751,11 +1864,7 @@ fn ext_sco_evt_samples_dropped(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Samples dropped (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Samples dropped (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_sco_evt_mute_samples(subevent_id: u8, value: &[u8]) {
@@ -1763,11 +1872,7 @@ fn ext_sco_evt_mute_samples(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "Mute samples (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("Mute samples (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 fn ext_sco_evt_plc_injection_data(subevent_id: u8, value: &[u8]) {
@@ -1775,11 +1880,7 @@ fn ext_sco_evt_plc_injection_data(subevent_id: u8, value: &[u8]) {
     if num == 0 {
         return;
     }
-    print_field!(
-        "PLC injection data (0x{:02x}): {}",
-        subevent_id,
-        num as i32
-    );
+    print_field!("PLC injection data (0x{:02x}): {}", subevent_id, num as i32);
 }
 
 // -- Extended telemetry subevent table --------------------------------------
@@ -1840,17 +1941,11 @@ fn process_ext_subevent(data: &[u8], offset: &mut usize, total: usize) -> bool {
     let val_end = val_start + usize::from(length);
 
     // Look up in the table
-    let subevent = INTEL_EXT_SUBEVENT_TABLE
-        .iter()
-        .find(|s| s.subevent_id == subevent_id);
+    let subevent = INTEL_EXT_SUBEVENT_TABLE.iter().find(|s| s.subevent_id == subevent_id);
 
     match subevent {
         None => {
-            print_text!(
-                COLOR_UNKNOWN_EXT_EVENT,
-                "Unknown extended subevent 0x{:02x}",
-                subevent_id
-            );
+            print_text!(COLOR_UNKNOWN_EXT_EVENT, "Unknown extended subevent 0x{:02x}", subevent_id);
             if val_end <= total {
                 print_hexdump(&data[val_start..val_end]);
             }

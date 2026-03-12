@@ -9,4 +9,5 @@
 //! abstractions. It is a complete Rust rewrite of the C sources:
 //! `src/shared/att-types.h`, `src/shared/att.h`, and `src/shared/att.c`.
 
+pub mod transport;
 pub mod types;

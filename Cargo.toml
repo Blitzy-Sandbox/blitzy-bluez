@@ -77,6 +77,7 @@ cmac = { workspace = true }
 ccm = { workspace = true }
 tempfile = "3.15"
 libc = { workspace = true }
+nix = { workspace = true }
 
 [[test]]
 name = "test_gdbus_client"
@@ -113,6 +114,10 @@ path = "tests/unit/test_gobex_apparam.rs"
 [[test]]
 name = "test_crc"
 path = "tests/unit/test_crc.rs"
+
+[[test]]
+name = "test_uhid"
+path = "tests/unit/test_uhid.rs"
 
 [[test]]
 name = "btsnoop_replay_test"

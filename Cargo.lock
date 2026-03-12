@@ -189,6 +189,7 @@ dependencies = [
  "cmac",
  "futures",
  "libc",
+ "nix 0.29.0",
  "obexd",
  "tempfile",
  "tokio",

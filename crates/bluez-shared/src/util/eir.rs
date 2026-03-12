@@ -264,10 +264,11 @@ fn parse_uuid128(data: &[u8]) -> Vec<String> {
     let mut result = Vec::new();
     let mut offset = 0;
     while offset + 16 <= data.len() {
+        // UUID128 in EIR is already in BLE wire format (little-endian),
+        // which matches the internal BtUuid byte layout used by
+        // format_uuid128_bytes. No byte-reversal is needed.
         let mut bytes = [0u8; 16];
-        for k in 0..16 {
-            bytes[k] = data[offset + 16 - k - 1];
-        }
+        bytes.copy_from_slice(&data[offset..offset + 16]);
         let uuid = BtUuid::from_bytes(&bytes);
         result.push(uuid.to_string());
         offset += 16;

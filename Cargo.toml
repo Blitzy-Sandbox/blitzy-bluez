@@ -85,6 +85,10 @@ name = "test_gdbus_client"
 path = "tests/unit/test_gdbus_client.rs"
 
 [[test]]
+name = "test_eir"
+path = "tests/unit/test_eir.rs"
+
+[[test]]
 name = "test_queue"
 path = "tests/unit/test_queue.rs"
 

@@ -69,3 +69,107 @@ pub struct VendorEvt {
 pub fn vendor_event(_manufacturer: u16, data: &[u8]) {
     crate::packet::hexdump(data);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{VendorEvt, VendorOcf, vendor_event};
+
+    fn dummy_cmd(_index: u16, _data: &[u8]) {}
+    fn dummy_rsp(_index: u16, _data: &[u8]) {}
+    fn dummy_evt(_index: u16, _data: &[u8]) {}
+
+    #[test]
+    fn test_vendor_ocf_all_fields() {
+        let ocf = VendorOcf {
+            ocf: 0x0042,
+            name: "TestCommand",
+            cmd_func: dummy_cmd,
+            cmd_size: 10,
+            cmd_fixed: true,
+            rsp_func: dummy_rsp,
+            rsp_size: 5,
+            rsp_fixed: false,
+        };
+        assert_eq!(ocf.ocf, 0x0042);
+        assert_eq!(ocf.name, "TestCommand");
+        assert_eq!(ocf.cmd_size, 10);
+        assert!(ocf.cmd_fixed);
+        assert_eq!(ocf.rsp_size, 5);
+        assert!(!ocf.rsp_fixed);
+    }
+
+    #[test]
+    fn test_vendor_ocf_fn_ptrs_callable() {
+        let ocf = VendorOcf {
+            ocf: 0x01,
+            name: "FnTest",
+            cmd_func: dummy_cmd,
+            cmd_size: 0,
+            cmd_fixed: false,
+            rsp_func: dummy_rsp,
+            rsp_size: 0,
+            rsp_fixed: false,
+        };
+        (ocf.cmd_func)(0, &[]);
+        (ocf.cmd_func)(1, &[0x01, 0x02]);
+        (ocf.rsp_func)(0, &[0xFF]);
+    }
+
+    #[test]
+    fn test_vendor_evt_all_fields() {
+        let evt = VendorEvt {
+            evt: 0x17,
+            name: "TestEvent",
+            evt_func: dummy_evt,
+            evt_size: 3,
+            evt_fixed: false,
+        };
+        assert_eq!(evt.evt, 0x17);
+        assert_eq!(evt.name, "TestEvent");
+        assert_eq!(evt.evt_size, 3);
+        assert!(!evt.evt_fixed);
+    }
+
+    #[test]
+    fn test_vendor_evt_fn_ptr_callable() {
+        let evt = VendorEvt {
+            evt: 0x00,
+            name: "EvtTest",
+            evt_func: dummy_evt,
+            evt_size: 0,
+            evt_fixed: true,
+        };
+        (evt.evt_func)(0, &[]);
+        (evt.evt_func)(0xFFFF, &[0xAA, 0xBB]);
+    }
+
+    #[test]
+    fn test_vendor_event_empty_data() {
+        vendor_event(0x0002, &[]);
+    }
+
+    #[test]
+    fn test_vendor_event_with_data() {
+        vendor_event(0x0002, &[0x01, 0x02, 0x03, 0x04]);
+    }
+
+    #[test]
+    fn test_vendor_event_unknown_manufacturer() {
+        vendor_event(0xFFFF, &[0xAA]);
+    }
+
+    #[test]
+    fn test_intel_submodule_accessible() {
+        let _ = crate::vendor::intel::intel_vendor_ocf(0x001);
+    }
+
+    #[test]
+    fn test_broadcom_submodule_accessible() {
+        let _ = crate::vendor::broadcom::broadcom_vendor_ocf(0x0001);
+    }
+
+    #[test]
+    fn test_msft_submodule_accessible() {
+        let _ = crate::vendor::msft::msft_vendor_ocf();
+    }
+}

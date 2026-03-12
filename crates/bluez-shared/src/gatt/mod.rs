@@ -4,6 +4,7 @@
 // This is a minimal stub for compilation; the full version with re-exports
 // will be created by the mod.rs agent.
 
+pub mod client;
 pub mod db;
 pub mod helpers;
 pub mod server;

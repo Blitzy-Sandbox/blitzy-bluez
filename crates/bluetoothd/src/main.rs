@@ -4,6 +4,7 @@
 pub mod dbus_common;
 pub mod error;
 pub mod plugins;
+pub mod profiles;
 pub mod sdp;
 
 fn main() {

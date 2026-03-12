@@ -516,6 +516,15 @@ impl From<zbus::fdo::Error> for BtdError {
     }
 }
 
+impl From<zbus::Error> for BtdError {
+    fn from(err: zbus::Error) -> Self {
+        match err {
+            zbus::Error::FDO(fdo) => Self::from(*fdo),
+            other => Self::Failed(other.to_string()),
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Errno-to-D-Bus-error mapping functions
 // ---------------------------------------------------------------------------

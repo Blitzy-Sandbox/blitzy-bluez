@@ -120,6 +120,10 @@ name = "test_uhid"
 path = "tests/unit/test_uhid.rs"
 
 [[test]]
+name = "test_uuid"
+path = "tests/unit/test_uuid.rs"
+
+[[test]]
 name = "btsnoop_replay_test"
 path = "tests/integration/btsnoop_replay_test.rs"
 

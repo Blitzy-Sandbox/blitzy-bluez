@@ -14,7 +14,7 @@
 
 // Dissector sub-modules — uncommented as each implementation is created.
 // pub mod l2cap;
-// pub mod att;
+pub mod att;
 pub mod avctp;
 pub mod bnep;
 pub mod rfcomm;

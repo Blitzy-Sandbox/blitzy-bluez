@@ -17,6 +17,10 @@ pub mod provisioning;
 /// network packet encode/decode, privacy obfuscation, FCS computation.
 pub mod crypto;
 
+/// Replay Protection List (RPL) persistence: per-source sequence-number
+/// high-water-marks stored on disk, keyed by IV index.
+pub mod rpl;
+
 fn main() {
     println!("bluetooth-meshd stub");
 }

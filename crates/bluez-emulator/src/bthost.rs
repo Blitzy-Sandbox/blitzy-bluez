@@ -151,6 +151,10 @@ fn rfcomm_fcs3(d: &[u8]) -> u8 {
 // SMP trait
 // ---------------------------------------------------------------------------
 /// Security Manager Protocol operations required by BtHost.
+///
+/// SmpManager implementations buffer their output actions (send packets, start
+/// encryption) internally.  After each method call, BtHost drains the actions
+/// via [`SmpManager::take_actions`] and executes them.
 pub trait SmpManager: Send + Sync {
     fn conn_add(
         &mut self,
@@ -167,6 +171,21 @@ pub trait SmpManager: Send + Sync {
     fn bredr_data(&mut self, handle: u16, data: &[u8]);
     fn get_ltk(&self, handle: u16) -> Option<[u8; 16]>;
     fn pair(&mut self, handle: u16, io_cap: u8, auth_req: u8);
+
+    /// Drain buffered output actions produced by the last method call.
+    fn take_actions(&mut self) -> Vec<crate::smp::SmpAction>;
+
+    /// Update the IO capability setting (mirrored from BtHost).
+    fn set_io_capability(&mut self, _cap: u8) {}
+
+    /// Update the auth requirement setting (mirrored from BtHost).
+    fn set_auth_req(&mut self, _req: u8) {}
+
+    /// Update the BR/EDR capable flag (mirrored from BtHost).
+    fn set_bredr_capable(&mut self, _capable: bool) {}
+
+    /// Update the fixed channel bitmap for a connection.
+    fn set_conn_fixed_chan(&mut self, _handle: u16, _fixed_chan: u64) {}
 }
 struct NoopSmpManager;
 impl SmpManager for NoopSmpManager {
@@ -179,6 +198,9 @@ impl SmpManager for NoopSmpManager {
         None
     }
     fn pair(&mut self, _: u16, _: u8, _: u8) {}
+    fn take_actions(&mut self) -> Vec<crate::smp::SmpAction> {
+        Vec::new()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -414,6 +436,17 @@ impl BtHost {
         self.iso_cb = Some(Box::new(cb));
     }
 
+    /// Install a custom SMP manager, replacing the default no-op.
+    ///
+    /// The manager receives the current IO capability, auth requirements, and
+    /// BR/EDR capability state so it can mirror BtHost settings.
+    pub fn set_smp_manager(&mut self, mut mgr: Box<dyn SmpManager>) {
+        mgr.set_io_capability(self.io_capability);
+        mgr.set_auth_req(self.auth_req);
+        mgr.set_bredr_capable(self.bredr_capable());
+        self.smp = mgr;
+    }
+
     // -----------------------------------------------------------------------
     // Internal packet send helpers
     // -----------------------------------------------------------------------
@@ -442,6 +475,24 @@ impl BtHost {
             self.ncmd -= 1;
         } else {
             self.cmd_queue.push_back(Cmd { data: buf });
+        }
+    }
+
+    /// Drain buffered SMP actions and execute them on this BtHost.
+    ///
+    /// This method must be called after every SmpManager method call that can
+    /// produce output (conn_encrypted, data, bredr_data, pair, conn_add).
+    fn drain_smp_actions(&mut self) {
+        let actions = self.smp.take_actions();
+        for action in actions {
+            match action {
+                crate::smp::SmpAction::SendCidV { handle, cid, data } => {
+                    self.send_cid_v(handle, cid, &[IoSlice::new(&data)]);
+                }
+                crate::smp::SmpAction::LeStartEncrypt { handle, ltk } => {
+                    self.le_start_encrypt(handle, &ltk);
+                }
+            }
         }
     }
 
@@ -695,6 +746,7 @@ impl BtHost {
             op if op == opcode(OGF_INFO_PARAM, OCF_READ_LOCAL_FEATURES) => {
                 if params.len() >= 9 {
                     self.features.copy_from_slice(&params[1..9]);
+                    self.smp.set_bredr_capable(self.bredr_capable());
                 }
             }
             op if op == opcode(OGF_INFO_PARAM, OCF_READ_BD_ADDR) => {
@@ -790,6 +842,7 @@ impl BtHost {
             let ia = self.bdaddr;
             let ia_type = if self.conn_init { BDADDR_LE_PUBLIC } else { addr_type };
             self.smp.conn_add(handle, &ia, ia_type, &remote_addr, addr_type, false);
+            self.drain_smp_actions();
         }
         if let Some(ref cb) = self.connect_cb {
             cb(handle);
@@ -866,6 +919,7 @@ impl BtHost {
             conn.encr_mode = encr;
         }
         self.smp.conn_encrypted(handle, encr);
+        self.drain_smp_actions();
     }
 
     fn evt_io_capability_request(&mut self, data: &[u8]) {
@@ -1348,9 +1402,11 @@ impl BtHost {
             L2CAP_CID_LE_SIG => self.l2cap_sig(handle, true, payload),
             L2CAP_CID_SMP => {
                 self.smp.data(handle, payload);
+                self.drain_smp_actions();
             }
             L2CAP_CID_SMP_BREDR => {
                 self.smp.bredr_data(handle, payload);
+                self.drain_smp_actions();
             }
             _ => self.process_l2cap_cid(handle, cid, payload),
         }
@@ -1662,6 +1718,7 @@ impl BtHost {
                 if let Some(conn) = self.connections.get_mut(&handle) {
                     conn.fixed_chan = fc;
                 }
+                self.smp.set_conn_fixed_chan(handle, fc);
             }
             _ => {
                 // Not supported
@@ -1692,11 +1749,13 @@ impl BtHost {
             if let Some(conn) = self.connections.get_mut(&handle) {
                 conn.fixed_chan = fc;
             }
+            self.smp.set_conn_fixed_chan(handle, fc);
             // If SMP over BR/EDR is supported, init
             if fc & L2CAP_FC_SMP_BREDR != 0 {
                 let ia = self.bdaddr;
                 let remote_addr = self.connections.get(&handle).map(|c| c.addr).unwrap_or([0u8; 6]);
                 self.smp.conn_add(handle, &ia, BDADDR_BREDR, &remote_addr, BDADDR_BREDR, true);
+                self.drain_smp_actions();
             }
         }
     }
@@ -2712,9 +2771,10 @@ impl BtHost {
         }
     }
 
-    /// Set IO capability for SSP.
+    /// Set IO capability for SSP.  Also mirrors the value to the SMP manager.
     pub fn set_io_capability(&mut self, cap: u8) {
         self.io_capability = cap;
+        self.smp.set_io_capability(cap);
     }
 
     /// Get current IO capability.
@@ -2722,9 +2782,10 @@ impl BtHost {
         self.io_capability
     }
 
-    /// Set authentication requirements for SSP.
+    /// Set authentication requirements for SSP.  Also mirrors to SMP manager.
     pub fn set_auth_req(&mut self, req: u8) {
         self.auth_req = req;
+        self.smp.set_auth_req(req);
     }
 
     /// Get current authentication requirements.

@@ -37,3 +37,9 @@ pub mod serial;
 /// connection creates a [`btdev::BtDev`] virtual controller with an async
 /// read loop and a non-blocking send handler.
 pub mod server;
+
+/// Security Manager Protocol (SMP) pairing emulation — implements the SMP
+/// state machine for LE and BR/EDR fixed-channel pairing. Supports legacy
+/// pairing (c1/s1 functions) and Secure Connections pairing (ECC keygen,
+/// ECDH, f4/f5/f6 crypto). Replaces `emulator/smp.c`.
+pub mod smp;

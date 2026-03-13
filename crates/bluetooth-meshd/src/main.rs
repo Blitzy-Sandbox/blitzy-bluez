@@ -38,6 +38,10 @@ pub mod dbus;
 /// SNB/MPB beacons, and schedules beacon transmission through mesh I/O.
 pub mod net_keys;
 
+/// Keyring persistence: stores NetKeys, AppKeys, and remote DevKeys on disk
+/// in C-compatible binary format, and builds the D-Bus ExportKeys reply.
+pub mod keyring;
+
 fn main() {
     println!("bluetooth-meshd stub");
 }

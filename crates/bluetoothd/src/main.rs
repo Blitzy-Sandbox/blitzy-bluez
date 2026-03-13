@@ -7,6 +7,7 @@ pub mod error;
 pub mod gatt;
 pub mod legacy_gatt;
 pub mod log;
+pub mod plugin;
 pub mod plugins;
 pub mod profiles;
 pub mod sdp;

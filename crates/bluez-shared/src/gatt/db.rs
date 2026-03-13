@@ -462,6 +462,12 @@ impl GattDb {
         }
     }
 
+    /// Returns `true` if `self` and `other` refer to the same underlying database
+    /// (i.e., they are clones sharing the same `Arc` allocation).
+    pub fn ptr_eq(&self, other: &GattDb) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
     /// Returns `true` if the database contains no services.
     pub fn is_empty(&self) -> bool {
         let inner = self.inner.lock().unwrap();

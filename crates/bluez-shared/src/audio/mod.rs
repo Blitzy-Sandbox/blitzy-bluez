@@ -8,3 +8,4 @@
 
 pub mod asha;
 pub mod gmap;
+pub mod tmap;

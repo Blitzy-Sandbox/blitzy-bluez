@@ -93,7 +93,14 @@ pub enum VhciError {
         "invalid VHCI create response: expected pkt_type=0xff opcode={expected_opcode:#04x}, \
          got pkt_type={actual_pkt_type:#04x} opcode={actual_opcode:#04x}"
     )]
-    InvalidResponse { expected_opcode: u8, actual_pkt_type: u8, actual_opcode: u8 },
+    InvalidResponse {
+        /// The expected opcode in the VHCI response.
+        expected_opcode: u8,
+        /// The actual packet type received.
+        actual_pkt_type: u8,
+        /// The actual opcode received.
+        actual_opcode: u8,
+    },
 
     /// Failed to create `AsyncFd` for the VHCI file descriptor.
     #[error("failed to create AsyncFd: {0}")]
@@ -105,7 +112,12 @@ pub enum VhciError {
 
     /// A debugfs file operation failed.
     #[error("debugfs operation failed on '{path}': {source}")]
-    Debugfs { path: String, source: std::io::Error },
+    Debugfs {
+        /// The debugfs file path that was being accessed.
+        path: String,
+        /// The underlying I/O error.
+        source: std::io::Error,
+    },
 
     /// No devcoredump entry found in sysfs.
     #[error("devcoredump entry not found in {0}")]

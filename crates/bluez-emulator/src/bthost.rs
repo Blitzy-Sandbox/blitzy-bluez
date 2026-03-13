@@ -156,6 +156,7 @@ fn rfcomm_fcs3(d: &[u8]) -> u8 {
 /// encryption) internally.  After each method call, BtHost drains the actions
 /// via [`SmpManager::take_actions`] and executes them.
 pub trait SmpManager: Send + Sync {
+    /// Register a new SMP connection for the given ACL handle.
     fn conn_add(
         &mut self,
         handle: u16,
@@ -165,11 +166,17 @@ pub trait SmpManager: Send + Sync {
         ra_type: u8,
         smp_over_bredr: bool,
     );
+    /// Remove the SMP connection associated with the given ACL handle.
     fn conn_del(&mut self, handle: u16);
+    /// Notify SMP that the link for the given handle has been encrypted.
     fn conn_encrypted(&mut self, handle: u16, encrypt: u8);
+    /// Process incoming SMP data on the LE fixed channel for the given handle.
     fn data(&mut self, handle: u16, data: &[u8]);
+    /// Process incoming SMP data on the BR/EDR fixed channel for the given handle.
     fn bredr_data(&mut self, handle: u16, data: &[u8]);
+    /// Retrieve the Long Term Key (LTK) for the given handle, if available.
     fn get_ltk(&self, handle: u16) -> Option<[u8; 16]>;
+    /// Initiate SMP pairing on the given handle with the specified IO capability and auth requirements.
     fn pair(&mut self, handle: u16, io_cap: u8, auth_req: u8);
 
     /// Drain buffered output actions produced by the last method call.
@@ -405,33 +412,41 @@ impl BtHost {
         self.send_handler = Some(Box::new(handler));
     }
 
+    /// Set the ACL data maximum transmission unit size.
     pub fn set_acl_mtu(&mut self, mtu: u16) {
         self.acl_mtu = mtu;
     }
+    /// Set the ISO data maximum transmission unit size.
     pub fn set_iso_mtu(&mut self, mtu: u16) {
         self.iso_mtu = mtu;
     }
 
+    /// Set the debug logging callback.
     pub fn set_debug(&mut self, callback: impl Fn(&str) + Send + Sync + 'static) {
         self.debug_callback = Some(Box::new(callback));
     }
 
+    /// Register a callback invoked once the host is ready after initialization.
     pub fn notify_ready(&mut self, cb: impl FnOnce() + Send + 'static) {
         self.ready_cb = Some(Box::new(cb));
     }
 
+    /// Set the callback invoked when an HCI command complete event is received.
     pub fn set_cmd_complete_cb(&mut self, cb: impl Fn(u16, u8, &[u8]) + Send + Sync + 'static) {
         self.cmd_complete_cb = Some(Box::new(cb));
     }
 
+    /// Set the callback invoked when a new ACL connection is established.
     pub fn set_connect_cb(&mut self, cb: impl Fn(u16) + Send + Sync + 'static) {
         self.connect_cb = Some(Box::new(cb));
     }
 
+    /// Set the callback invoked when a new SCO connection is established.
     pub fn set_sco_cb(&mut self, cb: impl Fn(u16) + Send + Sync + 'static) {
         self.sco_cb = Some(Box::new(cb));
     }
 
+    /// Set the callback invoked when a new ISO connection is established.
     pub fn set_iso_cb(&mut self, cb: impl Fn(u16) + Send + Sync + 'static) {
         self.iso_cb = Some(Box::new(cb));
     }

@@ -51,9 +51,21 @@ pub enum SmpError {
 #[derive(Debug)]
 pub enum SmpAction {
     /// Send data on a specific L2CAP CID.
-    SendCidV { handle: u16, cid: u16, data: Vec<u8> },
+    SendCidV {
+        /// ACL connection handle.
+        handle: u16,
+        /// L2CAP channel identifier.
+        cid: u16,
+        /// Payload data to send.
+        data: Vec<u8>,
+    },
     /// Initiate LE encryption with the given LTK.
-    LeStartEncrypt { handle: u16, ltk: [u8; 16] },
+    LeStartEncrypt {
+        /// ACL connection handle.
+        handle: u16,
+        /// Long Term Key for encryption.
+        ltk: [u8; 16],
+    },
 }
 
 // ---------------------------------------------------------------------------

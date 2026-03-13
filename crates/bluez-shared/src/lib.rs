@@ -17,4 +17,5 @@ pub mod mgmt;
 pub mod profiles;
 pub mod socket;
 pub mod sys;
+pub mod tester;
 pub mod util;

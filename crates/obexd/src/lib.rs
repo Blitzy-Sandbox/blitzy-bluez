@@ -10,3 +10,4 @@
 //! The binary entry point remains in `main.rs`.
 
 pub mod obex;
+pub mod server;

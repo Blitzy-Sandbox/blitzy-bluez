@@ -509,6 +509,33 @@ pub fn eir_parse_oob(data: &[u8]) -> Result<EirData, OobParseError> {
 // Public API — Generation
 // ============================================================================
 
+/// Parameters for OOB (Out-Of-Band) pairing data generation.
+///
+/// Groups the device identity, security, and service information needed to build
+/// an OOB data blob.
+pub struct EirOobParams<'a> {
+    /// BD_ADDR (6 bytes, LSB first).
+    pub addr: &'a [u8; 6],
+    /// Device name (truncated to 48 bytes if longer).
+    pub name: Option<&'a str>,
+    /// Class of Device (0 means omitted).
+    pub cod: u32,
+    /// SSP Hash C-192 (16 bytes) or `None`.
+    pub hash: Option<&'a [u8]>,
+    /// SSP Randomizer R-192 (16 bytes) or `None`.
+    pub randomizer: Option<&'a [u8]>,
+    /// Device ID vendor (0 means no Device ID entry).
+    pub did_vendor: u16,
+    /// Device ID product.
+    pub did_product: u16,
+    /// Device ID version.
+    pub did_version: u16,
+    /// Device ID source.
+    pub did_source: u16,
+    /// Service UUID strings to include.
+    pub uuids: &'a [String],
+}
+
 /// Generate OOB (Out-Of-Band) pairing data from the given device parameters.
 ///
 /// Builds a complete OOB data blob containing the BD_ADDR, optional EIR fields
@@ -516,33 +543,19 @@ pub fn eir_parse_oob(data: &[u8]) -> Result<EirData, OobParseError> {
 /// (both UUID16 and UUID128 entries). The output format matches the C
 /// `eir_create_oob` function byte-for-byte.
 ///
-/// # Arguments
-/// * `addr` — BD_ADDR (6 bytes, LSB first)
-/// * `name` — Device name (truncated to 48 bytes if longer)
-/// * `cod` — Class of Device (0 means omitted)
-/// * `hash` — SSP Hash C-192 (16 bytes) or `None`
-/// * `randomizer` — SSP Randomizer R-192 (16 bytes) or `None`
-/// * `did_vendor` — Device ID vendor (0 means no Device ID entry)
-/// * `did_product` — Device ID product
-/// * `did_version` — Device ID version
-/// * `did_source` — Device ID source
-/// * `uuids` — Service UUID strings to include
-///
 /// # Returns
 /// Complete OOB data as a `Vec<u8>` with the length field at bytes 0-1.
-#[allow(clippy::too_many_arguments)]
-pub fn eir_create_oob(
-    addr: &[u8; 6],
-    name: Option<&str>,
-    cod: u32,
-    hash: Option<&[u8]>,
-    randomizer: Option<&[u8]>,
-    did_vendor: u16,
-    did_product: u16,
-    did_version: u16,
-    did_source: u16,
-    uuids: &[String],
-) -> Vec<u8> {
+pub fn eir_create_oob(params: &EirOobParams<'_>) -> Vec<u8> {
+    let addr = params.addr;
+    let name = params.name;
+    let cod = params.cod;
+    let hash = params.hash;
+    let randomizer = params.randomizer;
+    let did_vendor = params.did_vendor;
+    let did_product = params.did_product;
+    let did_version = params.did_version;
+    let did_source = params.did_source;
+    let uuids = params.uuids;
     let mut buf: Vec<u8> = Vec::with_capacity(2 + 6 + HCI_MAX_EIR_LENGTH);
 
     // Reserve 2 bytes for total length (filled at the end).

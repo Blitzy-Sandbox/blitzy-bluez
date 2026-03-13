@@ -33,6 +33,7 @@
 // ---------------------------------------------------------------------------
 
 pub mod ad;
+pub mod crc;
 pub mod eir;
 pub mod endian;
 pub mod queue;
@@ -84,6 +85,12 @@ pub use self::endian::{
 pub use self::uuid::{
     bt_appear_to_str, bt_uuid16_to_str, bt_uuid32_to_str, bt_uuid128_to_str, bt_uuidstr_to_str,
 };
+
+// ---------------------------------------------------------------------------
+// Re-exports — CRC-24 functions
+// ---------------------------------------------------------------------------
+
+pub use self::crc::{crc24_bit_reverse, crc24_calculate, crc24_reverse};
 
 // ---------------------------------------------------------------------------
 // Tests — Verify re-exports are accessible and functional

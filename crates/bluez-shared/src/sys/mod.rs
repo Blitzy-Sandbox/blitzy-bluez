@@ -120,3 +120,52 @@ pub use hci::sockaddr_hci;
 
 pub use mgmt::mgmt_addr_info;
 pub use mgmt::mgmt_hdr;
+
+// ---------------------------------------------------------------------------
+// POSIX Time Helper — safe wrapper for localtime_r
+// ---------------------------------------------------------------------------
+
+/// Broken-down local time components extracted from a Unix timestamp.
+///
+/// Fields mirror the relevant members of `libc::tm` but are returned as
+/// safe Rust types so callers outside `sys/` never need `unsafe`.
+#[derive(Debug, Clone, Copy)]
+pub struct LocalTime {
+    /// Year (e.g. 2024).
+    pub year: i32,
+    /// Month (1-based, 1 = January).
+    pub month: u8,
+    /// Day of month (1-based).
+    pub day: u8,
+    /// Hour (0–23).
+    pub hour: i32,
+    /// Minute (0–59).
+    pub minute: i32,
+    /// Second (0–60, 60 for leap second).
+    pub second: i32,
+}
+
+/// Convert a Unix timestamp (seconds since epoch) to local time components.
+///
+/// This is a safe wrapper around POSIX `localtime_r`, confined to the `sys/`
+/// FFI boundary module per AAP Section 0.7.4.
+#[allow(unsafe_code)]
+pub fn localtime_from_unix(unix_secs: i64) -> LocalTime {
+    let t: libc::time_t = unix_secs;
+    // SAFETY: `localtime_r` is a POSIX-mandated thread-safe function that
+    // writes the broken-down local time into a caller-provided `libc::tm`.
+    // Both `t` and `tm` are valid stack-local variables for the duration
+    // of the call.  The returned pointer (ignored here) aliases `&mut tm`.
+    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::localtime_r(&t, &mut tm);
+    }
+    LocalTime {
+        year: 1900 + tm.tm_year,
+        month: (tm.tm_mon + 1) as u8,
+        day: tm.tm_mday as u8,
+        hour: tm.tm_hour,
+        minute: tm.tm_min,
+        second: tm.tm_sec,
+    }
+}

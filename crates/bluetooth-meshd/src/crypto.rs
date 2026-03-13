@@ -28,8 +28,7 @@ const CTL: u8 = 0x80;
 const TTL_MASK: u8 = 0x7f;
 
 /// 24-bit sequence number mask (kept for API compatibility; used by callers).
-#[allow(dead_code)]
-const SEQ_MASK: u32 = 0x00FF_FFFF;
+const _SEQ_MASK: u32 = 0x00FF_FFFF;
 
 /// Application key aid value indicating a device key.
 const APP_AID_DEV: u8 = 0x00;
@@ -65,8 +64,7 @@ const SEGO_HDR_SHIFT: u32 = 5;
 const SEGN_HDR_SHIFT: u32 = 0;
 
 /// Relay bit position in the nonce (kept for API compatibility; used by callers).
-#[allow(dead_code)]
-const RELAY: u8 = 0x80;
+const _RELAY: u8 = 0x80;
 
 /// Bit shift for the relay flag in header word.
 const RELAY_HDR_SHIFT: u32 = 23;
@@ -872,26 +870,46 @@ pub fn mesh_crypto_network_clarify(
 // Packet Build / Parse
 // ===========================================================================
 
+/// Parameters for building a mesh network PDU.
+pub struct MeshPacketBuildParams<'a> {
+    /// Control message flag.
+    pub ctl: bool,
+    /// Time-to-live (7 bits).
+    pub ttl: u8,
+    /// Sequence number (24-bit).
+    pub seq: u32,
+    /// Source address.
+    pub src: u16,
+    /// Destination address.
+    pub dst: u16,
+    /// Transport opcode (for control messages) or zero.
+    pub opcode: u8,
+    /// Whether the payload is segmented.
+    pub segmented: bool,
+    /// Application key AID (0 for device key).
+    pub key_aid: u8,
+    /// Size of MIC indicator.
+    pub szmic: bool,
+    /// Relay flag.
+    pub relay: bool,
+    /// Sequence zero (13 bits).
+    pub seq_zero: u16,
+    /// Segment offset.
+    pub seg_o: u8,
+    /// Last segment number.
+    pub seg_n: u8,
+    /// Upper transport payload bytes.
+    pub payload: &'a [u8],
+}
+
 /// Build a raw mesh network PDU.
 ///
 /// Returns `(packet_data, packet_length)` on success.
-#[allow(clippy::too_many_arguments)]
-pub fn mesh_crypto_packet_build(
-    ctl: bool,
-    ttl: u8,
-    seq: u32,
-    src: u16,
-    dst: u16,
-    opcode: u8,
-    segmented: bool,
-    key_aid: u8,
-    szmic: bool,
-    relay: bool,
-    seq_zero: u16,
-    seg_o: u8,
-    seg_n: u8,
-    payload: &[u8],
-) -> Option<(Vec<u8>, u8)> {
+pub fn mesh_crypto_packet_build(params: &MeshPacketBuildParams<'_>) -> Option<(Vec<u8>, u8)> {
+    let MeshPacketBuildParams {
+        ctl, ttl, seq, src, dst, opcode, segmented, key_aid,
+        szmic, relay, seq_zero, seg_o, seg_n, payload,
+    } = *params;
     let mut packet = vec![0u8; 29 + payload.len()];
 
     packet[1] = if ctl { CTL | (ttl & TTL_MASK) } else { ttl & TTL_MASK };
@@ -1055,22 +1073,43 @@ pub fn mesh_crypto_packet_parse(packet: &[u8]) -> Option<PacketFields> {
 // Payload Encrypt / Decrypt
 // ===========================================================================
 
+/// Parameters for mesh payload encryption.
+pub struct MeshPayloadEncryptParams<'a> {
+    /// Additional authenticated data.
+    pub aad: Option<&'a [u8]>,
+    /// Plaintext payload.
+    pub payload: &'a [u8],
+    /// Output buffer (must be large enough for payload + MIC).
+    pub out: &'a mut [u8],
+    /// Source address.
+    pub src: u16,
+    /// Destination address.
+    pub dst: u16,
+    /// Application key AID (0 for device key).
+    pub key_aid: u8,
+    /// Sequence number.
+    pub seq: u32,
+    /// IV index.
+    pub iv_index: u32,
+    /// Size of MIC indicator.
+    pub aszmic: bool,
+    /// Application or device key.
+    pub app_key: &'a [u8; 16],
+}
+
 /// Encrypt a mesh application/device payload.
-#[allow(clippy::too_many_arguments)]
-pub fn mesh_crypto_payload_encrypt(
-    aad: Option<&[u8]>,
-    payload: &[u8],
-    out: &mut [u8],
-    src: u16,
-    dst: u16,
-    key_aid: u8,
-    seq: u32,
-    iv_index: u32,
-    aszmic: bool,
-    app_key: &[u8; 16],
-) -> bool {
+pub fn mesh_crypto_payload_encrypt(params: &mut MeshPayloadEncryptParams<'_>) -> bool {
+    let aad = params.aad;
+    let payload = params.payload;
+    let src = params.src;
+    let dst = params.dst;
+    let key_aid = params.key_aid;
+    let seq = params.seq;
+    let iv_index = params.iv_index;
+    let aszmic = params.aszmic;
+    let app_key = params.app_key;
     let mic_size: usize = if aszmic { 8 } else { 4 };
-    if out.len() < payload.len() + mic_size {
+    if params.out.len() < payload.len() + mic_size {
         return false;
     }
     let nonce = if key_aid == APP_AID_DEV {
@@ -1078,39 +1117,50 @@ pub fn mesh_crypto_payload_encrypt(
     } else {
         mesh_crypto_application_nonce(seq, src, dst, iv_index, aszmic)
     };
-    mesh_crypto_aes_ccm_encrypt(&nonce, app_key, aad, payload, out, mic_size)
+    mesh_crypto_aes_ccm_encrypt(&nonce, app_key, aad, payload, params.out, mic_size)
+}
+
+/// Parameters for mesh payload decryption.
+pub struct MeshPayloadDecryptParams<'a> {
+    /// Additional authenticated data.
+    pub aad: Option<&'a [u8]>,
+    /// Ciphertext payload (including MIC).
+    pub payload: &'a [u8],
+    /// Size of MIC indicator.
+    pub aszmic: bool,
+    /// Source address.
+    pub src: u16,
+    /// Destination address.
+    pub dst: u16,
+    /// Application key AID (0 for device key).
+    pub key_aid: u8,
+    /// Sequence number.
+    pub seq: u32,
+    /// IV index.
+    pub iv_index: u32,
+    /// Output buffer for decrypted plaintext.
+    pub out: &'a mut [u8],
+    /// Application or device key.
+    pub app_key: &'a [u8; 16],
 }
 
 /// Decrypt a mesh application/device payload.
-#[allow(clippy::too_many_arguments)]
-pub fn mesh_crypto_payload_decrypt(
-    aad: Option<&[u8]>,
-    _aad_len: u16,
-    payload: &[u8],
-    aszmic: bool,
-    src: u16,
-    dst: u16,
-    key_aid: u8,
-    seq: u32,
-    iv_index: u32,
-    out: &mut [u8],
-    app_key: &[u8; 16],
-) -> bool {
-    let mic_size: usize = if aszmic { 8 } else { 4 };
-    if payload.len() < mic_size {
+pub fn mesh_crypto_payload_decrypt(params: &mut MeshPayloadDecryptParams<'_>) -> bool {
+    let mic_size: usize = if params.aszmic { 8 } else { 4 };
+    if params.payload.len() < mic_size {
         return false;
     }
-    let pt_len = payload.len() - mic_size;
-    if out.len() < pt_len {
+    let pt_len = params.payload.len() - mic_size;
+    if params.out.len() < pt_len {
         return false;
     }
-    let nonce = if key_aid == APP_AID_DEV {
-        mesh_crypto_device_nonce(seq, src, dst, iv_index, aszmic)
+    let nonce = if params.key_aid == APP_AID_DEV {
+        mesh_crypto_device_nonce(params.seq, params.src, params.dst, params.iv_index, params.aszmic)
     } else {
-        mesh_crypto_application_nonce(seq, src, dst, iv_index, aszmic)
+        mesh_crypto_application_nonce(params.seq, params.src, params.dst, params.iv_index, params.aszmic)
     };
     let mut mic_buf = [0u8; 8];
-    mesh_crypto_aes_ccm_decrypt(&nonce, app_key, aad, payload, out, &mut mic_buf, mic_size)
+    mesh_crypto_aes_ccm_decrypt(&nonce, params.app_key, params.aad, params.payload, params.out, &mut mic_buf, mic_size)
 }
 
 // ===========================================================================

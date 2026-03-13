@@ -502,6 +502,7 @@ fn bt_setsockopt_bytes(fd: RawFd, level: libc::c_int, name: libc::c_int, val: &[
 
 /// Typed `getsockopt` wrapper.
 fn bt_getsockopt<T: Copy>(fd: RawFd, level: libc::c_int, name: libc::c_int) -> Result<T> {
+    // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer/array types.
     let mut val: T = unsafe { mem::zeroed() };
     let mut len = mem::size_of::<T>() as libc::socklen_t;
     // SAFETY: zeroed buffer of correct size; kernel writes at most size_of::<T>().
@@ -528,6 +529,7 @@ fn bt_getsockopt_bytes(
 
 /// Typed `getsockname`.
 fn bt_getsockname<T: Copy>(fd: RawFd) -> Result<T> {
+    // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer/array types.
     let mut addr: T = unsafe { mem::zeroed() };
     let mut len = mem::size_of::<T>() as libc::socklen_t;
     // SAFETY: zeroed buffer of correct size.
@@ -538,6 +540,7 @@ fn bt_getsockname<T: Copy>(fd: RawFd) -> Result<T> {
 
 /// Typed `getpeername`.
 fn bt_getpeername<T: Copy>(fd: RawFd) -> Result<T> {
+    // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer/array types.
     let mut addr: T = unsafe { mem::zeroed() };
     let mut len = mem::size_of::<T>() as libc::socklen_t;
     // SAFETY: zeroed buffer of correct size.
@@ -559,11 +562,159 @@ fn bt_so_error(fd: RawFd) -> Result<i32> {
 }
 
 // ===========================================================================
+// Public safe socket-option helpers (used by att/transport.rs and others)
+// ===========================================================================
+
+/// Query a raw integer socket option (safe wrapper for `getsockopt`).
+///
+/// This is a public, safe API for use by other crate modules (e.g.,
+/// `att/transport.rs`) that need to query integer-typed socket options
+/// without duplicating unsafe `getsockopt` calls.
+pub fn bt_sockopt_get_int(
+    fd: RawFd,
+    level: libc::c_int,
+    optname: libc::c_int,
+) -> io::Result<i32> {
+    let mut val: libc::c_int = 0;
+    let mut len: libc::socklen_t = mem::size_of::<libc::c_int>() as libc::socklen_t;
+    // SAFETY: `fd` is a valid open socket descriptor; `val` is a properly
+    // aligned c_int buffer with `len` set to its size.
+    let ret = unsafe {
+        libc::getsockopt(
+            fd,
+            level,
+            optname,
+            (&raw mut val).cast::<libc::c_void>(),
+            &raw mut len,
+        )
+    };
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(val) }
+}
+
+/// Set a raw integer socket option (safe wrapper for `setsockopt`).
+///
+/// Public, safe API for use by other crate modules that need to set
+/// integer-typed socket options without duplicating unsafe code.
+pub fn bt_sockopt_set_int(
+    fd: RawFd,
+    level: libc::c_int,
+    optname: libc::c_int,
+    val: libc::c_int,
+) -> io::Result<()> {
+    let len: libc::socklen_t = mem::size_of::<libc::c_int>() as libc::socklen_t;
+    // SAFETY: `fd` is a valid open socket; `val` points to a single c_int.
+    let ret = unsafe {
+        libc::setsockopt(
+            fd,
+            level,
+            optname,
+            (&raw const val).cast::<libc::c_void>(),
+            len,
+        )
+    };
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
+}
+
+/// Get the `bt_security` structure for a Bluetooth socket.
+///
+/// Safe wrapper around `getsockopt(SOL_BLUETOOTH, BT_SECURITY)`.
+pub fn bt_sockopt_get_security(fd: RawFd) -> io::Result<bt_security> {
+    let mut sec = bt_security { level: 0, key_size: 0 };
+    let mut len: libc::socklen_t = mem::size_of::<bt_security>() as libc::socklen_t;
+    // SAFETY: fd is a valid Bluetooth socket; sec is properly sized.
+    let ret = unsafe {
+        libc::getsockopt(
+            fd,
+            SOL_BLUETOOTH,
+            BT_SECURITY,
+            (&raw mut sec).cast::<libc::c_void>(),
+            &raw mut len,
+        )
+    };
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(sec) }
+}
+
+/// Set the `bt_security` structure on a Bluetooth socket.
+///
+/// Safe wrapper around `setsockopt(SOL_BLUETOOTH, BT_SECURITY)`.
+pub fn bt_sockopt_set_security(fd: RawFd, sec: &bt_security) -> io::Result<()> {
+    let len: libc::socklen_t = mem::size_of::<bt_security>() as libc::socklen_t;
+    // SAFETY: fd is a valid Bluetooth socket; sec is properly sized.
+    let ret = unsafe {
+        libc::setsockopt(
+            fd,
+            SOL_BLUETOOTH,
+            BT_SECURITY,
+            (sec as *const bt_security).cast::<libc::c_void>(),
+            len,
+        )
+    };
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
+}
+
+/// Get the L2CAP options (for MTU query) on a Bluetooth socket.
+///
+/// Safe wrapper around `getsockopt(SOL_L2CAP, L2CAP_OPTIONS)`.
+pub fn bt_sockopt_get_l2cap_options(fd: RawFd) -> io::Result<l2cap_options> {
+    // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer types.
+    let mut opts: l2cap_options = unsafe { mem::zeroed() };
+    let mut len: libc::socklen_t = mem::size_of::<l2cap_options>() as libc::socklen_t;
+    // SAFETY: fd is a valid L2CAP socket; opts is properly sized.
+    let ret = unsafe {
+        libc::getsockopt(
+            fd,
+            SOL_L2CAP,
+            L2CAP_OPTIONS,
+            (&raw mut opts).cast::<libc::c_void>(),
+            &raw mut len,
+        )
+    };
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(opts) }
+}
+
+/// Retrieve the local socket address as `sockaddr_l2`.
+///
+/// Safe wrapper around `getsockname(2)` for L2CAP sockets.
+pub fn bt_getsockname_l2(fd: RawFd) -> io::Result<sockaddr_l2> {
+    // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer/array types.
+    let mut addr: sockaddr_l2 = unsafe { mem::zeroed() };
+    let mut len: libc::socklen_t = mem::size_of::<sockaddr_l2>() as libc::socklen_t;
+    // SAFETY: fd is a valid L2CAP socket; addr is properly sized.
+    let ret = unsafe {
+        libc::getsockname(
+            fd,
+            (&raw mut addr).cast::<libc::sockaddr>(),
+            &raw mut len,
+        )
+    };
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(addr) }
+}
+
+/// Set `SO_PRIORITY` on a raw file descriptor.
+///
+/// Safe wrapper for `setsockopt(SOL_SOCKET, SO_PRIORITY)`.
+pub fn bt_sockopt_set_priority(fd: RawFd, priority: i32) -> io::Result<()> {
+    bt_sockopt_set_int(fd, libc::SOL_SOCKET, libc::SO_PRIORITY, priority)
+}
+
+/// Write data to a raw file descriptor using `writev` (scatter-gather).
+///
+/// Safe wrapper around `nix::sys::uio::writev` that encapsulates the
+/// `BorrowedFd::borrow_raw` unsafe call.
+pub fn bt_writev(fd: RawFd, data: &[io::IoSlice<'_>]) -> io::Result<usize> {
+    // SAFETY: The caller guarantees `fd` is a valid, open file descriptor
+    // obtained from a BluetoothSocket or similar owner that keeps it alive.
+    let borrowed = unsafe { std::os::fd::BorrowedFd::borrow_raw(fd) };
+    nix::sys::uio::writev(borrowed, data).map_err(|e| io::Error::from_raw_os_error(e as i32))
+}
+
+// ===========================================================================
 // Transport-specific bind operations
 // ===========================================================================
 
 /// Bind an L2CAP socket (btio.c lines 290-316).
 fn l2cap_bind(fd: RawFd, src: &bdaddr_t, src_type: u8, psm: u16, cid: u16) -> Result<()> {
+    // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer/array types.
     let mut addr: sockaddr_l2 = unsafe { mem::zeroed() };
     addr.l2_family = AF_BLUETOOTH as u16;
     addr.l2_bdaddr = *src;
@@ -575,6 +726,7 @@ fn l2cap_bind(fd: RawFd, src: &bdaddr_t, src_type: u8, psm: u16, cid: u16) -> Re
 
 /// Bind an RFCOMM socket (btio.c lines 698-714).
 fn rfcomm_bind(fd: RawFd, src: &bdaddr_t, channel: u8) -> Result<()> {
+    // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer/array types.
     let mut addr: sockaddr_rc = unsafe { mem::zeroed() };
     addr.rc_family = AF_BLUETOOTH as u16;
     addr.rc_bdaddr = *src;
@@ -584,6 +736,7 @@ fn rfcomm_bind(fd: RawFd, src: &bdaddr_t, channel: u8) -> Result<()> {
 
 /// Bind a SCO socket (btio.c lines 755-771).
 fn sco_bind(fd: RawFd, src: &bdaddr_t) -> Result<()> {
+    // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer/array types.
     let mut addr: sockaddr_sco = unsafe { mem::zeroed() };
     addr.sco_family = AF_BLUETOOTH as u16;
     addr.sco_bdaddr = *src;
@@ -606,6 +759,7 @@ fn iso_bind(
 ) -> Result<()> {
     if dst.b != BDADDR_ANY.b {
         // Broadcast bind — use combined struct
+        // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer/array types.
         let mut full: sockaddr_iso_with_bc = unsafe { mem::zeroed() };
         full.base.iso_family = AF_BLUETOOTH as u16;
         full.base.iso_bdaddr = *src;
@@ -623,6 +777,7 @@ fn iso_bind(
         )
     } else {
         // Unicast bind
+        // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer/array types.
         let mut addr: sockaddr_iso = unsafe { mem::zeroed() };
         addr.iso_family = AF_BLUETOOTH as u16;
         addr.iso_bdaddr = *src;
@@ -637,6 +792,7 @@ fn iso_bind(
 
 /// L2CAP connect (btio.c lines 318-346).
 fn l2cap_connect(fd: RawFd, dst: &bdaddr_t, dst_type: u8, psm: u16, cid: u16) -> Result<()> {
+    // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer/array types.
     let mut addr: sockaddr_l2 = unsafe { mem::zeroed() };
     addr.l2_family = AF_BLUETOOTH as u16;
     addr.l2_bdaddr = *dst;
@@ -648,6 +804,7 @@ fn l2cap_connect(fd: RawFd, dst: &bdaddr_t, dst_type: u8, psm: u16, cid: u16) ->
 
 /// RFCOMM connect (btio.c lines 716-737).
 fn rfcomm_connect(fd: RawFd, dst: &bdaddr_t, channel: u8) -> Result<()> {
+    // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer/array types.
     let mut addr: sockaddr_rc = unsafe { mem::zeroed() };
     addr.rc_family = AF_BLUETOOTH as u16;
     addr.rc_bdaddr = *dst;
@@ -657,6 +814,7 @@ fn rfcomm_connect(fd: RawFd, dst: &bdaddr_t, channel: u8) -> Result<()> {
 
 /// SCO connect (btio.c lines 773-793).
 fn sco_connect(fd: RawFd, dst: &bdaddr_t) -> Result<()> {
+    // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer/array types.
     let mut addr: sockaddr_sco = unsafe { mem::zeroed() };
     addr.sco_family = AF_BLUETOOTH as u16;
     addr.sco_bdaddr = *dst;
@@ -665,6 +823,7 @@ fn sco_connect(fd: RawFd, dst: &bdaddr_t) -> Result<()> {
 
 /// ISO connect (btio.c lines 773-793 adapted for ISO).
 fn iso_connect(fd: RawFd, dst: &bdaddr_t, dst_type: u8) -> Result<()> {
+    // SAFETY: zeroing a repr(C) packed struct is valid; all fields are integer/array types.
     let mut addr: sockaddr_iso = unsafe { mem::zeroed() };
     addr.iso_family = AF_BLUETOOTH as u16;
     addr.iso_bdaddr = *dst;

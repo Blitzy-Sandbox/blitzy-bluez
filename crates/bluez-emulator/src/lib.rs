@@ -43,3 +43,10 @@ pub mod server;
 /// pairing (c1/s1 functions) and Secure Connections pairing (ECC keygen,
 /// ECDH, f4/f5/f6 crypto). Replaces `emulator/smp.c`.
 pub mod smp;
+
+/// HCI emulator harness — coordinates a VHCI virtual controller, one or
+/// more emulated client devices (`BtDev` + `BtHost` pairs connected via
+/// socketpairs), and hook-based packet interception.  This is the primary
+/// entry point used by ALL integration testers (`mgmt-tester`,
+/// `l2cap-tester`, `iso-tester`, etc.).  Replaces `emulator/hciemu.c`.
+pub mod hciemu;

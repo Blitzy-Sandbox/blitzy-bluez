@@ -26,8 +26,7 @@
 
 use std::collections::VecDeque;
 use std::io::{self, IoSlice};
-use std::mem;
-use std::os::fd::{BorrowedFd, RawFd};
+use std::os::fd::RawFd;
 use std::sync::{Arc, Mutex};
 
 use tokio::task::JoinHandle;
@@ -52,12 +51,15 @@ use super::types::{
 };
 
 use crate::crypto::aes_cmac::{bt_crypto_sign_att, bt_crypto_verify_att_sign};
+use crate::socket::{
+    bt_getsockname_l2, bt_sockopt_get_int, bt_sockopt_get_l2cap_options, bt_sockopt_get_security,
+    bt_sockopt_set_security, bt_writev,
+};
 use crate::sys::bluetooth::{
-    AF_BLUETOOTH, BDADDR_BREDR, BT_SECURITY, BT_SECURITY_FIPS, BT_SECURITY_HIGH, BT_SECURITY_LOW,
-    BT_SECURITY_MEDIUM, BT_SECURITY_SDP, BT_SNDMTU, BTPROTO_L2CAP, SOL_BLUETOOTH, SOL_L2CAP,
+    AF_BLUETOOTH, BDADDR_BREDR, BT_SECURITY_FIPS, BT_SECURITY_HIGH, BT_SECURITY_LOW,
+    BT_SECURITY_MEDIUM, BT_SECURITY_SDP, BT_SNDMTU, BTPROTO_L2CAP, SOL_BLUETOOTH,
     bt_security,
 };
-use crate::sys::l2cap::{L2CAP_OPTIONS, l2cap_options, sockaddr_l2};
 
 // ---------------------------------------------------------------------------
 // Type aliases for complex callback signatures
@@ -266,163 +268,25 @@ struct AttExchange {
 }
 
 // ---------------------------------------------------------------------------
-// Low-level socket helpers (FFI boundary — safe wrappers around libc calls)
-// ---------------------------------------------------------------------------
-
-/// Query a raw integer socket option.
-///
-/// # Safety justification
-///
-/// Calls `libc::getsockopt` on a valid open file descriptor with a
-/// properly-sized `c_int` output buffer.  The caller guarantees `fd` is a
-/// valid, open socket descriptor.
-#[allow(unsafe_code)]
-fn getsockopt_int(fd: RawFd, level: libc::c_int, optname: libc::c_int) -> io::Result<i32> {
-    let mut val: libc::c_int = 0;
-    let mut len: libc::socklen_t = mem::size_of::<libc::c_int>() as libc::socklen_t;
-    // SAFETY: `fd` is a valid open socket descriptor; `val` is a properly
-    // aligned c_int buffer with `len` set to its size.
-    let ret = unsafe {
-        libc::getsockopt(
-            fd,
-            level,
-            optname,
-            &mut val as *mut libc::c_int as *mut libc::c_void,
-            &mut len,
-        )
-    };
-    if ret < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(val)
-}
-
-/// Set a raw integer socket option.
-#[allow(unsafe_code)]
-pub fn setsockopt_int(
-    fd: RawFd,
-    level: libc::c_int,
-    optname: libc::c_int,
-    val: libc::c_int,
-) -> io::Result<()> {
-    let len: libc::socklen_t = mem::size_of::<libc::c_int>() as libc::socklen_t;
-    // SAFETY: `fd` is a valid open socket; `val` points to a single c_int.
-    let ret = unsafe {
-        libc::setsockopt(fd, level, optname, &val as *const libc::c_int as *const libc::c_void, len)
-    };
-    if ret < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
-}
-
-/// Get the `bt_security` structure for a Bluetooth socket.
-#[allow(unsafe_code)]
-fn getsockopt_bt_security(fd: RawFd) -> io::Result<bt_security> {
-    let mut sec = bt_security { level: 0, key_size: 0 };
-    let mut len: libc::socklen_t = mem::size_of::<bt_security>() as libc::socklen_t;
-    // SAFETY: fd is a valid Bluetooth socket; sec is properly sized.
-    let ret = unsafe {
-        libc::getsockopt(
-            fd,
-            SOL_BLUETOOTH,
-            BT_SECURITY,
-            &mut sec as *mut bt_security as *mut libc::c_void,
-            &mut len,
-        )
-    };
-    if ret < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(sec)
-}
-
-/// Set the `bt_security` structure on a Bluetooth socket.
-#[allow(unsafe_code)]
-fn setsockopt_bt_security(fd: RawFd, sec: &bt_security) -> io::Result<()> {
-    let len: libc::socklen_t = mem::size_of::<bt_security>() as libc::socklen_t;
-    // SAFETY: fd is a valid Bluetooth socket; sec is properly sized.
-    let ret = unsafe {
-        libc::setsockopt(
-            fd,
-            SOL_BLUETOOTH,
-            BT_SECURITY,
-            sec as *const bt_security as *const libc::c_void,
-            len,
-        )
-    };
-    if ret < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(())
-}
-
-/// Get the L2CAP options (for MTU query) on a Bluetooth socket.
-#[allow(unsafe_code)]
-fn getsockopt_l2cap_options(fd: RawFd) -> io::Result<l2cap_options> {
-    // SAFETY: zero-init is valid for this packed C struct (all-zero = default).
-    let mut opts: l2cap_options = {
-        #[allow(unsafe_code)]
-        // SAFETY: l2cap_options is a repr(C) struct with no validity invariants.
-        unsafe {
-            mem::zeroed()
-        }
-    };
-    let mut len: libc::socklen_t = mem::size_of::<l2cap_options>() as libc::socklen_t;
-    // SAFETY: fd is a valid L2CAP socket; opts is properly sized.
-    let ret = unsafe {
-        libc::getsockopt(
-            fd,
-            SOL_L2CAP,
-            L2CAP_OPTIONS,
-            &mut opts as *mut l2cap_options as *mut libc::c_void,
-            &mut len,
-        )
-    };
-    if ret < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(opts)
-}
-
-/// Retrieve the local socket address as `sockaddr_l2`.
-#[allow(unsafe_code)]
-fn getsockname_l2(fd: RawFd) -> io::Result<sockaddr_l2> {
-    // SAFETY: zero-init is valid for this packed C struct (all-zero = default).
-    let mut addr: sockaddr_l2 = {
-        #[allow(unsafe_code)]
-        // SAFETY: sockaddr_l2 is a repr(C) struct with no validity invariants.
-        unsafe {
-            mem::zeroed()
-        }
-    };
-    let mut len: libc::socklen_t = mem::size_of::<sockaddr_l2>() as libc::socklen_t;
-    // SAFETY: fd is a valid L2CAP socket; addr is properly sized.
-    let ret = unsafe {
-        libc::getsockname(fd, &mut addr as *mut sockaddr_l2 as *mut libc::sockaddr, &mut len)
-    };
-    if ret < 0 {
-        return Err(io::Error::last_os_error());
-    }
-    Ok(addr)
-}
-
-// ---------------------------------------------------------------------------
 // Higher-level socket helpers (att.c lines 1151-1235)
+//
+// All low-level socket operations (getsockopt, setsockopt, getsockname)
+// are delegated to the safe wrappers in crate::socket::bluetooth_socket,
+// which is the designated FFI boundary for kernel Bluetooth socket I/O.
 // ---------------------------------------------------------------------------
 
 /// Check whether `fd` is an L2CAP-based Bluetooth socket.
 ///
 /// Mirrors `is_io_l2cap_based` (att.c lines 1151-1174).
 fn is_io_l2cap_based(fd: RawFd) -> bool {
-    let domain = match getsockopt_int(fd, libc::SOL_SOCKET, libc::SO_DOMAIN) {
+    let domain = match bt_sockopt_get_int(fd, libc::SOL_SOCKET, libc::SO_DOMAIN) {
         Ok(v) => v,
         Err(_) => return false,
     };
     if domain != AF_BLUETOOTH {
         return false;
     }
-    let proto = match getsockopt_int(fd, libc::SOL_SOCKET, libc::SO_PROTOCOL) {
+    let proto = match bt_sockopt_get_int(fd, libc::SOL_SOCKET, libc::SO_PROTOCOL) {
         Ok(v) => v,
         Err(_) => return false,
     };
@@ -434,13 +298,13 @@ fn is_io_l2cap_based(fd: RawFd) -> bool {
 /// Tries `L2CAP_OPTIONS.omtu` first, falls back to `BT_SNDMTU`.
 /// Returns 0 on failure (mirrors `io_get_mtu` att.c lines 1203-1216).
 fn io_get_mtu(fd: RawFd) -> u16 {
-    if let Ok(opts) = getsockopt_l2cap_options(fd) {
+    if let Ok(opts) = bt_sockopt_get_l2cap_options(fd) {
         if opts.omtu > 0 {
             return opts.omtu;
         }
     }
     // Fallback: BT_SNDMTU (SOL_BLUETOOTH level).
-    match getsockopt_int(fd, SOL_BLUETOOTH, BT_SNDMTU) {
+    match bt_sockopt_get_int(fd, SOL_BLUETOOTH, BT_SNDMTU) {
         Ok(v) if v > 0 => v as u16,
         _ => 0,
     }
@@ -456,7 +320,7 @@ fn io_get_type(fd: RawFd) -> u8 {
     if !is_io_l2cap_based(fd) {
         return BT_ATT_LOCAL;
     }
-    match getsockname_l2(fd) {
+    match bt_getsockname_l2(fd) {
         Ok(addr) if addr.l2_bdaddr_type == BDADDR_BREDR => BT_ATT_BREDR,
         _ => BT_ATT_LE,
     }
@@ -696,14 +560,14 @@ impl BtAttChan {
         if self.chan_type == BT_ATT_LOCAL {
             return Ok((self.sec_level, 0));
         }
-        let sec = getsockopt_bt_security(self.fd)?;
+        let sec = bt_sockopt_get_security(self.fd)?;
         Ok((sec.level as i32, sec.key_size))
     }
 
     /// Set the security level on this channel.
     fn set_security(&self, level: i32) -> io::Result<()> {
         let sec = bt_security { level: level as u8, key_size: 0 };
-        setsockopt_bt_security(self.fd, &sec)
+        bt_sockopt_set_security(self.fd, &sec)
     }
 
     /// Returns true if there is queued or pending work on this channel.
@@ -715,12 +579,10 @@ impl BtAttChan {
 /// Write raw bytes to a file descriptor using `writev` (scatter-gather).
 ///
 /// This replaces the C `bt_att_chan_write` which used `io_send` with iovecs.
-#[allow(unsafe_code)]
+/// Delegates to `crate::socket::bt_writev` (the designated FFI boundary).
 fn write_to_fd(fd: RawFd, data: &[u8]) -> io::Result<usize> {
     let iov = [IoSlice::new(data)];
-    // SAFETY: The caller guarantees `fd` is a valid, open file descriptor.
-    let borrowed = unsafe { BorrowedFd::borrow_raw(fd) };
-    nix::sys::uio::writev(borrowed, &iov).map_err(|e| io::Error::from_raw_os_error(e as i32))
+    bt_writev(fd, &iov)
 }
 
 /// Read from a file descriptor into a buffer.

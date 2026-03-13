@@ -33,4 +33,7 @@ mod bluetooth_socket;
 pub use bluetooth_socket::{
     BluetoothListener, BluetoothSocket, BtSocketError, BtTransport, L2capMode, Result, SecLevel,
     SocketBuilder, SocketOptions, SocketPriority,
+    // Safe socket-option helpers (used by att/transport.rs, sdp/client.rs, etc.)
+    bt_getsockname_l2, bt_sockopt_get_int, bt_sockopt_get_l2cap_options, bt_sockopt_get_security,
+    bt_sockopt_set_int, bt_sockopt_set_priority, bt_sockopt_set_security, bt_writev,
 };

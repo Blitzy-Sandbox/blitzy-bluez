@@ -921,7 +921,7 @@ pub const MGMT_OP_GET_PHY_CONFIGURATION: u16 = 0x0044;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 #[repr(C, packed)]
-pub struct mgmt_rp_get_phy_confguration {
+pub struct mgmt_rp_get_phy_configuration {
     pub supported_phys: u32,
     pub configurable_phys: u32,
     pub selected_phys: u32,
@@ -931,7 +931,7 @@ pub const MGMT_OP_SET_PHY_CONFIGURATION: u16 = 0x0045;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
 #[repr(C, packed)]
-pub struct mgmt_cp_set_phy_confguration {
+pub struct mgmt_cp_set_phy_configuration {
     pub selected_phys: u32,
 }
 
@@ -1502,6 +1502,9 @@ pub struct mgmt_ev_exp_feature_changed {
     pub flags: u32,
 }
 
+pub const MGMT_EV_DEFAULT_SYSCONF_CHANGED: u16 = 0x0028;
+pub const MGMT_EV_DEFAULT_RUNTIME_CONF_CHANGED: u16 = 0x0029;
+
 pub const MGMT_EV_DEVICE_FLAGS_CHANGED: u16 = 0x002A;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, IntoBytes, FromBytes, Immutable, KnownLayout)]
@@ -1587,6 +1590,10 @@ pub const MGMT_EV_MESH_PACKET_CMPLT: u16 = 0x0032;
 pub struct mgmt_ev_mesh_pkt_cmplt {
     pub handle: u8,
 }
+
+pub const MGMT_EV_PA_SYNC_ESTABLISHED: u16 = 0x0033;
+pub const MGMT_EV_BIG_SYNC_ESTABLISHED: u16 = 0x0034;
+pub const MGMT_EV_BIG_SYNC_LOST: u16 = 0x0035;
 
 // ===========================================================================
 // String Lookup Tables (matching C mgmt_op[], mgmt_ev[], mgmt_status[])
@@ -1685,6 +1692,7 @@ pub static MGMT_OP_NAMES: &[&str] = &[
     "Read Mesh Features",                        // 0x0058
     "Mesh Send",                                 // 0x0059
     "Mesh Send Cancel",                          // 0x005a
+    "HCI Command Sync",                          // 0x005b
 ];
 
 /// Event name lookup table — index by event code value.

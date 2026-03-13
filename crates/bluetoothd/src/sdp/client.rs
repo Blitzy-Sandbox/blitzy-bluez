@@ -171,19 +171,10 @@ fn next_transaction_id() -> u16 {
 ///
 /// The C code (sdp-client.c line 327) sets `setsockopt(SOL_SOCKET,
 /// SO_PRIORITY, &prio, sizeof(prio))` with `prio = 1` to keep SDP
-/// traffic low-priority.  [`BluetoothSocket`]'s builder only exposes
-/// `SocketPriority::Normal(0)` and `SocketPriority::High(6)`, so we
-/// call `nix::sys::socket::setsockopt` directly via a `BorrowedFd`.
-#[allow(unsafe_code)]
+/// traffic low-priority.  Delegates to the socket module's safe FFI
+/// wrapper (`bt_sockopt_set_priority`).
 fn set_socket_priority(raw_fd: RawFd, priority: i32) {
-    // SAFETY: `raw_fd` is a valid, open file descriptor obtained from
-    // `BluetoothSocket::as_raw_fd()` and guaranteed to remain valid for
-    // the duration of this synchronous setsockopt call.  `BorrowedFd`
-    // does not take ownership.
-    let borrowed = unsafe { std::os::fd::BorrowedFd::borrow_raw(raw_fd) };
-    if let Err(e) =
-        nix::sys::socket::setsockopt(&borrowed, nix::sys::socket::sockopt::Priority, &priority)
-    {
+    if let Err(e) = bluez_shared::socket::bt_sockopt_set_priority(raw_fd, priority) {
         warn!("Setting SDP priority failed: {}", e);
     }
 }

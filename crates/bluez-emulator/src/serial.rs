@@ -101,11 +101,9 @@ pub enum SerialError {
 /// ```
 pub struct Serial {
     /// Controller type used for BtDev creation on (re-)connect.
-    #[allow(dead_code)]
-    serial_type: SerialType,
+    _serial_type: SerialType,
     /// Fixed emulator ID (0x42, matching C `emulator/serial.c` line 221).
-    #[allow(dead_code)]
-    id: u16,
+    _id: u16,
     /// Handle to the background read/reconnect task.
     join_handle: Option<JoinHandle<()>>,
 }
@@ -137,7 +135,7 @@ impl Serial {
         let handle =
             spawn(serial_reconnect_loop(async_fd, btdev, write_fd_anchor, serial_type, id));
 
-        Ok(Self { serial_type, id, join_handle: Some(handle) })
+        Ok(Self { _serial_type: serial_type, _id: id, join_handle: Some(handle) })
     }
 
     /// Close the serial PTY emulator.

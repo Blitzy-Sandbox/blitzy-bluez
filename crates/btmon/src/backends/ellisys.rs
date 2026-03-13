@@ -120,7 +120,6 @@ pub fn ellisys_enable(server: &str, port: u16) -> Result<()> {
 /// - The first controller `index` seen is latched; packets from other
 ///   controllers are silently dropped.
 /// - Unknown BTSnoop opcodes are silently dropped.
-#[allow(unsafe_code)]
 pub fn ellisys_inject_hci(tv: &libc::timeval, index: u16, opcode: u16, data: &[u8], size: u16) {
     // Guard: null-equivalent timeval (C checks `if (!tv)`)
     if tv.tv_sec == 0 && tv.tv_usec == 0 {
@@ -178,33 +177,27 @@ pub fn ellisys_inject_hci(tv: &libc::timeval, index: u16, opcode: u16, data: &[u
     // Convert Unix timestamp to local calendar time via localtime_r,
     // then encode as DateTimeNs: year (LE16), month, day, and
     // nanoseconds-within-day (6-byte LE).
-    let t: libc::time_t = tv.tv_sec;
-    // SAFETY: localtime_r is a POSIX thread-safe function that writes
-    // the broken-down time into the caller-provided `tm` struct.  Both
-    // `t` and `tm` are stack-local with valid addresses for the
-    // duration of the call.  This is the only unsafe site in the module.
-    let mut tm: libc::tm = unsafe { std::mem::zeroed() };
-    unsafe {
-        libc::localtime_r(&t, &mut tm);
-    }
+    // Convert Unix timestamp to local calendar time via the safe FFI
+    // wrapper in bluez_shared::sys (the designated unsafe boundary).
+    let lt = bluez_shared::sys::localtime_from_unix(tv.tv_sec);
 
     // Nanoseconds elapsed since midnight (local time).
     // C: nsec = ((tm.tm_sec + tm.tm_min*60 + tm.tm_hour*3600)
     //              * 1000000L + tv->tv_usec) * 1000L;
     let nsec: i64 =
-        ((i64::from(tm.tm_sec) + i64::from(tm.tm_min) * 60 + i64::from(tm.tm_hour) * 3600)
+        ((i64::from(lt.second) + i64::from(lt.minute) * 60 + i64::from(lt.hour) * 3600)
             * 1_000_000i64
             + tv.tv_usec)
             * 1000i64;
 
-    // Year as little-endian 16-bit value (1900 + tm_year).
-    let year = 1900 + tm.tm_year;
+    // Year as little-endian 16-bit value.
+    let year = lt.year;
     msg[4] = (year & 0xff) as u8;
     msg[5] = (year >> 8) as u8;
 
     // Month (1-based) and day.
-    msg[6] = (tm.tm_mon + 1) as u8;
-    msg[7] = tm.tm_mday as u8;
+    msg[6] = lt.month;
+    msg[7] = lt.day;
 
     // Nanoseconds within day as 6-byte little-endian.
     msg[8] = (nsec & 0xff) as u8;

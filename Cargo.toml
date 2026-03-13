@@ -155,6 +155,10 @@ name = "test_mgmt"
 path = "tests/unit/test_mgmt.rs"
 
 [[test]]
+name = "test_gatt"
+path = "tests/unit/test_gatt.rs"
+
+[[test]]
 name = "btsnoop_replay_test"
 path = "tests/integration/btsnoop_replay_test.rs"
 
@@ -166,3 +170,6 @@ unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = "deny"
+
+
+

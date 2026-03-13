@@ -70,7 +70,33 @@ pub type AttResponseCallback = Option<Box<dyn FnOnce(u8, &[u8]) + Send>>;
 
 /// Persistent handler for incoming ATT PDUs.
 /// Parameters: `(channel_idx, filter_opcode, raw_opcode, pdu_body)`.
-pub type AttNotifyCallback = Box<dyn Fn(usize, u16, u8, &[u8]) + Send + Sync>;
+///
+/// Uses `Arc` to allow cloning callbacks out of the locked BtAtt so they
+/// can be invoked after the lock is released (avoiding re-entrant deadlock
+/// when a callback—such as BtGattServer's dispatch handler—needs to
+/// re-acquire the BtAtt mutex to send a response).
+pub type AttNotifyCallback = Arc<dyn Fn(usize, u16, u8, &[u8]) + Send + Sync>;
+
+/// A deferred notification invocation collected during [`BtAtt::process_read`].
+///
+/// Because `process_read` holds `&mut self`, callbacks cannot be invoked
+/// inline when they need to re-acquire the BtAtt mutex (e.g. BtGattServer
+/// handlers that call `att.lock()` to send responses).  Instead, the
+/// matching callbacks and their arguments are collected here and returned
+/// to the caller, who invokes them after releasing the lock.
+#[derive(Clone)]
+pub struct PendingNotification {
+    /// Channel index on which the PDU arrived.
+    pub chan_idx: usize,
+    /// The filter opcode from the registration entry.
+    pub filter_opcode: u16,
+    /// The raw opcode byte from the incoming PDU.
+    pub raw_opcode: u8,
+    /// The PDU body (after the opcode byte, signature-verified if applicable).
+    pub body: Vec<u8>,
+    /// Cloned callback to invoke.
+    pub callback: AttNotifyCallback,
+}
 
 /// DB-out-of-sync notification callback.
 /// Parameters: `(opcode, pdu, operation_id)`.
@@ -640,6 +666,14 @@ pub struct BtAtt {
     local_sign: Option<SignInfo>,
     /// Remote signing key material (for verifying incoming signed writes).
     remote_sign: Option<SignInfo>,
+    /// Deferred notification dispatches collected during `process_read`.
+    ///
+    /// When `handle_notify` matches a callback, it pushes the match here
+    /// instead of invoking the callback inline (which would deadlock if the
+    /// callback needs to re-acquire the BtAtt mutex).  The caller retrieves
+    /// these via `take_pending_notifications()` and invokes them after
+    /// releasing the lock.
+    pending_notifications: Vec<PendingNotification>,
 }
 
 impl BtAtt {
@@ -683,6 +717,7 @@ impl BtAtt {
             has_crypto_support: !ext_signed,
             local_sign: None,
             remote_sign: None,
+            pending_notifications: Vec::new(),
         };
 
         Ok(Arc::new(Mutex::new(att)))
@@ -1617,11 +1652,25 @@ impl BtAtt {
             body
         };
 
-        // Dispatch to registered handlers.
+        // Collect matching callbacks for deferred dispatch.
+        //
+        // We do NOT invoke callbacks inline because `&mut self` is held
+        // here, and callbacks (e.g. BtGattServer handlers) typically need
+        // to re-acquire the BtAtt mutex to send responses — which would
+        // deadlock.  Instead, we collect `PendingNotification` entries
+        // that the caller retrieves via `take_pending_notifications()`
+        // and invokes after releasing the lock.
+        let body_vec = verified_body.to_vec();
         let mut handled = false;
         for notify in &self.notify_list {
             if opcode_match(notify.opcode, opcode) {
-                (notify.callback)(chan_idx, notify.opcode, opcode, verified_body);
+                self.pending_notifications.push(PendingNotification {
+                    chan_idx,
+                    filter_opcode: notify.opcode,
+                    raw_opcode: opcode,
+                    body: body_vec.clone(),
+                    callback: Arc::clone(&notify.callback),
+                });
                 handled = true;
             }
         }
@@ -1735,6 +1784,28 @@ impl BtAtt {
         if chan_idx < self.chans.len() {
             self.wakeup_chan_writer(chan_idx);
         }
+    }
+
+    /// Retrieve and drain all deferred notification dispatches collected
+    /// during the most recent [`process_read`] call.
+    ///
+    /// The caller should invoke each [`PendingNotification`]'s callback
+    /// **after** releasing the BtAtt mutex lock to avoid deadlock:
+    ///
+    /// ```ignore
+    /// let pending = {
+    ///     let mut att = att_arc.lock().unwrap();
+    ///     att.process_read(0, &data);
+    ///     att.take_pending_notifications()
+    /// };
+    /// // Lock is now released — safe to invoke callbacks that may
+    /// // re-acquire the lock (e.g. BtGattServer response handlers).
+    /// for pn in &pending {
+    ///     (pn.callback)(pn.chan_idx, pn.filter_opcode, pn.raw_opcode, &pn.body);
+    /// }
+    /// ```
+    pub fn take_pending_notifications(&mut self) -> Vec<PendingNotification> {
+        std::mem::take(&mut self.pending_notifications)
     }
 }
 

@@ -33,7 +33,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Duration;
 use tracing::{debug, error, warn};
 
-use crate::att::transport::{AttResponseCallback, BtAtt};
+use crate::att::transport::{AttNotifyCallback, AttResponseCallback, BtAtt};
 use crate::att::types::{
     AttSecurityLevel, BT_ATT_DEFAULT_LE_MTU, BT_ATT_ERROR_ATTRIBUTE_NOT_FOUND,
     BT_ATT_ERROR_AUTHENTICATION, BT_ATT_ERROR_INSUFFICIENT_ENCRYPTION,
@@ -565,11 +565,12 @@ impl BtGattServer {
         for &opcode in opcodes {
             let srv = Arc::clone(server);
             // The callback signature from transport.rs AttNotifyCallback:
-            // Box<dyn Fn(usize, u16, u8, &[u8]) + Send + Sync>
+            // Arc<dyn Fn(usize, u16, u8, &[u8]) + Send + Sync>
             // params: (channel_idx, filter_opcode, raw_opcode, pdu_body)
-            let cb = Box::new(move |_chan_idx: usize, _filter: u16, raw_opcode: u8, pdu: &[u8]| {
-                srv.dispatch_handler(raw_opcode, pdu);
-            });
+            let cb: AttNotifyCallback =
+                Arc::new(move |_chan_idx: usize, _filter: u16, raw_opcode: u8, pdu: &[u8]| {
+                    srv.dispatch_handler(raw_opcode, pdu);
+                });
 
             let id = att_guard.register(opcode, cb);
             if id == 0 {

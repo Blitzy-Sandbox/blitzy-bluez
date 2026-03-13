@@ -475,7 +475,22 @@ impl GattDb {
     }
 
     /// Returns a copy of the current 16-byte database hash.
+    ///
+    /// If the hash has not been computed yet (all zeros) or there is a
+    /// pending hash-update timer, the hash is computed synchronously
+    /// before returning — matching the C `gatt_db_get_hash` behavior.
     pub fn get_hash(&self) -> [u8; 16] {
+        {
+            let inner = self.inner.lock().unwrap();
+            let is_zero = inner.hash.iter().all(|&b| b == 0);
+            let has_pending = inner.hash_timer.is_some();
+            if !is_zero && !has_pending {
+                return inner.hash;
+            }
+        }
+        // Hash needs (re)computation — cancel any pending timer and
+        // compute synchronously, just like the C code does.
+        compute_hash_locked(&self.inner);
         let inner = self.inner.lock().unwrap();
         inner.hash
     }

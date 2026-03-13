@@ -1442,7 +1442,7 @@ impl BtGattClient {
         // Register NFY handler.
         let client_nfy = Arc::clone(client);
         let nfy_cb: AttNotifyCallback =
-            Box::new(move |_chan_idx: usize, _mtu: u16, opcode: u8, pdu: &[u8]| {
+            Arc::new(move |_chan_idx: usize, _mtu: u16, opcode: u8, pdu: &[u8]| {
                 Self::handle_notification(&client_nfy, opcode, pdu);
             });
         let nfy_id = match att_ref.lock() {
@@ -1453,7 +1453,7 @@ impl BtGattClient {
         // Register NFY_MULT handler.
         let client_nfy_mult = Arc::clone(client);
         let nfy_mult_cb: AttNotifyCallback =
-            Box::new(move |_chan_idx: usize, _mtu: u16, opcode: u8, pdu: &[u8]| {
+            Arc::new(move |_chan_idx: usize, _mtu: u16, opcode: u8, pdu: &[u8]| {
                 Self::handle_notification(&client_nfy_mult, opcode, pdu);
             });
         let nfy_mult_id = match att_ref.lock() {
@@ -1464,7 +1464,7 @@ impl BtGattClient {
         // Register IND handler.
         let client_ind = Arc::clone(client);
         let ind_cb: AttNotifyCallback =
-            Box::new(move |_chan_idx: usize, _mtu: u16, opcode: u8, pdu: &[u8]| {
+            Arc::new(move |_chan_idx: usize, _mtu: u16, opcode: u8, pdu: &[u8]| {
                 Self::handle_indication(&client_ind, opcode, pdu);
             });
         let ind_id = match att_ref.lock() {

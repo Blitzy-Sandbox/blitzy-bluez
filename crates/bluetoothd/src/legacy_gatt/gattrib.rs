@@ -418,7 +418,7 @@ impl GAttrib {
         let dg = destroy_guard;
 
         let callback: AttNotifyCallback =
-            Box::new(move |_bearer_idx: usize, _filter_opcode: u16, opcode: u8, body: &[u8]| {
+            Arc::new(move |_bearer_idx: usize, _filter_opcode: u16, opcode: u8, body: &[u8]| {
                 // Keep the destroy guard alive as long as this closure exists.
                 let _ = &dg;
 

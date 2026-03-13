@@ -5,6 +5,7 @@
 
 pub mod client;
 pub mod database;
+pub mod server;
 pub mod xml;
 
 // Re-export the primary XML conversion API.

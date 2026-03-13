@@ -189,6 +189,7 @@ dependencies = [
  "bluez-shared",
  "ccm",
  "cmac",
+ "criterion",
  "futures",
  "libc",
  "nix 0.29.0",

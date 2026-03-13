@@ -79,6 +79,12 @@ ccm = { workspace = true }
 tempfile = "3.15"
 libc = { workspace = true }
 nix = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "gatt_discovery"
+path = "benches/gatt_discovery.rs"
+harness = false
 
 [[test]]
 name = "test_gdbus_client"

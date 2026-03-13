@@ -29,6 +29,10 @@ pub mod io;
 /// interface, constants from mesh-defs.h/mesh.h, and protocol helpers.
 pub mod mesh;
 
+/// Centralized D-Bus connection storage, mesh error-to-D-Bus error mapping,
+/// message helper utilities, and send-with-timeout facility.
+pub mod dbus;
+
 fn main() {
     println!("bluetooth-meshd stub");
 }

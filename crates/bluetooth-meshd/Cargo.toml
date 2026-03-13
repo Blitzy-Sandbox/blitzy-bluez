@@ -29,6 +29,7 @@ tokio-stream = { workspace = true }
 aes = { workspace = true }
 cmac = { workspace = true }
 ccm = { workspace = true }
+zerocopy = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

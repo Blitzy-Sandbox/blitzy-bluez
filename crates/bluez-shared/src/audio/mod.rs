@@ -7,3 +7,4 @@
 //! Audio profile state machines — LE Audio, HFP, ASHA, etc.
 
 pub mod asha;
+pub mod gmap;

@@ -907,8 +907,20 @@ pub struct MeshPacketBuildParams<'a> {
 /// Returns `(packet_data, packet_length)` on success.
 pub fn mesh_crypto_packet_build(params: &MeshPacketBuildParams<'_>) -> Option<(Vec<u8>, u8)> {
     let MeshPacketBuildParams {
-        ctl, ttl, seq, src, dst, opcode, segmented, key_aid,
-        szmic, relay, seq_zero, seg_o, seg_n, payload,
+        ctl,
+        ttl,
+        seq,
+        src,
+        dst,
+        opcode,
+        segmented,
+        key_aid,
+        szmic,
+        relay,
+        seq_zero,
+        seg_o,
+        seg_n,
+        payload,
     } = *params;
     let mut packet = vec![0u8; 29 + payload.len()];
 
@@ -1157,10 +1169,24 @@ pub fn mesh_crypto_payload_decrypt(params: &mut MeshPayloadDecryptParams<'_>) ->
     let nonce = if params.key_aid == APP_AID_DEV {
         mesh_crypto_device_nonce(params.seq, params.src, params.dst, params.iv_index, params.aszmic)
     } else {
-        mesh_crypto_application_nonce(params.seq, params.src, params.dst, params.iv_index, params.aszmic)
+        mesh_crypto_application_nonce(
+            params.seq,
+            params.src,
+            params.dst,
+            params.iv_index,
+            params.aszmic,
+        )
     };
     let mut mic_buf = [0u8; 8];
-    mesh_crypto_aes_ccm_decrypt(&nonce, params.app_key, params.aad, params.payload, params.out, &mut mic_buf, mic_size)
+    mesh_crypto_aes_ccm_decrypt(
+        &nonce,
+        params.app_key,
+        params.aad,
+        params.payload,
+        params.out,
+        &mut mic_buf,
+        mic_size,
+    )
 }
 
 // ===========================================================================

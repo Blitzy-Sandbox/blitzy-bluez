@@ -570,23 +570,13 @@ fn bt_so_error(fd: RawFd) -> Result<i32> {
 /// This is a public, safe API for use by other crate modules (e.g.,
 /// `att/transport.rs`) that need to query integer-typed socket options
 /// without duplicating unsafe `getsockopt` calls.
-pub fn bt_sockopt_get_int(
-    fd: RawFd,
-    level: libc::c_int,
-    optname: libc::c_int,
-) -> io::Result<i32> {
+pub fn bt_sockopt_get_int(fd: RawFd, level: libc::c_int, optname: libc::c_int) -> io::Result<i32> {
     let mut val: libc::c_int = 0;
     let mut len: libc::socklen_t = mem::size_of::<libc::c_int>() as libc::socklen_t;
     // SAFETY: `fd` is a valid open socket descriptor; `val` is a properly
     // aligned c_int buffer with `len` set to its size.
     let ret = unsafe {
-        libc::getsockopt(
-            fd,
-            level,
-            optname,
-            (&raw mut val).cast::<libc::c_void>(),
-            &raw mut len,
-        )
+        libc::getsockopt(fd, level, optname, (&raw mut val).cast::<libc::c_void>(), &raw mut len)
     };
     if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(val) }
 }
@@ -604,13 +594,7 @@ pub fn bt_sockopt_set_int(
     let len: libc::socklen_t = mem::size_of::<libc::c_int>() as libc::socklen_t;
     // SAFETY: `fd` is a valid open socket; `val` points to a single c_int.
     let ret = unsafe {
-        libc::setsockopt(
-            fd,
-            level,
-            optname,
-            (&raw const val).cast::<libc::c_void>(),
-            len,
-        )
+        libc::setsockopt(fd, level, optname, (&raw const val).cast::<libc::c_void>(), len)
     };
     if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
@@ -680,13 +664,8 @@ pub fn bt_getsockname_l2(fd: RawFd) -> io::Result<sockaddr_l2> {
     let mut addr: sockaddr_l2 = unsafe { mem::zeroed() };
     let mut len: libc::socklen_t = mem::size_of::<sockaddr_l2>() as libc::socklen_t;
     // SAFETY: fd is a valid L2CAP socket; addr is properly sized.
-    let ret = unsafe {
-        libc::getsockname(
-            fd,
-            (&raw mut addr).cast::<libc::sockaddr>(),
-            &raw mut len,
-        )
-    };
+    let ret =
+        unsafe { libc::getsockname(fd, (&raw mut addr).cast::<libc::sockaddr>(), &raw mut len) };
     if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(addr) }
 }
 

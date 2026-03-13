@@ -57,8 +57,7 @@ use crate::socket::{
 };
 use crate::sys::bluetooth::{
     AF_BLUETOOTH, BDADDR_BREDR, BT_SECURITY_FIPS, BT_SECURITY_HIGH, BT_SECURITY_LOW,
-    BT_SECURITY_MEDIUM, BT_SECURITY_SDP, BT_SNDMTU, BTPROTO_L2CAP, SOL_BLUETOOTH,
-    bt_security,
+    BT_SECURITY_MEDIUM, BT_SECURITY_SDP, BT_SNDMTU, BTPROTO_L2CAP, SOL_BLUETOOTH, bt_security,
 };
 
 // ---------------------------------------------------------------------------

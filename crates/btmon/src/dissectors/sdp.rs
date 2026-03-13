@@ -22,73 +22,10 @@ use bluez_shared::util::uuid::{bt_uuid16_to_str, bt_uuid32_to_str};
 
 // ============================================================================
 // Local L2capFrame definition (mirrors l2cap.rs export contract).
-// Defined locally per D4 rules since l2cap.rs is not in depends_on_files.
+// Now uses the canonical L2capFrame from l2cap.rs.
 // ============================================================================
 
-/// L2CAP frame cursor struct used by all dissectors.
-///
-/// This is a local definition matching the API contract that will be
-/// exported by `crates/btmon/src/dissectors/l2cap.rs`.  When that module
-/// is created it will be the canonical source; until then, this local
-/// definition enables independent compilation.
-#[derive(Clone)]
-pub struct L2capFrame {
-    pub index: u16,
-    pub in_: bool,
-    pub handle: u16,
-    pub ident: u8,
-    pub cid: u16,
-    pub psm: u16,
-    pub chan: u16,
-    pub mode: u8,
-    pub seq_num: u8,
-    /// The full payload buffer.
-    data: Vec<u8>,
-    /// Current read position within `data`.
-    pos: usize,
-    /// Remaining bytes available for reading from the current position.
-    pub size: u16,
-}
-
-impl L2capFrame {
-    /// Read one byte from the frame, advancing the cursor.
-    pub fn get_u8(&mut self) -> Option<u8> {
-        if (self.size as usize) < 1 {
-            return None;
-        }
-        let val = self.data[self.pos];
-        self.pos += 1;
-        self.size -= 1;
-        Some(val)
-    }
-
-    /// Read a big-endian u16 from the frame, advancing the cursor.
-    pub fn get_be16(&mut self) -> Option<u16> {
-        if (self.size as usize) < 2 {
-            return None;
-        }
-        let val = u16::from_be_bytes([self.data[self.pos], self.data[self.pos + 1]]);
-        self.pos += 2;
-        self.size -= 2;
-        Some(val)
-    }
-
-    /// Advance the cursor by `offset` bytes without reading.
-    pub fn pull(&mut self, offset: usize) -> bool {
-        if (self.size as usize) < offset {
-            return false;
-        }
-        self.pos += offset;
-        self.size -= offset as u16;
-        true
-    }
-
-    /// Return a slice of the remaining un-consumed data.
-    pub fn remaining_data(&self) -> &[u8] {
-        let end = self.pos + self.size as usize;
-        &self.data[self.pos..end]
-    }
-}
+pub use super::l2cap::L2capFrame;
 
 // ============================================================================
 // SDP PDU Type Constants (from bt.h / sdp.c lines 703-711)

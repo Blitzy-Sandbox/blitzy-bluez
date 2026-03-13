@@ -7,6 +7,7 @@
 // workspace crates.
 
 pub mod att;
+pub mod audio;
 pub mod capture;
 pub mod crypto;
 pub mod device;

@@ -10,5 +10,6 @@ pub mod asha;
 pub mod ccp;
 pub mod csip;
 pub mod gmap;
+pub mod mcp;
 pub mod micp;
 pub mod tmap;

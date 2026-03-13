@@ -72,6 +72,7 @@ zbus = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 bluez-shared = { path = "crates/bluez-shared" }
+bluez-emulator = { path = "crates/bluez-emulator" }
 obexd = { path = "crates/obexd" }
 aes = { workspace = true }
 cmac = { workspace = true }
@@ -84,6 +85,11 @@ criterion = { workspace = true }
 [[bench]]
 name = "gatt_discovery"
 path = "benches/gatt_discovery.rs"
+harness = false
+
+[[bench]]
+name = "mgmt_latency"
+path = "benches/mgmt_latency.rs"
 harness = false
 
 [[test]]

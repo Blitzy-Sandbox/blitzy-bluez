@@ -33,6 +33,11 @@ pub mod mesh;
 /// message helper utilities, and send-with-timeout facility.
 pub mod dbus;
 
+/// Network key management: derives and stores NetKey material (K2/K3,
+/// beacon/private keys), performs network PDU encode/decode, authenticates
+/// SNB/MPB beacons, and schedules beacon transmission through mesh I/O.
+pub mod net_keys;
+
 fn main() {
     println!("bluetooth-meshd stub");
 }

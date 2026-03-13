@@ -7,7 +7,9 @@
 pub mod battery;
 pub mod gap;
 pub mod hfp;
+pub mod rap;
 
 // Re-export primary public types for convenient access.
 pub use battery::BtBattery;
 pub use gap::{BtGap, GapError, IrkEntry};
+pub use rap::{BtRap, RAS_UUID16, RapError};

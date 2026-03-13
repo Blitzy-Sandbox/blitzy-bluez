@@ -19,7 +19,7 @@ use tracing::{debug, warn};
 use crate::att::types::{AttPermissions, GattChrcProperties};
 use crate::gatt::client::BtGattClient;
 use crate::gatt::db::{CharData, GattDb, GattDbAttribute, GattDbService};
-use crate::util::endian::{get_le32, IoBuf};
+use crate::util::endian::{IoBuf, get_le32};
 use crate::util::uuid::BtUuid;
 
 // =====================================================================
@@ -389,41 +389,136 @@ struct McsCommandDesc {
 
 /// Static table of all 21 MCS commands (matches C `mcs_command[]`).
 static MCS_COMMANDS: &[McsCommandDesc] = &[
-    McsCommandDesc { name: "Play",         op: 0x01, support: McsCmdSupported::PLAY,          has_int32_arg: false },
-    McsCommandDesc { name: "Pause",        op: 0x02, support: McsCmdSupported::PAUSE,         has_int32_arg: false },
-    McsCommandDesc { name: "Fast Rewind",  op: 0x03, support: McsCmdSupported::FAST_REWIND,   has_int32_arg: false },
-    McsCommandDesc { name: "Fast Forward", op: 0x04, support: McsCmdSupported::FAST_FORWARD,  has_int32_arg: false },
-    McsCommandDesc { name: "Stop",         op: 0x05, support: McsCmdSupported::STOP,          has_int32_arg: false },
-    McsCommandDesc { name: "Move Relative",op: 0x10, support: McsCmdSupported::MOVE_RELATIVE, has_int32_arg: true  },
-    McsCommandDesc { name: "Prev Segment", op: 0x20, support: McsCmdSupported::PREV_SEGMENT,  has_int32_arg: false },
-    McsCommandDesc { name: "Next Segment", op: 0x21, support: McsCmdSupported::NEXT_SEGMENT,  has_int32_arg: false },
-    McsCommandDesc { name: "First Segment",op: 0x22, support: McsCmdSupported::FIRST_SEGMENT, has_int32_arg: false },
-    McsCommandDesc { name: "Last Segment", op: 0x23, support: McsCmdSupported::LAST_SEGMENT,  has_int32_arg: false },
-    McsCommandDesc { name: "Goto Segment", op: 0x24, support: McsCmdSupported::GOTO_SEGMENT,  has_int32_arg: true  },
-    McsCommandDesc { name: "Prev Track",   op: 0x30, support: McsCmdSupported::PREV_TRACK,    has_int32_arg: false },
-    McsCommandDesc { name: "Next Track",   op: 0x31, support: McsCmdSupported::NEXT_TRACK,    has_int32_arg: false },
-    McsCommandDesc { name: "First Track",  op: 0x32, support: McsCmdSupported::FIRST_TRACK,   has_int32_arg: false },
-    McsCommandDesc { name: "Last Track",   op: 0x33, support: McsCmdSupported::LAST_TRACK,    has_int32_arg: false },
-    McsCommandDesc { name: "Goto Track",   op: 0x34, support: McsCmdSupported::GOTO_TRACK,    has_int32_arg: true  },
-    McsCommandDesc { name: "Prev Group",   op: 0x40, support: McsCmdSupported::PREV_GROUP,    has_int32_arg: false },
-    McsCommandDesc { name: "Next Group",   op: 0x41, support: McsCmdSupported::NEXT_GROUP,    has_int32_arg: false },
-    McsCommandDesc { name: "First Group",  op: 0x42, support: McsCmdSupported::FIRST_GROUP,   has_int32_arg: false },
-    McsCommandDesc { name: "Last Group",   op: 0x43, support: McsCmdSupported::LAST_GROUP,    has_int32_arg: false },
-    McsCommandDesc { name: "Goto Group",   op: 0x44, support: McsCmdSupported::GOTO_GROUP,    has_int32_arg: true  },
+    McsCommandDesc { name: "Play", op: 0x01, support: McsCmdSupported::PLAY, has_int32_arg: false },
+    McsCommandDesc {
+        name: "Pause",
+        op: 0x02,
+        support: McsCmdSupported::PAUSE,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "Fast Rewind",
+        op: 0x03,
+        support: McsCmdSupported::FAST_REWIND,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "Fast Forward",
+        op: 0x04,
+        support: McsCmdSupported::FAST_FORWARD,
+        has_int32_arg: false,
+    },
+    McsCommandDesc { name: "Stop", op: 0x05, support: McsCmdSupported::STOP, has_int32_arg: false },
+    McsCommandDesc {
+        name: "Move Relative",
+        op: 0x10,
+        support: McsCmdSupported::MOVE_RELATIVE,
+        has_int32_arg: true,
+    },
+    McsCommandDesc {
+        name: "Prev Segment",
+        op: 0x20,
+        support: McsCmdSupported::PREV_SEGMENT,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "Next Segment",
+        op: 0x21,
+        support: McsCmdSupported::NEXT_SEGMENT,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "First Segment",
+        op: 0x22,
+        support: McsCmdSupported::FIRST_SEGMENT,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "Last Segment",
+        op: 0x23,
+        support: McsCmdSupported::LAST_SEGMENT,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "Goto Segment",
+        op: 0x24,
+        support: McsCmdSupported::GOTO_SEGMENT,
+        has_int32_arg: true,
+    },
+    McsCommandDesc {
+        name: "Prev Track",
+        op: 0x30,
+        support: McsCmdSupported::PREV_TRACK,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "Next Track",
+        op: 0x31,
+        support: McsCmdSupported::NEXT_TRACK,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "First Track",
+        op: 0x32,
+        support: McsCmdSupported::FIRST_TRACK,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "Last Track",
+        op: 0x33,
+        support: McsCmdSupported::LAST_TRACK,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "Goto Track",
+        op: 0x34,
+        support: McsCmdSupported::GOTO_TRACK,
+        has_int32_arg: true,
+    },
+    McsCommandDesc {
+        name: "Prev Group",
+        op: 0x40,
+        support: McsCmdSupported::PREV_GROUP,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "Next Group",
+        op: 0x41,
+        support: McsCmdSupported::NEXT_GROUP,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "First Group",
+        op: 0x42,
+        support: McsCmdSupported::FIRST_GROUP,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "Last Group",
+        op: 0x43,
+        support: McsCmdSupported::LAST_GROUP,
+        has_int32_arg: false,
+    },
+    McsCommandDesc {
+        name: "Goto Group",
+        op: 0x44,
+        support: McsCmdSupported::GOTO_GROUP,
+        has_int32_arg: true,
+    },
 ];
 
 /// Playing order → supported bit mapping (mirrors C `mcs_playing_orders[]`).
 static MCS_PLAYING_ORDERS: &[(PlayingOrder, McsPlayingOrderSupported)] = &[
-    (PlayingOrder::SingleOnce,   McsPlayingOrderSupported::SINGLE_ONCE),
+    (PlayingOrder::SingleOnce, McsPlayingOrderSupported::SINGLE_ONCE),
     (PlayingOrder::SingleRepeat, McsPlayingOrderSupported::SINGLE_REPEAT),
-    (PlayingOrder::InOrderOnce,  McsPlayingOrderSupported::IN_ORDER_ONCE),
-    (PlayingOrder::InOrderRepeat,McsPlayingOrderSupported::IN_ORDER_REPEAT),
-    (PlayingOrder::OldestOnce,   McsPlayingOrderSupported::OLDEST_ONCE),
+    (PlayingOrder::InOrderOnce, McsPlayingOrderSupported::IN_ORDER_ONCE),
+    (PlayingOrder::InOrderRepeat, McsPlayingOrderSupported::IN_ORDER_REPEAT),
+    (PlayingOrder::OldestOnce, McsPlayingOrderSupported::OLDEST_ONCE),
     (PlayingOrder::OldestRepeat, McsPlayingOrderSupported::OLDEST_REPEAT),
-    (PlayingOrder::NewestOnce,   McsPlayingOrderSupported::NEWEST_ONCE),
+    (PlayingOrder::NewestOnce, McsPlayingOrderSupported::NEWEST_ONCE),
     (PlayingOrder::NewestRepeat, McsPlayingOrderSupported::NEWEST_REPEAT),
-    (PlayingOrder::ShuffleOnce,  McsPlayingOrderSupported::SHUFFLE_ONCE),
-    (PlayingOrder::ShuffleRepeat,McsPlayingOrderSupported::SHUFFLE_REPEAT),
+    (PlayingOrder::ShuffleOnce, McsPlayingOrderSupported::SHUFFLE_ONCE),
+    (PlayingOrder::ShuffleRepeat, McsPlayingOrderSupported::SHUFFLE_REPEAT),
 ];
 
 /// Find a command descriptor by opcode.
@@ -440,9 +535,7 @@ pub fn find_command_support(op: u8) -> Option<McsCmdSupported> {
 
 /// Check whether a playing order value has its corresponding support bit set.
 fn playing_order_supported(order: u8, supported: McsPlayingOrderSupported) -> bool {
-    MCS_PLAYING_ORDERS
-        .iter()
-        .any(|(po, bit)| *po as u8 == order && supported.contains(*bit))
+    MCS_PLAYING_ORDERS.iter().any(|(po, bit)| *po as u8 == order && supported.contains(*bit))
 }
 
 // =====================================================================
@@ -455,73 +548,137 @@ fn playing_order_supported(order: u8, supported: McsPlayingOrderSupported) -> bo
 /// This trait replaces the C `struct bt_mcs_callback` function pointer table.
 pub trait McsCallback: Send + Sync {
     /// Return the media player name as raw UTF-8 bytes.
-    fn media_player_name(&self) -> Vec<u8> { Vec::new() }
+    fn media_player_name(&self) -> Vec<u8> {
+        Vec::new()
+    }
     /// Return the track title as raw UTF-8 bytes.
-    fn track_title(&self) -> Vec<u8> { Vec::new() }
+    fn track_title(&self) -> Vec<u8> {
+        Vec::new()
+    }
     /// Return the track duration in centiseconds.
-    fn track_duration(&self) -> i32 { MCS_DURATION_UNAVAILABLE }
+    fn track_duration(&self) -> i32 {
+        MCS_DURATION_UNAVAILABLE
+    }
     /// Return the current track position in centiseconds.
-    fn track_position(&self) -> i32 { MCS_POSITION_UNAVAILABLE }
+    fn track_position(&self) -> i32 {
+        MCS_POSITION_UNAVAILABLE
+    }
     /// Return the playback speed (log2 of speed factor, as signed byte).
-    fn playback_speed(&self) -> i8 { 0 }
+    fn playback_speed(&self) -> i8 {
+        0
+    }
     /// Return the seeking speed (log2 of speed factor, as signed byte).
-    fn seeking_speed(&self) -> i8 { 0 }
+    fn seeking_speed(&self) -> i8 {
+        0
+    }
     /// Return the current playing order.
-    fn playing_order(&self) -> u8 { PlayingOrder::InOrderRepeat as u8 }
+    fn playing_order(&self) -> u8 {
+        PlayingOrder::InOrderRepeat as u8
+    }
     /// Return the supported playing orders bitfield.
     fn playing_order_supported(&self) -> u16 {
         McsPlayingOrderSupported::IN_ORDER_REPEAT.bits()
     }
     /// Return the supported Media CP opcodes bitfield.
-    fn media_cp_op_supported(&self) -> u32 { 0 }
+    fn media_cp_op_supported(&self) -> u32 {
+        0
+    }
     /// Notification: set track position. Returns true if accepted.
-    fn set_track_position(&self, _position: i32) -> bool { false }
+    fn set_track_position(&self, _position: i32) -> bool {
+        false
+    }
     /// Notification: set playback speed. Returns true if accepted.
-    fn set_playback_speed(&self, _speed: i8) -> bool { false }
+    fn set_playback_speed(&self, _speed: i8) -> bool {
+        false
+    }
     /// Notification: set playing order. Returns true if accepted.
-    fn set_playing_order(&self, _order: u8) -> bool { false }
+    fn set_playing_order(&self, _order: u8) -> bool {
+        false
+    }
     /// Media command: Play. Returns true if successful.
-    fn play(&self) -> bool { false }
+    fn play(&self) -> bool {
+        false
+    }
     /// Media command: Pause. Returns true if successful.
-    fn pause(&self) -> bool { false }
+    fn pause(&self) -> bool {
+        false
+    }
     /// Media command: Fast Rewind. Returns true if successful.
-    fn fast_rewind(&self) -> bool { false }
+    fn fast_rewind(&self) -> bool {
+        false
+    }
     /// Media command: Fast Forward. Returns true if successful.
-    fn fast_forward(&self) -> bool { false }
+    fn fast_forward(&self) -> bool {
+        false
+    }
     /// Media command: Stop. Returns true if successful.
-    fn stop(&self) -> bool { false }
+    fn stop(&self) -> bool {
+        false
+    }
     /// Media command: Move Relative. Returns true if successful.
-    fn move_relative(&self, _offset: i32) -> bool { false }
+    fn move_relative(&self, _offset: i32) -> bool {
+        false
+    }
     /// Media command: Previous Segment. Returns true if successful.
-    fn previous_segment(&self) -> bool { false }
+    fn previous_segment(&self) -> bool {
+        false
+    }
     /// Media command: Next Segment. Returns true if successful.
-    fn next_segment(&self) -> bool { false }
+    fn next_segment(&self) -> bool {
+        false
+    }
     /// Media command: First Segment. Returns true if successful.
-    fn first_segment(&self) -> bool { false }
+    fn first_segment(&self) -> bool {
+        false
+    }
     /// Media command: Last Segment. Returns true if successful.
-    fn last_segment(&self) -> bool { false }
+    fn last_segment(&self) -> bool {
+        false
+    }
     /// Media command: Goto Segment. Returns true if successful.
-    fn goto_segment(&self, _n: i32) -> bool { false }
+    fn goto_segment(&self, _n: i32) -> bool {
+        false
+    }
     /// Media command: Previous Track. Returns true if successful.
-    fn previous_track(&self) -> bool { false }
+    fn previous_track(&self) -> bool {
+        false
+    }
     /// Media command: Next Track. Returns true if successful.
-    fn next_track(&self) -> bool { false }
+    fn next_track(&self) -> bool {
+        false
+    }
     /// Media command: First Track. Returns true if successful.
-    fn first_track(&self) -> bool { false }
+    fn first_track(&self) -> bool {
+        false
+    }
     /// Media command: Last Track. Returns true if successful.
-    fn last_track(&self) -> bool { false }
+    fn last_track(&self) -> bool {
+        false
+    }
     /// Media command: Goto Track. Returns true if successful.
-    fn goto_track(&self, _n: i32) -> bool { false }
+    fn goto_track(&self, _n: i32) -> bool {
+        false
+    }
     /// Media command: Previous Group. Returns true if successful.
-    fn previous_group(&self) -> bool { false }
+    fn previous_group(&self) -> bool {
+        false
+    }
     /// Media command: Next Group. Returns true if successful.
-    fn next_group(&self) -> bool { false }
+    fn next_group(&self) -> bool {
+        false
+    }
     /// Media command: First Group. Returns true if successful.
-    fn first_group(&self) -> bool { false }
+    fn first_group(&self) -> bool {
+        false
+    }
     /// Media command: Last Group. Returns true if successful.
-    fn last_group(&self) -> bool { false }
+    fn last_group(&self) -> bool {
+        false
+    }
     /// Media command: Goto Group. Returns true if successful.
-    fn goto_group(&self, _n: i32) -> bool { false }
+    fn goto_group(&self, _n: i32) -> bool {
+        false
+    }
     /// Debug logging callback.
     fn debug(&self, _msg: &str) {}
     /// Called when the MCS server is being destroyed.
@@ -589,10 +746,8 @@ struct McsGlobal {
     ccid_counter: u8,
 }
 
-static MCS_GLOBAL: Mutex<McsGlobal> = Mutex::new(McsGlobal {
-    servers: Vec::new(),
-    ccid_counter: 0,
-});
+static MCS_GLOBAL: Mutex<McsGlobal> =
+    Mutex::new(McsGlobal { servers: Vec::new(), ccid_counter: 0 });
 
 /// Allocate a new CCID, avoiding collisions with existing servers.
 fn mcs_alloc_ccid() -> u8 {
@@ -602,13 +757,10 @@ fn mcs_alloc_ccid() -> u8 {
         global.ccid_counter = global.ccid_counter.wrapping_add(1);
         let candidate = global.ccid_counter;
         // Check no existing server uses this CCID.
-        let collision = global.servers.iter().any(|s| {
-            if let Ok(inner) = s.lock() {
-                inner.ccid == candidate
-            } else {
-                false
-            }
-        });
+        let collision = global
+            .servers
+            .iter()
+            .any(|s| if let Ok(inner) = s.lock() { inner.ccid == candidate } else { false });
         if !collision {
             return candidate;
         }
@@ -703,11 +855,7 @@ impl BtMcs {
     ///
     /// Returns `None` if registration fails (e.g., duplicate GMCS, or
     /// insufficient GATT handle space).
-    pub fn register(
-        db: GattDb,
-        is_gmcs: bool,
-        callbacks: Arc<dyn McsCallback>,
-    ) -> Option<BtMcs> {
+    pub fn register(db: GattDb, is_gmcs: bool, callbacks: Arc<dyn McsCallback>) -> Option<BtMcs> {
         // Enforce single GMCS per database.
         {
             let global = MCS_GLOBAL.lock().unwrap();
@@ -788,13 +936,7 @@ impl BtMcs {
             global
                 .servers
                 .iter()
-                .filter(|s| {
-                    if let Ok(inner) = s.lock() {
-                        inner.db.ptr_eq(db)
-                    } else {
-                        false
-                    }
-                })
+                .filter(|s| if let Ok(inner) = s.lock() { inner.db.ptr_eq(db) } else { false })
                 .cloned()
                 .collect()
         };
@@ -844,12 +986,8 @@ impl BtMcs {
             MCS_MEDIA_PLAYER_NAME_CHRC_UUID => {
                 (inner.handles.media_player_name, cb.media_player_name())
             }
-            MCS_TRACK_CHANGED_CHRC_UUID => {
-                (inner.handles.track_changed, Vec::new())
-            }
-            MCS_TRACK_TITLE_CHRC_UUID => {
-                (inner.handles.track_title, cb.track_title())
-            }
+            MCS_TRACK_CHANGED_CHRC_UUID => (inner.handles.track_changed, Vec::new()),
+            MCS_TRACK_TITLE_CHRC_UUID => (inner.handles.track_title, cb.track_title()),
             MCS_TRACK_DURATION_CHRC_UUID => {
                 let v = cb.track_duration();
                 let mut buf = IoBuf::with_capacity(4);
@@ -880,9 +1018,7 @@ impl BtMcs {
                 buf.push_le16(v);
                 (inner.handles.playing_order_supported, buf.as_bytes().to_vec())
             }
-            MCS_MEDIA_STATE_CHRC_UUID => {
-                (inner.handles.media_state, vec![inner.media_state as u8])
-            }
+            MCS_MEDIA_STATE_CHRC_UUID => (inner.handles.media_state, vec![inner.media_state as u8]),
             MCS_MEDIA_CP_OP_SUPPORTED_CHRC_UUID => {
                 let v = cb.media_cp_op_supported();
                 let mut buf = IoBuf::with_capacity(4);
@@ -917,16 +1053,8 @@ impl BtMcs {
 /// Initialize the GATT service with all MCS/GMCS characteristics.
 ///
 /// Returns the service handle and the DB handles struct.
-fn mcs_init_db(
-    db: &GattDb,
-    is_gmcs: bool,
-    _ccid: u8,
-) -> Option<(GattDbService, McsDbHandles)> {
-    let svc_uuid = if is_gmcs {
-        BtUuid::from_u16(GMCS_UUID)
-    } else {
-        BtUuid::from_u16(MCS_UUID)
-    };
+fn mcs_init_db(db: &GattDb, is_gmcs: bool, _ccid: u8) -> Option<(GattDbService, McsDbHandles)> {
+    let svc_uuid = if is_gmcs { BtUuid::from_u16(GMCS_UUID) } else { BtUuid::from_u16(MCS_UUID) };
 
     let service = db.add_service(&svc_uuid, true, MCS_NUM_HANDLES)?;
     let _svc_handle = service.as_attribute().get_handle();
@@ -939,20 +1067,14 @@ fn mcs_init_db(
     let read_prop = GattChrcProperties::READ.bits();
     let read_notify_prop = GattChrcProperties::READ.bits() | GattChrcProperties::NOTIFY.bits();
     let notify_prop = GattChrcProperties::NOTIFY.bits();
-    let write_prop = GattChrcProperties::WRITE.bits()
-        | GattChrcProperties::WRITE_WITHOUT_RESP.bits();
+    let write_prop =
+        GattChrcProperties::WRITE.bits() | GattChrcProperties::WRITE_WITHOUT_RESP.bits();
     let read_write_notify_prop = read_notify_prop | write_prop;
 
     // Helper to add a characteristic with no callbacks (callbacks set later via user_data).
     let add_chrc = |uuid: u16, perms: u32, props: u8| -> Option<u16> {
-        let attr = service.add_characteristic(
-            &BtUuid::from_u16(uuid),
-            perms,
-            props,
-            None,
-            None,
-            None,
-        )?;
+        let attr =
+            service.add_characteristic(&BtUuid::from_u16(uuid), perms, props, None, None, None)?;
         Some(attr.get_handle())
     };
 
@@ -1019,19 +1141,13 @@ fn mcs_init_db(
     // 11. Media Control Point (Write + Write Without Response + Notify)
     // The CP handle is managed by the GATT DB for write dispatch;
     // we don't store it separately in McsDbHandles.
-    let _media_cp = add_chrc(
-        MCS_MEDIA_CP_CHRC_UUID,
-        wp,
-        write_prop | GattChrcProperties::NOTIFY.bits(),
-    )?;
+    let _media_cp =
+        add_chrc(MCS_MEDIA_CP_CHRC_UUID, wp, write_prop | GattChrcProperties::NOTIFY.bits())?;
     service.add_ccc(np);
 
     // 12. Media Control Point Opcodes Supported (Read + Notify, fixed 4 bytes)
-    let media_cp_op_supported = add_chrc(
-        MCS_MEDIA_CP_OP_SUPPORTED_CHRC_UUID,
-        rp,
-        read_notify_prop,
-    )?;
+    let media_cp_op_supported =
+        add_chrc(MCS_MEDIA_CP_OP_SUPPORTED_CHRC_UUID, rp, read_notify_prop)?;
     if let Some(attr) = db.get_attribute(media_cp_op_supported) {
         attr.set_fixed_length(4);
     }
@@ -1226,16 +1342,10 @@ impl BtMcp {
             listeners: Vec::new(),
         };
 
-        let mcp = Arc::new(BtMcp {
-            inner: Arc::new(Mutex::new(inner)),
-        });
+        let mcp = Arc::new(BtMcp { inner: Arc::new(Mutex::new(inner)) });
 
         // Discover services in the remote database.
-        let svc_uuid = if gmcs {
-            BtUuid::from_u16(GMCS_UUID)
-        } else {
-            BtUuid::from_u16(MCS_UUID)
-        };
+        let svc_uuid = if gmcs { BtUuid::from_u16(GMCS_UUID) } else { BtUuid::from_u16(MCS_UUID) };
 
         let mcp_clone = Arc::clone(&mcp);
         db.foreach_service(Some(&svc_uuid), move |attr| {
@@ -1322,11 +1432,7 @@ impl BtMcp {
 
     /// Add a listener for characteristic value change notifications for a
     /// specific CCID.
-    pub fn add_listener(
-        &self,
-        ccid: u8,
-        listener: Arc<dyn McpListenerCallback>,
-    ) -> bool {
+    pub fn add_listener(&self, ccid: u8, listener: Arc<dyn McpListenerCallback>) -> bool {
         let mut inner = self.inner.lock().unwrap();
         // Verify the CCID exists in discovered services.
         let found = inner.services.iter().any(|s| s.ccid == ccid);
@@ -1550,12 +1656,7 @@ impl BtMcp {
 
         {
             let mut inner = mcp_ref.lock().unwrap();
-            inner.pending.push(McpPending {
-                id: pending_id,
-                op: 0,
-                ccid,
-                client_id,
-            });
+            inner.pending.push(McpPending { id: pending_id, op: 0, ccid, client_id });
         }
         pending_id
     }
@@ -1572,7 +1673,8 @@ impl BtMcp {
         };
 
         // Check if the order is supported.
-        let supported = McsPlayingOrderSupported::from_bits_truncate(svc.playing_order_supported_val);
+        let supported =
+            McsPlayingOrderSupported::from_bits_truncate(svc.playing_order_supported_val);
         if !playing_order_supported(order, supported) {
             debug!("MCP set_playing_order: order 0x{:02x} not supported", order);
             return 0;
@@ -1615,12 +1717,7 @@ impl BtMcp {
 
         {
             let mut inner = mcp_ref.lock().unwrap();
-            inner.pending.push(McpPending {
-                id: pending_id,
-                op: 0,
-                ccid,
-                client_id,
-            });
+            inner.pending.push(McpPending { id: pending_id, op: 0, ccid, client_id });
         }
         pending_id
     }
@@ -1641,12 +1738,7 @@ impl BtMcp {
     /// Get the supported commands bitfield for a specific CCID.
     pub fn get_supported_commands(&self, ccid: u8) -> u32 {
         let inner = self.inner.lock().unwrap();
-        inner
-            .services
-            .iter()
-            .find(|s| s.ccid == ccid)
-            .map(|s| s.cmd_supported_val)
-            .unwrap_or(0)
+        inner.services.iter().find(|s| s.ccid == ccid).map(|s| s.cmd_supported_val).unwrap_or(0)
     }
 
     // ---- Internal Command Dispatch ----
@@ -1719,12 +1811,7 @@ impl BtMcp {
             return 0;
         }
 
-        inner.pending.push(McpPending {
-            id: pending_id,
-            op,
-            ccid,
-            client_id,
-        });
+        inner.pending.push(McpPending { id: pending_id, op, ccid, client_id });
 
         drop(inner);
 
@@ -1797,32 +1884,35 @@ fn mcp_discover_service(mcp: &Arc<BtMcp>, attr: &GattDbAttribute) {
         let client = Arc::clone(&inner.client);
         drop(inner);
 
-        client.read_value(ccid_handle, Box::new(move |success, _ecode, data| {
-            if success && !data.is_empty() {
-                let ccid = data[0];
-                let mut inner = mcp_clone.inner.lock().unwrap();
+        client.read_value(
+            ccid_handle,
+            Box::new(move |success, _ecode, data| {
+                if success && !data.is_empty() {
+                    let ccid = data[0];
+                    let mut inner = mcp_clone.inner.lock().unwrap();
 
-                // Update CCID and store handles.
-                let svc_idx = inner.services.len();
-                let mut h = handles;
-                h.ccid = ccid;
-                inner.services.push(h);
+                    // Update CCID and store handles.
+                    let svc_idx = inner.services.len();
+                    let mut h = handles;
+                    h.ccid = ccid;
+                    inner.services.push(h);
 
-                let is_gmcs_val = inner.services[svc_idx].is_gmcs;
-                let cb = Arc::clone(&inner.callbacks);
-                let client = Arc::clone(&inner.client);
-                drop(inner);
+                    let is_gmcs_val = inner.services[svc_idx].is_gmcs;
+                    let cb = Arc::clone(&inner.callbacks);
+                    let client = Arc::clone(&inner.client);
+                    drop(inner);
 
-                // Notify callback about new CCID.
-                cb.ccid(ccid, is_gmcs_val);
+                    // Notify callback about new CCID.
+                    cb.ccid(ccid, is_gmcs_val);
 
-                // Read all other characteristics and register notifications.
-                mcp_read_characteristics(&mcp_clone, svc_idx, &client);
+                    // Read all other characteristics and register notifications.
+                    mcp_read_characteristics(&mcp_clone, svc_idx, &client);
 
-                // Check if we should fire the ready callback.
-                mcp_check_ready(&mcp_clone, &client);
-            }
-        }));
+                    // Check if we should fire the ready callback.
+                    mcp_check_ready(&mcp_clone, &client);
+                }
+            }),
+        );
     }
 
     // Store service handles even if CCID read hasn't completed yet.
@@ -1967,12 +2057,8 @@ fn mcp_handle_notification(mcp: &Arc<BtMcp>, ccid: u8, handle: u16, data: &[u8])
     };
 
     // Dispatch to listeners.
-    let listeners: Vec<Arc<dyn McpListenerCallback>> = inner
-        .listeners
-        .iter()
-        .filter(|(c, _)| *c == ccid)
-        .map(|(_, l)| Arc::clone(l))
-        .collect();
+    let listeners: Vec<Arc<dyn McpListenerCallback>> =
+        inner.listeners.iter().filter(|(c, _)| *c == ccid).map(|(_, l)| Arc::clone(l)).collect();
 
     // For CP response, handle completion callback.
     if uuid == MCS_MEDIA_CP_CHRC_UUID && data.len() >= 2 {
@@ -2018,19 +2104,45 @@ fn mcp_handle_notification(mcp: &Arc<BtMcp>, ccid: u8, handle: u16, data: &[u8])
 
 /// Map a value handle back to the characteristic UUID for a service.
 fn handle_to_uuid(svc: &McpServiceHandles, handle: u16) -> Option<u16> {
-    if handle == svc.media_player_name { return Some(MCS_MEDIA_PLAYER_NAME_CHRC_UUID); }
-    if handle == svc.track_changed { return Some(MCS_TRACK_CHANGED_CHRC_UUID); }
-    if handle == svc.track_title { return Some(MCS_TRACK_TITLE_CHRC_UUID); }
-    if handle == svc.track_duration { return Some(MCS_TRACK_DURATION_CHRC_UUID); }
-    if handle == svc.track_position { return Some(MCS_TRACK_POSITION_CHRC_UUID); }
-    if handle == svc.playback_speed { return Some(MCS_PLAYBACK_SPEED_CHRC_UUID); }
-    if handle == svc.seeking_speed { return Some(MCS_SEEKING_SPEED_CHRC_UUID); }
-    if handle == svc.playing_order { return Some(MCS_PLAYING_ORDER_CHRC_UUID); }
-    if handle == svc.playing_order_supported { return Some(MCS_PLAYING_ORDER_SUPPORTED_CHRC_UUID); }
-    if handle == svc.media_state { return Some(MCS_MEDIA_STATE_CHRC_UUID); }
-    if handle == svc.media_cp { return Some(MCS_MEDIA_CP_CHRC_UUID); }
-    if handle == svc.media_cp_op_supported { return Some(MCS_MEDIA_CP_OP_SUPPORTED_CHRC_UUID); }
-    if handle == svc.ccid_value { return Some(MCS_CCID_CHRC_UUID); }
+    if handle == svc.media_player_name {
+        return Some(MCS_MEDIA_PLAYER_NAME_CHRC_UUID);
+    }
+    if handle == svc.track_changed {
+        return Some(MCS_TRACK_CHANGED_CHRC_UUID);
+    }
+    if handle == svc.track_title {
+        return Some(MCS_TRACK_TITLE_CHRC_UUID);
+    }
+    if handle == svc.track_duration {
+        return Some(MCS_TRACK_DURATION_CHRC_UUID);
+    }
+    if handle == svc.track_position {
+        return Some(MCS_TRACK_POSITION_CHRC_UUID);
+    }
+    if handle == svc.playback_speed {
+        return Some(MCS_PLAYBACK_SPEED_CHRC_UUID);
+    }
+    if handle == svc.seeking_speed {
+        return Some(MCS_SEEKING_SPEED_CHRC_UUID);
+    }
+    if handle == svc.playing_order {
+        return Some(MCS_PLAYING_ORDER_CHRC_UUID);
+    }
+    if handle == svc.playing_order_supported {
+        return Some(MCS_PLAYING_ORDER_SUPPORTED_CHRC_UUID);
+    }
+    if handle == svc.media_state {
+        return Some(MCS_MEDIA_STATE_CHRC_UUID);
+    }
+    if handle == svc.media_cp {
+        return Some(MCS_MEDIA_CP_CHRC_UUID);
+    }
+    if handle == svc.media_cp_op_supported {
+        return Some(MCS_MEDIA_CP_OP_SUPPORTED_CHRC_UUID);
+    }
+    if handle == svc.ccid_value {
+        return Some(MCS_CCID_CHRC_UUID);
+    }
     None
 }
 
@@ -2050,12 +2162,8 @@ fn mcp_update_cached_value(mcp: &Arc<BtMcp>, ccid: u8, uuid: u16, data: &[u8]) {
     }
 
     // Dispatch to listeners.
-    let listeners: Vec<Arc<dyn McpListenerCallback>> = inner
-        .listeners
-        .iter()
-        .filter(|(c, _)| *c == ccid)
-        .map(|(_, l)| Arc::clone(l))
-        .collect();
+    let listeners: Vec<Arc<dyn McpListenerCallback>> =
+        inner.listeners.iter().filter(|(c, _)| *c == ccid).map(|(_, l)| Arc::clone(l)).collect();
     drop(inner);
 
     for listener in &listeners {
@@ -2072,11 +2180,7 @@ fn mcp_update_cached_value_inner(_svc: &McpServiceHandles, _uuid: u16, _data: &[
 }
 
 /// Dispatch a notification to a listener based on UUID.
-fn dispatch_listener_notification(
-    listener: &Arc<dyn McpListenerCallback>,
-    uuid: u16,
-    data: &[u8],
-) {
+fn dispatch_listener_notification(listener: &Arc<dyn McpListenerCallback>, uuid: u16, data: &[u8]) {
     match uuid {
         MCS_MEDIA_PLAYER_NAME_CHRC_UUID => listener.media_player_name(data),
         MCS_TRACK_CHANGED_CHRC_UUID => listener.track_changed(),
@@ -2149,11 +2253,7 @@ fn mcp_service_added(mcp: &Arc<BtMcp>, attr: &GattDbAttribute) {
 
     let expected = {
         let inner = mcp.inner.lock().unwrap();
-        if inner.gmcs {
-            BtUuid::from_u16(GMCS_UUID)
-        } else {
-            BtUuid::from_u16(MCS_UUID)
-        }
+        if inner.gmcs { BtUuid::from_u16(GMCS_UUID) } else { BtUuid::from_u16(MCS_UUID) }
     };
 
     if svc_uuid == expected {

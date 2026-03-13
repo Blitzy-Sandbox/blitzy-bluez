@@ -159,6 +159,10 @@ name = "test_gatt"
 path = "tests/unit/test_gatt.rs"
 
 [[test]]
+name = "test_att"
+path = "tests/unit/test_att.rs"
+
+[[test]]
 name = "btsnoop_replay_test"
 path = "tests/integration/btsnoop_replay_test.rs"
 

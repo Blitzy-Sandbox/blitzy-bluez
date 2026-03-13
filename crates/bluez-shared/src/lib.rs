@@ -15,6 +15,7 @@ pub mod hci;
 pub mod log;
 pub mod mgmt;
 pub mod profiles;
+pub mod shell;
 pub mod socket;
 pub mod sys;
 pub mod tester;

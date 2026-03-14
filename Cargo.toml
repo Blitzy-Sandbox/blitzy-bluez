@@ -220,6 +220,10 @@ path = "tests/unit/test_mcp.rs"
 name = "btsnoop_replay_test"
 path = "tests/integration/btsnoop_replay_test.rs"
 
+[[test]]
+name = "dbus_contract_test"
+path = "tests/integration/dbus_contract_test.rs"
+
 [lints]
 workspace = true
 

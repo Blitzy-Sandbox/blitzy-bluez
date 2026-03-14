@@ -1,6 +1,7 @@
 // BlueZ interactive Bluetooth control client
 // Stub file - will be replaced by implementation agents
 
+pub mod admin;
 pub mod adv_monitor;
 pub mod advertising;
 pub mod agent;

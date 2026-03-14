@@ -141,6 +141,10 @@ name = "test_gobex_packet"
 path = "tests/unit/test_gobex_packet.rs"
 
 [[test]]
+name = "test_gobex_transfer"
+path = "tests/unit/test_gobex_transfer.rs"
+
+[[test]]
 name = "test_crc"
 path = "tests/unit/test_crc.rs"
 

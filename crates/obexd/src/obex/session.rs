@@ -1105,6 +1105,31 @@ impl ObexSession {
             pkt.is_final()
         );
 
+        // Connection-ID validation — matches C gobex.c check_connid() +
+        // parse_request().
+        //
+        // C semantics (gobex.c:1166-1181):
+        //   • conn_id == CONNID_INVALID → allow (no connection)
+        //   • HDR_CONNECTION absent     → allow (header is optional)
+        //   • HDR_CONNECTION present but wrong value → reject
+        //
+        // Only CONNECT and ABORT bypass the check entirely.
+        if self.conn_id != CONNID_INVALID && op != OP_CONNECT && op != OP_ABORT {
+            let id_ok = pkt
+                .get_header(HDR_CONNECTION)
+                .and_then(|h| h.as_u32())
+                .is_none_or(|id| id == self.conn_id);
+            if !id_ok {
+                tracing::debug!(
+                    target: "obex::command",
+                    "connection ID mismatch — sending SERVICE_UNAVAILABLE"
+                );
+                let rsp = ObexPacket::new_response(RSP_SERVICE_UNAVAILABLE);
+                let _ = self.send(rsp);
+                return;
+            }
+        }
+
         // Process SRM headers.
         self.setup_srm(&pkt, false);
 
@@ -1115,7 +1140,11 @@ impl ObexSession {
             // Take the handler out, invoke it, put it back.
             let mut handler = self.req_handlers.remove(idx);
             (handler.func)(self, &pkt);
-            self.req_handlers.insert(idx, handler);
+            // Re-insert only if the handler wasn't removed by the callback
+            // (e.g. server_abort_handler calls complete_server_transfer which
+            // removes all handlers).  Clamp index to current length.
+            let insert_idx = idx.min(self.req_handlers.len());
+            self.req_handlers.insert(insert_idx, handler);
         } else {
             tracing::debug!(
                 target: "obex::command",

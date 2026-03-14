@@ -30,7 +30,7 @@ use std::sync::{
 };
 use std::time::Duration;
 
-use super::header::ObexHeader;
+use super::header::{HDR_BODY_END, ObexHeader};
 use super::packet::{
     OP_ABORT, OP_GET, OP_PUT, ObexPacket, PACKET_FINAL, PacketError, RSP_CONTINUE, RSP_FORBIDDEN,
     RSP_SUCCESS,
@@ -396,6 +396,12 @@ fn put_get_bytes(inner: &mut TransferInner, pkt: &ObexPacket) -> u8 {
         }
     };
 
+    // Determine finality from the body header ID, NOT the packet FINAL bit.
+    // HDR_BODY (0x48) = more data coming; HDR_BODY_END (0x49) = last chunk.
+    // This matches the C implementation in transfer_put_req which checks
+    // for G_OBEX_HDR_BODY vs G_OBEX_HDR_BODY_END.
+    let is_final_body = body_hdr.id() == HDR_BODY_END;
+
     if let Some(data) = body_hdr.as_bytes() {
         if let Some(ref mut consumer) = inner.data_consumer {
             if consumer(data).is_err() {
@@ -404,7 +410,7 @@ fn put_get_bytes(inner: &mut TransferInner, pkt: &ObexPacket) -> u8 {
         }
     }
 
-    if pkt.is_final() { RSP_SUCCESS } else { RSP_CONTINUE }
+    if is_final_body { RSP_SUCCESS } else { RSP_CONTINUE }
 }
 
 /// Handler for incoming PUT requests on the server side.

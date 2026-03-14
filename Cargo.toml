@@ -169,6 +169,10 @@ name = "test_gatt"
 path = "tests/unit/test_gatt.rs"
 
 [[test]]
+name = "test_gmap"
+path = "tests/unit/test_gmap.rs"
+
+[[test]]
 name = "test_att"
 path = "tests/unit/test_att.rs"
 

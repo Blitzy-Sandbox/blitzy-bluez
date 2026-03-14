@@ -23,6 +23,7 @@ use tokio::task::JoinHandle;
 use tokio::time::Duration;
 use tracing::{debug, error, info, warn};
 
+use crate::appkey::MeshAppKey;
 use crate::config::MeshConfig;
 use crate::crypto::{
     MeshPacketBuildParams, MeshPayloadDecryptParams, MeshPayloadEncryptParams, PacketFields,
@@ -525,7 +526,7 @@ pub struct MeshNet {
 
     // ---- subnet / key state ----
     subnets: Vec<MeshSubnet>,
-    app_keys: Vec<AppKeyEntry>,
+    app_keys: Vec<MeshAppKey>,
     primary_net_idx: u16,
 
     // ---- addressing ----
@@ -599,17 +600,6 @@ pub struct MeshNet {
 
 /// Opaque node reference for back-pointer.
 pub struct MeshNetNode;
-
-/// Application key entry.
-#[derive(Debug, Clone)]
-pub struct AppKeyEntry {
-    /// Application key index.
-    pub app_idx: u16,
-    /// Bound network key index.
-    pub net_idx: u16,
-    /// The application key material (128-bit).
-    pub key: [u8; 16],
-}
 
 /// SAR key: combines seq_zero and src for unique session identification.
 #[inline]
@@ -1158,9 +1148,14 @@ impl MeshNet {
         self.primary_net_idx
     }
 
-    /// Get application key entries.
-    pub fn get_app_keys(&self) -> &[AppKeyEntry] {
+    /// Get application key entries (immutable).
+    pub fn get_app_keys(&self) -> &[MeshAppKey] {
         &self.app_keys
+    }
+
+    /// Get mutable reference to application key storage.
+    pub fn get_app_keys_mut(&mut self) -> &mut Vec<MeshAppKey> {
+        &mut self.app_keys
     }
 
     // =======================================================================
@@ -2549,6 +2544,11 @@ impl MeshNet {
     /// Set the configuration persistence backend.
     pub fn set_config(&mut self, config: Arc<Mutex<dyn MeshConfig>>) {
         self.config = Some(config);
+    }
+
+    /// Get a reference to the configuration persistence backend.
+    pub fn get_config(&self) -> Option<&Arc<Mutex<dyn MeshConfig>>> {
+        self.config.as_ref()
     }
 
     /// Set the node storage path for RPL persistence.

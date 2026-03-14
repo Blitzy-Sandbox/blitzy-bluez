@@ -11,4 +11,5 @@
 
 pub mod client;
 pub mod obex;
+pub mod plugins;
 pub mod server;

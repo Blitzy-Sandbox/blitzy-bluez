@@ -98,6 +98,23 @@ pub struct PendingNotification {
     pub callback: AttNotifyCallback,
 }
 
+/// A deferred response-callback invocation collected during
+/// [`BtAtt::process_read`].
+///
+/// Response callbacks (from `handle_rsp`, `handle_error_rsp`, `handle_conf`)
+/// are deferred so they execute **after** the BtAtt mutex is released,
+/// preventing deadlock when the callback re-acquires the lock (e.g.
+/// `BtGattClient::handle_read_response` calling `att.lock()` to get MTU
+/// or send a follow-up Read Blob).
+pub struct PendingResponse {
+    /// The response opcode byte.
+    pub opcode: u8,
+    /// The response body.
+    pub body: Vec<u8>,
+    /// The callback to invoke.
+    pub callback: Box<dyn FnOnce(u8, &[u8]) + Send>,
+}
+
 /// DB-out-of-sync notification callback.
 /// Parameters: `(opcode, pdu, operation_id)`.
 pub type AttDbSyncCallback = Option<Box<dyn Fn(u8, &[u8], u32) + Send + Sync>>;
@@ -674,6 +691,12 @@ pub struct BtAtt {
     /// these via `take_pending_notifications()` and invokes them after
     /// releasing the lock.
     pending_notifications: Vec<PendingNotification>,
+
+    /// Deferred response-callback invocations collected during
+    /// `handle_rsp`, `handle_error_rsp`, and `handle_conf`.  The caller
+    /// retrieves these via `take_pending_responses()` and invokes them
+    /// after releasing the lock.
+    pending_responses: Vec<PendingResponse>,
 }
 
 impl BtAtt {
@@ -718,6 +741,7 @@ impl BtAtt {
             local_sign: None,
             remote_sign: None,
             pending_notifications: Vec::new(),
+            pending_responses: Vec::new(),
         };
 
         Ok(Arc::new(Mutex::new(att)))
@@ -1477,9 +1501,15 @@ impl BtAtt {
             }
         }
 
-        // Invoke the callback.
+        // Defer the callback — it will be invoked after the BtAtt lock is
+        // released (via `take_pending_responses()`), preventing deadlock when
+        // the callback re-acquires the lock.
         if let Some(cb) = op.callback.take() {
-            cb(opcode, body);
+            self.pending_responses.push(PendingResponse {
+                opcode,
+                body: body.to_vec(),
+                callback: cb,
+            });
         }
 
         // Wake up writer to send next queued operation.
@@ -1493,9 +1523,13 @@ impl BtAtt {
     /// Mirrors `handle_error_rsp` (att.c lines 793-857).
     fn handle_error_rsp(&mut self, chan_idx: usize, op: &mut AttSendOp, body: &[u8]) {
         if body.len() < 4 {
-            // Malformed error response — invoke callback with generic error.
+            // Malformed error response — defer callback.
             if let Some(cb) = op.callback.take() {
-                cb(BT_ATT_OP_ERROR_RSP, body);
+                self.pending_responses.push(PendingResponse {
+                    opcode: BT_ATT_OP_ERROR_RSP,
+                    body: body.to_vec(),
+                    callback: cb,
+                });
             }
             return;
         }
@@ -1550,9 +1584,13 @@ impl BtAtt {
             return;
         }
 
-        // No retry — invoke the callback with the error.
+        // No retry — defer the callback with the error.
         if let Some(cb) = op.callback.take() {
-            cb(BT_ATT_OP_ERROR_RSP, body);
+            self.pending_responses.push(PendingResponse {
+                opcode: BT_ATT_OP_ERROR_RSP,
+                body: body.to_vec(),
+                callback: cb,
+            });
         }
         self.wakeup_chan_writer(chan_idx);
     }
@@ -1605,7 +1643,11 @@ impl BtAtt {
         let pending = self.chans[chan_idx].pending_ind.take();
         if let Some(mut op) = pending {
             if let Some(cb) = op.callback.take() {
-                cb(BT_ATT_OP_HANDLE_CONF, &[]);
+                self.pending_responses.push(PendingResponse {
+                    opcode: BT_ATT_OP_HANDLE_CONF,
+                    body: Vec::new(),
+                    callback: cb,
+                });
             }
         }
         self.wakeup_chan_writer(chan_idx);
@@ -1728,10 +1770,14 @@ impl BtAtt {
 
     /// Drain a send-op queue, invoking each operation's callback with an
     /// error indication.
-    fn drain_queue_with_error(&self, queue: &mut VecDeque<AttSendOp>, _err: i32) {
+    fn drain_queue_with_error(&mut self, queue: &mut VecDeque<AttSendOp>, _err: i32) {
         while let Some(mut op) = queue.pop_front() {
             if let Some(cb) = op.callback.take() {
-                cb(BT_ATT_OP_ERROR_RSP, &[]);
+                self.pending_responses.push(PendingResponse {
+                    opcode: BT_ATT_OP_ERROR_RSP,
+                    body: Vec::new(),
+                    callback: cb,
+                });
             }
         }
     }
@@ -1806,6 +1852,34 @@ impl BtAtt {
     /// ```
     pub fn take_pending_notifications(&mut self) -> Vec<PendingNotification> {
         std::mem::take(&mut self.pending_notifications)
+    }
+
+    /// Retrieve and drain all deferred response-callback invocations
+    /// collected during the most recent [`process_read`] call.
+    ///
+    /// Response callbacks (from `handle_rsp`, `handle_error_rsp`,
+    /// `handle_conf`) are deferred so they execute after the BtAtt mutex
+    /// is released, preventing deadlock when the callback re-acquires
+    /// the lock (e.g. `BtGattClient::handle_read_response` calling
+    /// `att.lock()` to get MTU or send a follow-up Read Blob).
+    ///
+    /// Usage:
+    /// ```ignore
+    /// let (notifs, resps) = {
+    ///     let mut att = att_arc.lock().unwrap();
+    ///     att.process_read(0, &data);
+    ///     (att.take_pending_notifications(), att.take_pending_responses())
+    /// };
+    /// // Lock released — safe to invoke callbacks.
+    /// for pn in &notifs {
+    ///     (pn.callback)(pn.chan_idx, pn.filter_opcode, pn.raw_opcode, &pn.body);
+    /// }
+    /// for pr in resps {
+    ///     (pr.callback)(pr.opcode, &pr.body);
+    /// }
+    /// ```
+    pub fn take_pending_responses(&mut self) -> Vec<PendingResponse> {
+        std::mem::take(&mut self.pending_responses)
     }
 }
 

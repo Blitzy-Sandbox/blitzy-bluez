@@ -204,16 +204,19 @@ impl TestContext {
     }
 
     /// Process a received PDU through the ATT transport and dispatch
-    /// any pending notification callbacks (deferred dispatch pattern).
+    /// any pending notification and response callbacks (deferred dispatch pattern).
     fn process_incoming(&self, pdu: &[u8]) {
-        let pending = {
+        let (pending_notifs, pending_resps) = {
             let mut att = self.att.lock().unwrap();
             att.process_read(0, pdu);
-            att.take_pending_notifications()
+            (att.take_pending_notifications(), att.take_pending_responses())
         };
         // Dispatch callbacks outside the lock to avoid deadlock.
-        for pn in &pending {
+        for pn in &pending_notifs {
             (pn.callback)(pn.chan_idx, pn.filter_opcode, pn.raw_opcode, &pn.body);
+        }
+        for pr in pending_resps {
+            (pr.callback)(pr.opcode, &pr.body);
         }
     }
 
@@ -308,10 +311,7 @@ fn test_att_mtu_exchange() {
     ctx.send_pdu(PDU_MTU_RSP_23);
 
     // Process the response through the ATT transport.
-    {
-        let mut att = ctx.att.lock().unwrap();
-        att.process_read(0, PDU_MTU_RSP_23);
-    }
+    ctx.process_incoming(PDU_MTU_RSP_23);
 
     // Verify response callback received MTU_RSP.
     assert_eq!(*rsp_opcode.lock().unwrap(), BT_ATT_OP_MTU_RSP, "should receive MTU_RSP");
@@ -365,10 +365,7 @@ fn test_att_mtu_exchange_large() {
     ctx.send_pdu(PDU_MTU_RSP_512);
 
     // Process response and verify callback runs.
-    {
-        let mut att = ctx.att.lock().unwrap();
-        att.process_read(0, PDU_MTU_RSP_512);
-    }
+    ctx.process_incoming(PDU_MTU_RSP_512);
 
     assert!(*callback_fired.lock().unwrap(), "response callback should have fired");
 }
@@ -635,10 +632,7 @@ fn test_gattrib_request_response() {
 
     // Process the response through the ATT transport.
     // This dispatches the response to the pending request's callback.
-    {
-        let mut att = ctx.att.lock().unwrap();
-        att.process_read(0, PDU_MTU_RSP_512);
-    }
+    ctx.process_incoming(PDU_MTU_RSP_512);
 
     // Verify the callback was invoked with correct data.
     assert!(*callback_fired.lock().unwrap(), "response callback should have fired");
@@ -742,11 +736,8 @@ fn test_gattrib_cancellation() {
     // Now send a response from the peer.
     ctx.send_pdu(PDU_MTU_RSP_64);
 
-    // Process the response — the callback should NOT be invoked.
-    {
-        let mut att = ctx.att.lock().unwrap();
-        att.process_read(0, PDU_MTU_RSP_64);
-    }
+    // Process the response — the callback should NOT be invoked (op was cancelled).
+    ctx.process_incoming(PDU_MTU_RSP_64);
 
     // Give a small delay to ensure no deferred callback processing.
     std::thread::sleep(Duration::from_millis(10));
@@ -915,10 +906,7 @@ fn test_att_cancel_all() {
     // After cancel_all, sending a response should NOT invoke any callback
     // (the request has already been cancelled and callback consumed).
     ctx.send_pdu(PDU_MTU_RSP_64);
-    {
-        let mut att = ctx.att.lock().unwrap();
-        att.process_read(0, PDU_MTU_RSP_64);
-    }
+    ctx.process_incoming(PDU_MTU_RSP_64);
 
     // No additional invocations should have occurred.
     {

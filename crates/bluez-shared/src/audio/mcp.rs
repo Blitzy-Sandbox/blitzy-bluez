@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex};
 use bitflags::bitflags;
 use tracing::{debug, warn};
 
+use crate::att::transport::BtAtt;
 use crate::att::types::{AttPermissions, GattChrcProperties};
 use crate::gatt::client::BtGattClient;
 use crate::gatt::db::{CharData, GattDb, GattDbAttribute, GattDbService};
@@ -772,10 +773,15 @@ fn mcs_alloc_ccid() -> u8 {
     }
 }
 
-/// Reset the global CCID counter to zero (for testing purposes).
+/// Reset the global CCID counter to zero and clear all registered
+/// MCS server instances (for testing purposes).
+///
+/// This ensures complete test isolation by preventing stale server
+/// references in MCS_GLOBAL from interfering with subsequent tests.
 pub fn bt_mcs_test_util_reset_ccid() {
     let mut global = MCS_GLOBAL.lock().unwrap();
     global.ccid_counter = 0;
+    global.servers.clear();
 }
 
 // =====================================================================
@@ -808,6 +814,8 @@ struct McsDbHandles {
     playing_order_supported: u16,
     /// Media State characteristic value handle.
     media_state: u16,
+    /// Media Control Point characteristic value handle.
+    media_cp: u16,
     /// Media Control Point Opcodes Supported characteristic value handle.
     media_cp_op_supported: u16,
 }
@@ -888,11 +896,6 @@ impl BtMcs {
         };
 
         let arc_inner = Arc::new(Mutex::new(inner));
-
-        // Store read/write handler user_data references on the service attributes
-        // so that GATT read/write callbacks can find the BtMcs instance.
-        // We use the GattDbAttribute user_data mechanism for this.
-        store_mcs_user_data(&db, &arc_inner);
 
         // Activate the service.
         service.set_active(true);
@@ -1139,10 +1142,29 @@ fn mcs_init_db(db: &GattDb, is_gmcs: bool, _ccid: u8) -> Option<(GattDbService, 
     service.add_ccc(np);
 
     // 11. Media Control Point (Write + Write Without Response + Notify)
-    // The CP handle is managed by the GATT DB for write dispatch;
-    // we don't store it separately in McsDbHandles.
-    let _media_cp =
-        add_chrc(MCS_MEDIA_CP_CHRC_UUID, wp, write_prop | GattChrcProperties::NOTIFY.bits())?;
+    // The CP characteristic has a write callback that dispatches commands
+    // to the McsCallback trait via the MCS_GLOBAL registry.
+    type CpWriteFn =
+        Arc<dyn Fn(GattDbAttribute, u32, u16, &[u8], u8, Option<Arc<Mutex<BtAtt>>>) + Send + Sync>;
+    let cp_write_fn: CpWriteFn = Arc::new(
+        |attr: GattDbAttribute,
+         id: u32,
+         _offset: u16,
+         value: &[u8],
+         _opcode: u8,
+         _att: Option<Arc<Mutex<BtAtt>>>| {
+            mcs_cp_write_handler(attr, id, value);
+        },
+    );
+    let media_cp_attr = service.add_characteristic(
+        &BtUuid::from_u16(MCS_MEDIA_CP_CHRC_UUID),
+        wp,
+        write_prop | GattChrcProperties::NOTIFY.bits(),
+        None,
+        Some(cp_write_fn),
+        None,
+    )?;
+    let media_cp = media_cp_attr.get_handle();
     service.add_ccc(np);
 
     // 12. Media Control Point Opcodes Supported (Read + Notify, fixed 4 bytes)
@@ -1173,21 +1195,146 @@ fn mcs_init_db(db: &GattDb, is_gmcs: bool, _ccid: u8) -> Option<(GattDbService, 
         playing_order,
         playing_order_supported,
         media_state,
+        media_cp,
         media_cp_op_supported,
     };
 
     Some((service, handles))
 }
 
-/// Store an Arc reference to the MCS inner as user_data on each characteristic
-/// attribute so that GATT read/write callbacks can retrieve the MCS instance.
-fn store_mcs_user_data(db: &GattDb, _inner: &Arc<Mutex<BtMcsInner>>) {
-    // In the Rust implementation, we use trait-based callbacks rather than
-    // C-style function pointers with user_data. The MCS server dispatches
-    // reads/writes through the callback trait stored in BtMcsInner, which
-    // is accessed via the global MCS_GLOBAL registry keyed by service handle.
-    // No per-attribute user_data storage is needed.
-    let _ = db;
+/// Handle a GATT write to the Media Control Point characteristic.
+///
+/// Looks up the owning MCS server instance in MCS_GLOBAL by matching the
+/// attribute handle against McsDbHandles::media_cp. Parses the CP opcode
+/// from the first byte and dispatches to the appropriate McsCallback method.
+/// Sends ATT write result (success/error) and optionally CP result + state
+/// change notifications.
+fn mcs_cp_write_handler(attr: GattDbAttribute, id: u32, value: &[u8]) {
+    let handle = attr.get_handle();
+
+    // Find the MCS server owning this CP handle via the global registry.
+    let server = {
+        let global = MCS_GLOBAL.lock().unwrap();
+        global
+            .servers
+            .iter()
+            .find(|s| s.lock().is_ok_and(|inner| inner.handles.media_cp == handle))
+            .cloned()
+    };
+
+    let server = match server {
+        Some(s) => s,
+        None => {
+            warn!("mcs_cp_write_handler: no server for handle 0x{:04x}", handle);
+            attr.write_result(id, 0x0E); // ATT_ERROR_UNLIKELY
+            return;
+        }
+    };
+
+    if value.is_empty() {
+        attr.write_result(id, 0x04); // ATT_ERROR_INVALID_PDU
+        return;
+    }
+
+    let opcode_byte = value[0];
+
+    // Dispatch the command to the McsCallback. The callback returns true
+    // for success or false when the operation cannot be performed (e.g.,
+    // media player is inactive).
+    let result = {
+        let inner = server.lock().unwrap();
+        match CpOpcode::from_u8(opcode_byte) {
+            Some(CpOpcode::Play) => inner.callbacks.play(),
+            Some(CpOpcode::Pause) => inner.callbacks.pause(),
+            Some(CpOpcode::FastRewind) => inner.callbacks.fast_rewind(),
+            Some(CpOpcode::FastForward) => inner.callbacks.fast_forward(),
+            Some(CpOpcode::Stop) => inner.callbacks.stop(),
+            Some(CpOpcode::MoveRelative) if value.len() >= 5 => {
+                let offset = i32::from_le_bytes([value[1], value[2], value[3], value[4]]);
+                inner.callbacks.move_relative(offset)
+            }
+            Some(CpOpcode::PrevSegment) => inner.callbacks.previous_segment(),
+            Some(CpOpcode::NextSegment) => inner.callbacks.next_segment(),
+            Some(CpOpcode::FirstSegment) => inner.callbacks.first_segment(),
+            Some(CpOpcode::LastSegment) => inner.callbacks.last_segment(),
+            Some(CpOpcode::GotoSegment) if value.len() >= 5 => {
+                let n = i32::from_le_bytes([value[1], value[2], value[3], value[4]]);
+                inner.callbacks.goto_segment(n)
+            }
+            Some(CpOpcode::PrevTrack) => inner.callbacks.previous_track(),
+            Some(CpOpcode::NextTrack) => inner.callbacks.next_track(),
+            Some(CpOpcode::FirstTrack) => inner.callbacks.first_track(),
+            Some(CpOpcode::LastTrack) => inner.callbacks.last_track(),
+            Some(CpOpcode::GotoTrack) if value.len() >= 5 => {
+                let n = i32::from_le_bytes([value[1], value[2], value[3], value[4]]);
+                inner.callbacks.goto_track(n)
+            }
+            Some(CpOpcode::PrevGroup) => inner.callbacks.previous_group(),
+            Some(CpOpcode::NextGroup) => inner.callbacks.next_group(),
+            Some(CpOpcode::FirstGroup) => inner.callbacks.first_group(),
+            Some(CpOpcode::LastGroup) => inner.callbacks.last_group(),
+            Some(CpOpcode::GotoGroup) if value.len() >= 5 => {
+                let n = i32::from_le_bytes([value[1], value[2], value[3], value[4]]);
+                inner.callbacks.goto_group(n)
+            }
+            _ => false,
+        }
+    };
+
+    // Acknowledge the write to the GATT client.
+    attr.write_result(id, 0);
+
+    // Determine the CP response result code.
+    let result_code =
+        if result { McsResult::Success as u8 } else { McsResult::MediaPlayerInactive as u8 };
+
+    // Determine state transitions for successful commands.
+    if result {
+        let mut inner = server.lock().unwrap();
+        let new_state = match CpOpcode::from_u8(opcode_byte) {
+            Some(CpOpcode::Play) => Some(MediaState::Playing),
+            Some(CpOpcode::Pause) => Some(MediaState::Paused),
+            Some(CpOpcode::Stop) => Some(MediaState::Paused),
+            Some(CpOpcode::FastRewind) | Some(CpOpcode::FastForward) => Some(MediaState::Seeking),
+            _ => None,
+        };
+        if let Some(ns) = new_state {
+            if inner.media_state != ns {
+                inner.media_state = ns;
+                let state_handle = inner.handles.media_state;
+                let db = inner.db.clone();
+                drop(inner);
+                // Notify state change.
+                if let Some(state_attr) = db.get_attribute(state_handle) {
+                    state_attr.notify(&[ns as u8], None);
+                }
+            } else {
+                drop(inner);
+            }
+        } else {
+            drop(inner);
+        }
+
+        // For Stop: also notify track position reset to 0.
+        if CpOpcode::from_u8(opcode_byte) == Some(CpOpcode::Stop) {
+            let inner = server.lock().unwrap();
+            let tp_handle = inner.handles.track_position;
+            let db = inner.db.clone();
+            drop(inner);
+            if let Some(tp_attr) = db.get_attribute(tp_handle) {
+                tp_attr.notify(&[0, 0, 0, 0], None);
+            }
+        }
+    }
+
+    // Send CP result notification: [opcode, result_code].
+    let inner = server.lock().unwrap();
+    let cp_handle = inner.handles.media_cp;
+    let db = inner.db.clone();
+    drop(inner);
+    if let Some(cp_attr) = db.get_attribute(cp_handle) {
+        cp_attr.notify(&[opcode_byte, result_code], None);
+    }
 }
 
 // =====================================================================
@@ -2044,43 +2191,49 @@ fn mcp_read_characteristics(mcp: &Arc<BtMcp>, svc_idx: usize, client: &Arc<BtGat
 
 /// Handle an incoming GATT notification for an MCP-monitored characteristic.
 fn mcp_handle_notification(mcp: &Arc<BtMcp>, ccid: u8, handle: u16, data: &[u8]) {
-    let inner = mcp.inner.lock().unwrap();
-    let svc = match inner.services.iter().find(|s| s.ccid == ccid) {
-        Some(s) => s,
-        None => return,
-    };
+    // Gather service state and listener list under a single lock, then
+    // release before any callback dispatch to avoid deadlock.
+    let (uuid, listeners) = {
+        let inner = mcp.inner.lock().unwrap();
+        let svc = match inner.services.iter().find(|s| s.ccid == ccid) {
+            Some(s) => s,
+            None => return,
+        };
 
-    // Determine which characteristic was notified.
-    let uuid = match handle_to_uuid(svc, handle) {
-        Some(u) => u,
-        None => return,
-    };
+        let uuid = match handle_to_uuid(svc, handle) {
+            Some(u) => u,
+            None => return,
+        };
 
-    // Dispatch to listeners.
-    let listeners: Vec<Arc<dyn McpListenerCallback>> =
-        inner.listeners.iter().filter(|(c, _)| *c == ccid).map(|(_, l)| Arc::clone(l)).collect();
+        let listeners: Vec<Arc<dyn McpListenerCallback>> = inner
+            .listeners
+            .iter()
+            .filter(|(c, _)| *c == ccid)
+            .map(|(_, l)| Arc::clone(l))
+            .collect();
+
+        // Update cached values while we still have the lock.
+        if uuid != MCS_MEDIA_CP_CHRC_UUID {
+            mcp_update_cached_value_inner(svc, uuid, data);
+        }
+
+        (uuid, listeners)
+    };
+    // Lock is now released — safe to dispatch callbacks.
 
     // For CP response, handle completion callback.
     if uuid == MCS_MEDIA_CP_CHRC_UUID && data.len() >= 2 {
         let op = data[0];
         let result = data[1];
-        // Find and remove matching pending by op.
-        let mut inner_mut = mcp.inner.lock().unwrap();
-        if let Some(pos) = inner_mut.pending.iter().position(|p| p.op == op && p.ccid == ccid) {
-            let pending = inner_mut.pending.remove(pos);
-            let cb = Arc::clone(&inner_mut.callbacks);
-            drop(inner_mut);
+        let mut inner = mcp.inner.lock().unwrap();
+        if let Some(pos) = inner.pending.iter().position(|p| p.op == op && p.ccid == ccid) {
+            let pending = inner.pending.remove(pos);
+            let cb = Arc::clone(&inner.callbacks);
+            drop(inner);
             cb.complete(pending.id, result);
-        } else {
-            drop(inner_mut);
         }
         return;
     }
-
-    // Update cached values.
-    mcp_update_cached_value_inner(svc, uuid, data);
-
-    drop(inner);
 
     // Notify listeners.
     for listener in &listeners {
@@ -2089,15 +2242,14 @@ fn mcp_handle_notification(mcp: &Arc<BtMcp>, ccid: u8, handle: u16, data: &[u8])
 
     // For media player name change, re-read all characteristics.
     if uuid == MCS_MEDIA_PLAYER_NAME_CHRC_UUID {
-        let inner = mcp.inner.lock().unwrap();
-        let client = Arc::clone(&inner.client);
-        drop(inner);
-        // Re-read all values to pick up any track changes.
-        if let Some(svc_idx) = {
+        let (client, svc_idx) = {
             let inner = mcp.inner.lock().unwrap();
-            inner.services.iter().position(|s| s.ccid == ccid)
-        } {
-            mcp_read_characteristics(mcp, svc_idx, &client);
+            let client = Arc::clone(&inner.client);
+            let idx = inner.services.iter().position(|s| s.ccid == ccid);
+            (client, idx)
+        };
+        if let Some(idx) = svc_idx {
+            mcp_read_characteristics(mcp, idx, &client);
         }
     }
 }

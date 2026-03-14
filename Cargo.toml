@@ -197,6 +197,10 @@ name = "test_micp"
 path = "tests/unit/test_micp.rs"
 
 [[test]]
+name = "test_mcp"
+path = "tests/unit/test_mcp.rs"
+
+[[test]]
 name = "btsnoop_replay_test"
 path = "tests/integration/btsnoop_replay_test.rs"
 

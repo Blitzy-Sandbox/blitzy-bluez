@@ -2,6 +2,7 @@
 // Stub file - will be replaced by implementation agents
 
 pub mod display;
+pub mod mgmt;
 
 fn main() {
     println!("bluetoothctl stub");

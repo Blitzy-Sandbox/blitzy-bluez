@@ -9,5 +9,6 @@
 //!
 //! The binary entry point remains in `main.rs`.
 
+pub mod client;
 pub mod obex;
 pub mod server;

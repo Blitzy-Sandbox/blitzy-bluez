@@ -2522,6 +2522,46 @@ impl MeshNet {
         &self.friend_negotiations
     }
 
+    /// Check if friend mode is enabled for this network.
+    pub fn is_friend_enabled(&self) -> bool {
+        self.friend_enable
+    }
+
+    /// Remove a negotiation entry by LPN address.
+    pub fn remove_negotiation_by_addr(&mut self, lp_addr: u16) {
+        self.friend_negotiations.retain(|n| n.lp_addr != lp_addr);
+    }
+
+    /// Add a negotiation entry.
+    pub fn add_negotiation(&mut self, neg: FriendNegotiation) {
+        self.friend_negotiations.push(neg);
+    }
+
+    /// Add a friend to the friend list.
+    pub fn add_friend(&mut self, frnd: MeshFriend) {
+        self.friends.push(frnd);
+    }
+
+    /// Get the transmit key ID for a subnet.
+    pub fn get_net_key_tx(&self, net_idx: u16) -> Option<u32> {
+        self.subnets.iter().find(|s| s.net_idx == net_idx).map(|s| s.net_key_tx)
+    }
+
+    /// Get the beacon (SNB) state for a subnet: (flags, iv_index).
+    ///
+    /// Flags byte: bit 0 = Key Refresh, bit 1 = IV Update.
+    pub fn get_beacon_state(&self, net_idx: u16) -> Option<(u8, u32)> {
+        let subnet = self.subnets.iter().find(|s| s.net_idx == net_idx)?;
+        let mut flags: u8 = 0;
+        if subnet.kr_phase == 2 {
+            flags |= 0x01; // KEY_REFRESH
+        }
+        if self.iv_update {
+            flags |= 0x02; // IV_INDEX_UPDATE
+        }
+        Some((flags, self.iv_index))
+    }
+
     // =======================================================================
     // Transmit Parameters
     // =======================================================================

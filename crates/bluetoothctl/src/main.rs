@@ -9,6 +9,7 @@ pub mod display;
 pub mod gatt;
 pub mod hci;
 pub mod mgmt;
+pub mod print;
 
 fn main() {
     println!("bluetoothctl stub");

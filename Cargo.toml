@@ -173,6 +173,10 @@ name = "test_gmap"
 path = "tests/unit/test_gmap.rs"
 
 [[test]]
+name = "test_tmap"
+path = "tests/unit/test_tmap.rs"
+
+[[test]]
 name = "test_att"
 path = "tests/unit/test_att.rs"
 

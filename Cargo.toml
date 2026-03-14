@@ -105,6 +105,10 @@ name = "test_queue"
 path = "tests/unit/test_queue.rs"
 
 [[test]]
+name = "test_rap"
+path = "tests/unit/test_rap.rs"
+
+[[test]]
 name = "test_ringbuf"
 path = "tests/unit/test_ringbuf.rs"
 

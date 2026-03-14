@@ -197,6 +197,10 @@ name = "test_micp"
 path = "tests/unit/test_micp.rs"
 
 [[test]]
+name = "test_vcp"
+path = "tests/unit/test_vcp.rs"
+
+[[test]]
 name = "test_mcp"
 path = "tests/unit/test_mcp.rs"
 

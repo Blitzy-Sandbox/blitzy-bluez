@@ -42,6 +42,11 @@ pub mod net_keys;
 /// in C-compatible binary format, and builds the D-Bus ExportKeys reply.
 pub mod keyring;
 
+/// Provisioning agent management: tracks D-Bus ProvisionAgent1 objects,
+/// parses capabilities/OOB info, and serialises async prompt/display/key
+/// requests with cancellation support.
+pub mod agent;
+
 fn main() {
     println!("bluetooth-meshd stub");
 }

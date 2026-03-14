@@ -14,6 +14,7 @@ path = "src/main.rs"
 bluez-shared = { path = "../bluez-shared" }
 tokio = { workspace = true }
 zbus = { workspace = true }
+nix = { workspace = true }
 rustyline = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

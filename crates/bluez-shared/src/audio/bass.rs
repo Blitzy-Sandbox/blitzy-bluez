@@ -456,15 +456,28 @@ pub(crate) fn serialize_bcast_src(src: &BcastSrc) -> Vec<u8> {
 }
 
 /// Validate the CP command parameter length.
+///
+/// Mirrors the C `bass_check_cp_command_len` logic: for known opcodes,
+/// validate that the parameter data is consumed exactly (no trailing bytes).
+/// Unknown opcodes pass through so the handler lookup can produce
+/// "Opcode Not Supported" (0x80) instead of "Write Request Rejected" (0xFC).
 pub(crate) fn check_cp_command_len(op: u8, params: &[u8]) -> bool {
     match op {
-        BASS_REMOTE_SCAN_STOPPED | BASS_REMOTE_SCAN_STARTED => true,
-        BASS_REMOVE_SRC => !params.is_empty(),
+        BASS_REMOTE_SCAN_STOPPED | BASS_REMOTE_SCAN_STARTED => {
+            // These opcodes carry no parameters beyond the opcode byte.
+            params.is_empty()
+        }
+        BASS_REMOVE_SRC => {
+            // Exactly Source_ID (1 byte).
+            params.len() == 1
+        }
         BASS_ADD_SRC => {
             if params.len() < BASS_BCAST_SRC_LEN {
                 return false;
             }
             let mut iov = IoBuf::from_bytes(params);
+            // Pull fixed fields: addr_type(1) + addr(6) + sid(1) + broadcast_id(3) +
+            // pa_sync(1) + pa_interval(2) = 14 bytes
             if !iov.pull(14) {
                 return false;
             }
@@ -484,13 +497,15 @@ pub(crate) fn check_cp_command_len(op: u8, params: &[u8]) -> bool {
                     return false;
                 }
             }
-            true
+            // Reject trailing data after all subgroups.
+            iov.remaining() == 0
         }
         BASS_MOD_SRC => {
             if params.len() < 5 {
                 return false;
             }
             let mut iov = IoBuf::from_bytes(params);
+            // Pull fixed fields: source_id(1) + pa_sync(1) + pa_interval(2) = 4 bytes
             if !iov.pull(4) {
                 return false;
             }
@@ -510,10 +525,16 @@ pub(crate) fn check_cp_command_len(op: u8, params: &[u8]) -> bool {
                     return false;
                 }
             }
-            true
+            // Reject trailing data after all subgroups.
+            iov.remaining() == 0
         }
-        BASS_SET_BCAST_CODE => params.len() > BASS_BCAST_CODE_SIZE,
-        _ => false,
+        BASS_SET_BCAST_CODE => {
+            // Exactly Source_ID (1 byte) + Broadcast_Code (16 bytes).
+            params.len() == BASS_BCAST_CODE_SIZE + 1
+        }
+        // Unknown opcodes: let them pass through to the handler lookup,
+        // which will return BASS_ERROR_OPCODE_NOT_SUPPORTED (0x80).
+        _ => true,
     }
 }
 

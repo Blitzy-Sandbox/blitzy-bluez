@@ -201,6 +201,10 @@ name = "test_vcp"
 path = "tests/unit/test_vcp.rs"
 
 [[test]]
+name = "test_bap"
+path = "tests/unit/test_bap.rs"
+
+[[test]]
 name = "test_bass"
 path = "tests/unit/test_bass.rs"
 

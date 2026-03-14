@@ -11,4 +11,5 @@
 //! - **service** — Service driver registry, MIME type driver registry, OBEX session engine
 //!   (placeholder — created by a separate agent)
 
+pub mod service;
 pub mod transport;

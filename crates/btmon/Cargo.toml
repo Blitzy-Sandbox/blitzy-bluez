@@ -6,6 +6,10 @@ description = "Bluetooth packet monitor — complete Rust rewrite of btmon from 
 license = "LGPL-2.1-or-later"
 publish = false
 
+[lib]
+name = "btmon"
+path = "src/lib.rs"
+
 [[bin]]
 name = "btmon"
 path = "src/main.rs"

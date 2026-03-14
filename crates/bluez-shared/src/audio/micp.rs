@@ -325,6 +325,17 @@ impl BtMicp {
 
         guard.client = Some(Arc::clone(&cloned));
 
+        // Discover MICS service from the local DB.
+        let mics_uuid = BtUuid::from_u16(MICS_UUID);
+        let ldb_ref = guard.ldb.clone();
+
+        // CRITICAL: Drop the inner lock BEFORE calling idle_register.
+        // idle_register may invoke the callback synchronously when the
+        // client is already idle (no pending requests), and the callback
+        // chain (micp_idle → micp_notify_ready) needs to re-acquire
+        // self.inner — holding the lock here would deadlock.
+        drop(guard);
+
         // Register idle callback for deferred ready notification.
         let self_ref = Arc::clone(self);
         let idle_cb: crate::gatt::client::IdleCallback = Box::new(move || {
@@ -343,14 +354,10 @@ impl BtMicp {
             let _ = &micp_ref_for_idle;
             let _ = idle_id;
         });
-        guard.idle_id = Some(join_handle);
-
-        // Discover MICS service from the local DB.
-        let mics_uuid = BtUuid::from_u16(MICS_UUID);
-        let ldb_ref = guard.ldb.clone();
-
-        // We need to drop guard to avoid deadlock in foreach_service callbacks.
-        drop(guard);
+        {
+            let mut guard2 = self.inner.lock().unwrap();
+            guard2.idle_id = Some(join_handle);
+        }
 
         ldb_ref.db.foreach_service(Some(&mics_uuid), |attr| {
             foreach_mics_service(self, attr);

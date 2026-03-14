@@ -193,6 +193,10 @@ name = "test_ccp"
 path = "tests/unit/test_ccp.rs"
 
 [[test]]
+name = "test_micp"
+path = "tests/unit/test_micp.rs"
+
+[[test]]
 name = "btsnoop_replay_test"
 path = "tests/integration/btsnoop_replay_test.rs"
 
@@ -204,6 +208,3 @@ unsafe_code = "deny"
 
 [workspace.lints.clippy]
 all = "deny"
-
-
-

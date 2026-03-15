@@ -1147,7 +1147,7 @@ impl MapMimeObject {
     /// Create a new MIME object, consuming the given byte buffer for
     /// streaming via `string_read`.
     fn new(mas: MasSession, data: Vec<u8>) -> Self {
-        Self { mas, read_state: StringReadState::new(data) }
+        Self { mas, read_state: StringReadState::from_bytes(data) }
     }
 }
 

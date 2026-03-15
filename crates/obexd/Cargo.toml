@@ -27,7 +27,7 @@ serde = { workspace = true }
 futures = { workspace = true }
 libc = { workspace = true }
 tokio-stream = { workspace = true }
-nix = { workspace = true }
+nix = { workspace = true, features = ["fs"] }
 inventory = { workspace = true }
 libloading = { workspace = true }
 md-5 = { workspace = true }

@@ -1981,6 +1981,7 @@ pub fn l2cap_frame(index: u16, in_: bool, handle: u16, cid: u16, psm: u16, data:
                 );
             }
         }
+        0x0019 => super::avdtp::avdtp_packet(&frame),
         0x0017 | 0x001b => super::avctp::avctp_packet(&frame),
         _ => {
             if frame.size > 0 {

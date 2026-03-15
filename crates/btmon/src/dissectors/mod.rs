@@ -19,7 +19,7 @@ pub mod bnep;
 pub mod l2cap;
 pub mod rfcomm;
 pub mod sdp;
-// pub mod avdtp;
+pub mod avdtp;
 pub mod a2dp;
 pub mod ll;
 pub mod lmp;

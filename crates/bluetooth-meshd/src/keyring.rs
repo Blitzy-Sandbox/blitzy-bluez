@@ -709,10 +709,17 @@ fn build_dev_keys_reply(node_path: &str) -> Vec<Value<'static>> {
 mod tests {
     use super::*;
     use std::fs;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    /// Monotonic counter ensuring each test gets a unique directory, even
+    /// when tests execute in parallel within the same process.
+    static DIR_COUNTER: AtomicU64 = AtomicU64::new(0);
 
     /// Create a temporary directory for test key storage and return its path.
     fn make_test_dir() -> String {
-        let dir = std::env::temp_dir().join(format!("bluez_keyring_test_{}", std::process::id()));
+        let seq = DIR_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let dir =
+            std::env::temp_dir().join(format!("bluez_keyring_test_{}_{seq}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).expect("create test dir");
         dir.to_string_lossy().into_owned()

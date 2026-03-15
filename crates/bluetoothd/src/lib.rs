@@ -11,6 +11,7 @@
 // compiles both targets independently.
 
 pub mod adapter;
+pub mod advertising;
 pub mod config;
 pub mod dbus_common;
 pub mod error;

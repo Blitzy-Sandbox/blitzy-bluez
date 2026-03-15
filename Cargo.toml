@@ -294,6 +294,10 @@ path = "tests/unit/test_gobex_transfer.rs"
 name = "test_gdbus_client"
 path = "tests/unit/test_gdbus_client.rs"
 
+[[test]]
+name = "test_lib"
+path = "tests/unit/test_lib.rs"
+
 # ---------------------------------------------------------------------------
 # Integration test targets — tests/integration/*.rs
 # ---------------------------------------------------------------------------

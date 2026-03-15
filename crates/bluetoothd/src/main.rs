@@ -11,6 +11,7 @@ pub mod log;
 pub mod plugin;
 pub mod plugins;
 pub mod profiles;
+pub mod rfkill;
 pub mod sdp;
 pub mod storage;
 

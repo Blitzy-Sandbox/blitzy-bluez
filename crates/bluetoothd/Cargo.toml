@@ -32,6 +32,7 @@ bytes = { workspace = true }
 futures = { workspace = true }
 tokio-stream = { workspace = true }
 quick-xml = { workspace = true }
+zerocopy = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

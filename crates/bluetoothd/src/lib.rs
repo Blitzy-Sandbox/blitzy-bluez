@@ -10,6 +10,7 @@
 // The binary target (`main.rs`) retains its own module declarations — Cargo
 // compiles both targets independently.
 
+pub mod adapter;
 pub mod config;
 pub mod dbus_common;
 pub mod error;

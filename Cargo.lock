@@ -189,6 +189,7 @@ dependencies = [
  "aes",
  "bluez-emulator",
  "bluez-shared",
+ "btmon",
  "ccm",
  "cmac",
  "criterion",
@@ -199,6 +200,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "zbus",
+ "zerocopy",
 ]
 
 [[package]]

@@ -309,6 +309,10 @@ path = "tests/integration/btsnoop_replay_test.rs"
 name = "dbus_contract_test"
 path = "tests/integration/dbus_contract_test.rs"
 
+[[test]]
+name = "smoke_test"
+path = "tests/integration/smoke_test.rs"
+
 # ---------------------------------------------------------------------------
 # Workspace lint configuration
 # ---------------------------------------------------------------------------

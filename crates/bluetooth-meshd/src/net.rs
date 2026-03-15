@@ -2527,6 +2527,16 @@ impl MeshNet {
         self.friend_enable
     }
 
+    /// Check if relay mode is enabled for this network.
+    pub fn is_relay_enabled(&self) -> bool {
+        self.relay_enable
+    }
+
+    /// Check if proxy mode is enabled for this network.
+    pub fn is_proxy_enabled(&self) -> bool {
+        self.proxy_enable
+    }
+
     /// Remove a negotiation entry by LPN address.
     pub fn remove_negotiation_by_addr(&mut self, lp_addr: u16) {
         self.friend_negotiations.retain(|n| n.lp_addr != lp_addr);

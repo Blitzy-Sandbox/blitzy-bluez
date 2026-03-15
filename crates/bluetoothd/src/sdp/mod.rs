@@ -222,7 +222,7 @@ pub const HIDP_UUID: u16 = 0x0011;
 
 /// Base attribute offset for the primary (universal) language.
 /// Service name is at this offset, description at +1, provider at +2.
-const SDP_PRIMARY_LANG_BASE: u16 = 0x0100;
+pub const SDP_PRIMARY_LANG_BASE: u16 = 0x0100;
 
 /// Default ISO 639 language code for English ("en" = 0x656e).
 /// Use with [`SdpRecord::add_lang_attr`] for the standard English entry.

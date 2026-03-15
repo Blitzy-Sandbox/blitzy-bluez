@@ -73,6 +73,7 @@ tokio = { workspace = true }
 futures = { workspace = true }
 bluez-shared = { path = "crates/bluez-shared" }
 bluez-emulator = { path = "crates/bluez-emulator" }
+bluetoothd = { path = "crates/bluetoothd", features = ["test-support"] }
 btmon = { path = "crates/btmon" }
 obexd = { path = "crates/obexd" }
 aes = { workspace = true }
@@ -218,6 +219,10 @@ path = "tests/unit/test_bap.rs"
 [[test]]
 name = "test_bass"
 path = "tests/unit/test_bass.rs"
+
+[[test]]
+name = "test_sdp"
+path = "tests/unit/test_sdp.rs"
 
 [[test]]
 name = "test_mcp"

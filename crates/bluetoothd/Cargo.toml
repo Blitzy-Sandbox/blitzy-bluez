@@ -6,6 +6,10 @@ description = "BlueZ Bluetooth daemon — manages adapters, devices, pairing, pr
 license = "GPL-2.0-or-later"
 publish = false
 
+[lib]
+name = "bluetoothd"
+path = "src/lib.rs"
+
 [[bin]]
 name = "bluetoothd"
 path = "src/main.rs"
@@ -34,6 +38,7 @@ criterion = { workspace = true }
 
 [features]
 default = []
+test-support = []
 
 [lints]
 workspace = true

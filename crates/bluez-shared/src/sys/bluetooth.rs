@@ -422,6 +422,53 @@ impl Clone for bt_iso_qos {
 
 impl Copy for bt_iso_qos {}
 
+impl bt_iso_qos {
+    /// Construct a unicast ISO QoS value.
+    pub fn new_ucast(ucast: bt_iso_ucast_qos) -> Self {
+        Self { ucast }
+    }
+
+    /// Construct a broadcast ISO QoS value.
+    pub fn new_bcast(bcast: bt_iso_bcast_qos) -> Self {
+        Self { bcast }
+    }
+
+    /// Read the unicast variant.
+    ///
+    /// # Safety invariant handled internally
+    ///
+    /// Both union variants are `Copy` and share the same `repr(C)` layout,
+    /// so reading either is always defined behaviour at the memory level.
+    /// The caller must semantically know which variant is active.
+    #[allow(unsafe_code)]
+    pub fn as_ucast(&self) -> bt_iso_ucast_qos {
+        // SAFETY: bt_iso_ucast_qos and bt_iso_bcast_qos are both repr(C)
+        // Copy types sharing the same underlying memory.  Reading a Copy
+        // union variant is sound — both representations overlap validly.
+        unsafe { self.ucast }
+    }
+
+    /// Read the broadcast variant.
+    ///
+    /// # Safety invariant handled internally
+    ///
+    /// Same reasoning as [`as_ucast`](Self::as_ucast).
+    #[allow(unsafe_code)]
+    pub fn as_bcast(&self) -> bt_iso_bcast_qos {
+        // SAFETY: see as_ucast — both variants are Copy repr(C) types.
+        unsafe { self.bcast }
+    }
+}
+
+impl bt_iso_io_qos {
+    /// Construct a new `bt_iso_io_qos` with the given parameters.
+    ///
+    /// The trailing padding bytes are always zero.
+    pub fn new(interval: u32, latency: u16, sdu: u16, phys: u8, rtn: u8) -> Self {
+        Self { interval, latency, sdu, phys, rtn, ..Self::default() }
+    }
+}
+
 /// ISO Broadcast Audio Source Endpoint (BASE) data container.
 ///
 /// Holds the raw BASE blob for broadcast audio configuration.

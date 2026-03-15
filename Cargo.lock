@@ -1210,6 +1210,7 @@ dependencies = [
  "criterion",
  "futures",
  "inventory",
+ "libc",
  "libloading",
  "md-5",
  "nix 0.29.0",

@@ -688,6 +688,26 @@ pub fn bt_writev(fd: RawFd, data: &[io::IoSlice<'_>]) -> io::Result<usize> {
 }
 
 // ===========================================================================
+// Public address query helpers
+// ===========================================================================
+
+/// Get the local (source) Bluetooth address and address-type for a raw fd.
+///
+/// This is a public safe wrapper around the internal `get_src` helper,
+/// dispatching by transport type (`L2CAP`, `RFCOMM`, `SCO`, `ISO`).
+pub fn bt_get_source_address(fd: RawFd, transport: BtTransport) -> Result<(bdaddr_t, u8)> {
+    get_src(fd, transport)
+}
+
+/// Get the remote (destination) Bluetooth address and address-type for a raw fd.
+///
+/// This is a public safe wrapper around the internal `get_dst` helper,
+/// dispatching by transport type (`L2CAP`, `RFCOMM`, `SCO`, `ISO`).
+pub fn bt_get_dest_address(fd: RawFd, transport: BtTransport) -> Result<(bdaddr_t, u8)> {
+    get_dst(fd, transport)
+}
+
+// ===========================================================================
 // Transport-specific bind operations
 // ===========================================================================
 

@@ -42,6 +42,8 @@ pub use bluetooth_socket::{
     SocketOptions,
     SocketPriority,
     // Safe socket-option helpers (used by att/transport.rs, sdp/client.rs, etc.)
+    bt_get_dest_address,
+    bt_get_source_address,
     bt_getsockname_l2,
     bt_sockopt_get_int,
     bt_sockopt_get_l2cap_options,

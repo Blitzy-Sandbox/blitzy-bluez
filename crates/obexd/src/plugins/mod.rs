@@ -337,6 +337,15 @@ fn initialized_plugins() -> &'static Mutex<Vec<&'static ObexPluginDesc>> {
 // Service driver registration
 // ===========================================================================
 
+/// Return a snapshot of all currently registered service drivers.
+///
+/// Used by the Bluetooth transport plugin to discover service types and
+/// their metadata (record templates, channel numbers, etc.) during
+/// `start()`.
+pub fn list_service_drivers() -> Vec<Arc<dyn ObexServiceDriver>> {
+    service_drivers().lock().expect("service registry poisoned").clone()
+}
+
 /// Register a service driver with the global registry.
 ///
 /// Returns `Ok(())` on success, or `Err(-EALREADY)` if a driver with the

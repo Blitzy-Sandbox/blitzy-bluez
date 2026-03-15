@@ -9,6 +9,7 @@ pub mod display;
 pub mod gatt;
 pub mod hci;
 pub mod mgmt;
+pub mod player;
 pub mod print;
 pub mod telephony;
 

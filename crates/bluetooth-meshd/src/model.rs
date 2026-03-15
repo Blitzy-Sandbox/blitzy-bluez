@@ -9,7 +9,6 @@
 // (including virtual labels), opcode encode/decode, internal model ops
 // registration, and D-Bus bridging to external applications.
 
-use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -18,7 +17,7 @@ use tracing::{debug, error, warn};
 use zbus::zvariant::Value;
 
 use crate::appkey::{appkey_get_key, appkey_get_key_idx, appkey_have_key, appkey_net_idx};
-use crate::config::{MeshConfig, MeshConfigElement, MeshConfigModel, MeshConfigPub, MeshConfigSub};
+use crate::config::{MeshConfigElement, MeshConfigModel, MeshConfigPub, MeshConfigSub};
 use crate::crypto::{
     MeshPayloadDecryptParams, MeshPayloadEncryptParams, mesh_crypto_payload_decrypt,
     mesh_crypto_payload_encrypt, mesh_crypto_virtual_addr,
@@ -238,92 +237,9 @@ pub struct MeshElement {
     pub location: u16,
 }
 
-/// Local node representation for model layer operations.
-///
-/// Defined here because node.rs is not yet fully implemented.
-/// Uses interior mutability for single-threaded tokio runtime.
-pub struct MeshNode {
-    /// Mesh network layer state.
-    pub net: RefCell<MeshNet>,
-    /// Elements within this node.
-    pub elements: RefCell<Vec<MeshElement>>,
-    /// Primary unicast address.
-    pub primary: Cell<u16>,
-    /// Storage directory for this node.
-    pub storage_dir: RefCell<String>,
-    /// Configuration persistence.
-    pub config: RefCell<Option<Box<dyn MeshConfig>>>,
-    /// LPN mode flag.
-    pub lpn_mode: Cell<u8>,
-    /// Cache replay protection list size.
-    pub crpl: Cell<u16>,
-    /// Device key (16 bytes).
-    pub dev_key: RefCell<[u8; 16]>,
-}
-
-impl Default for MeshNode {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl MeshNode {
-    /// Create a new empty node.
-    pub fn new() -> Self {
-        Self {
-            net: RefCell::new(MeshNet::new()),
-            elements: RefCell::new(Vec::new()),
-            primary: Cell::new(0),
-            storage_dir: RefCell::new(String::new()),
-            config: RefCell::new(None),
-            lpn_mode: Cell::new(0),
-            crpl: Cell::new(0),
-            dev_key: RefCell::new([0u8; 16]),
-        }
-    }
-
-    /// Get the primary unicast address.
-    pub fn get_primary(&self) -> u16 {
-        self.primary.get()
-    }
-
-    /// Get the number of elements.
-    pub fn num_ele(&self) -> u8 {
-        self.elements.borrow().len() as u8
-    }
-
-    /// Compute the element index from an element address.
-    pub fn get_element_idx(&self, addr: u16) -> Option<u8> {
-        let primary = self.primary.get();
-        let num = self.num_ele();
-        if addr < primary || addr >= primary + num as u16 {
-            return None;
-        }
-        Some((addr - primary) as u8)
-    }
-
-    /// Get the D-Bus path for a specific element.
-    pub fn get_element_path(&self, ele_idx: u8) -> Option<String> {
-        let elements = self.elements.borrow();
-        elements.get(ele_idx as usize).map(|e| e.path.clone())
-    }
-
-    /// Get the element location descriptor.
-    pub fn get_element_location(&self, ele_idx: u8) -> Option<u16> {
-        let elements = self.elements.borrow();
-        elements.get(ele_idx as usize).map(|e| e.location)
-    }
-
-    /// Get the storage directory.
-    pub fn get_storage_dir(&self) -> String {
-        self.storage_dir.borrow().clone()
-    }
-
-    /// Get the device key.
-    pub fn get_dev_key(&self) -> [u8; 16] {
-        *self.dev_key.borrow()
-    }
-}
+// MeshNode is now defined in crate::node and re-exported here
+// for backwards compatibility.
+pub use crate::node::MeshNode;
 
 // =========================================================================
 // Global Virtual Address Registry

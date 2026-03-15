@@ -6,6 +6,7 @@
 
 pub mod analyze;
 pub mod backends;
+pub mod control;
 pub mod crc;
 pub mod display;
 pub mod dissectors;

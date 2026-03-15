@@ -11,6 +11,7 @@ pub mod plugin;
 pub mod plugins;
 pub mod profiles;
 pub mod sdp;
+pub mod storage;
 
 fn main() {
     println!("bluetoothd stub");

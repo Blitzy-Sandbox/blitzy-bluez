@@ -20,7 +20,7 @@ rust-ini = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "registry"] }
 serde = { workspace = true }
-nix = { workspace = true, features = ["signal"] }
+nix = { workspace = true, features = ["signal", "fs"] }
 libc = { workspace = true }
 thiserror = { workspace = true }
 bitflags = { workspace = true }

@@ -5,6 +5,7 @@ pub mod admin;
 pub mod adv_monitor;
 pub mod advertising;
 pub mod agent;
+pub mod assistant;
 pub mod display;
 pub mod gatt;
 pub mod hci;

@@ -486,6 +486,12 @@ pub fn node_relay_mode_get(node: &MeshNode) -> u8 {
     modes.relay
 }
 
+/// Get the relay retransmit parameters (count, interval).
+pub fn node_relay_params_get(node: &MeshNode) -> (u16, u16) {
+    let modes = node.modes.borrow();
+    (modes.relay_cnt, modes.relay_interval)
+}
+
 /// Set the relay mode and retransmit parameters.
 pub fn node_relay_mode_set(node: &MeshNode, enabled: bool, cnt: u16, interval: u16) -> bool {
     let new_mode = if enabled { MESH_MODE_ENABLED } else { MESH_MODE_DISABLED };

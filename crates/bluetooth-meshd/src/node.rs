@@ -642,6 +642,12 @@ pub fn node_mpb_mode_set(node: &MeshNode, enabled: bool) -> bool {
     true
 }
 
+/// Get the MPB (Mesh Private Beacon) period value.
+pub fn node_mpb_period_get(node: &MeshNode) -> u8 {
+    let modes = node.modes.borrow();
+    modes.mpb_period
+}
+
 /// Set the MPB period.
 pub fn node_mpb_period_set(node: &MeshNode, period: u8) {
     let mpb_mode = {

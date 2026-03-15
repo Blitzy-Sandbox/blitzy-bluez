@@ -289,11 +289,7 @@ fn decode_capabilities(avdtp_frame: &mut AvdtpFrame) -> bool {
             break;
         };
 
-        print_field!(
-            "Service Category: {} (0x{:02x})",
-            servicecat2str(service_cat),
-            service_cat
-        );
+        print_field!("Service Category: {} (0x{:02x})", servicecat2str(service_cat), service_cat);
 
         let Some(losc) = avdtp_frame.l2cap_frame.get_u8() else {
             return false;
@@ -321,17 +317,13 @@ fn decode_capabilities(avdtp_frame: &mut AvdtpFrame) -> bool {
             | AVDTP_MULTIPLEXING
             | AVDTP_DELAY_REPORTING => {
                 if losc > 0 {
-                    packet::hexdump(
-                        &avdtp_frame.l2cap_frame.remaining_data()[..losc as usize],
-                    );
+                    packet::hexdump(&avdtp_frame.l2cap_frame.remaining_data()[..losc as usize]);
                     avdtp_frame.l2cap_frame.pull(losc as usize);
                 }
             }
             _ => {
                 if losc > 0 {
-                    packet::hexdump(
-                        &avdtp_frame.l2cap_frame.remaining_data()[..losc as usize],
-                    );
+                    packet::hexdump(&avdtp_frame.l2cap_frame.remaining_data()[..losc as usize]);
                     avdtp_frame.l2cap_frame.pull(losc as usize);
                 }
             }
@@ -665,11 +657,8 @@ fn avdtp_delayreport(avdtp_frame: &mut AvdtpFrame) -> bool {
 fn avdtp_signalling_packet(avdtp_frame: &mut AvdtpFrame) -> bool {
     let frame = &mut avdtp_frame.l2cap_frame;
 
-    let pdu_color = if frame.in_ {
-        crate::display::COLOR_MAGENTA
-    } else {
-        crate::display::COLOR_BLUE
-    };
+    let pdu_color =
+        if frame.in_ { crate::display::COLOR_MAGENTA } else { crate::display::COLOR_BLUE };
 
     let Some(hdr) = frame.get_u8() else {
         return false;
@@ -723,9 +712,7 @@ fn avdtp_signalling_packet(avdtp_frame: &mut AvdtpFrame) -> bool {
 
     match sig_id {
         AVDTP_DISCOVER => avdtp_discover(avdtp_frame),
-        AVDTP_GET_CAPABILITIES | AVDTP_GET_ALL_CAPABILITIES => {
-            avdtp_get_capabilities(avdtp_frame)
-        }
+        AVDTP_GET_CAPABILITIES | AVDTP_GET_ALL_CAPABILITIES => avdtp_get_capabilities(avdtp_frame),
         AVDTP_SET_CONFIGURATION => avdtp_set_configuration(avdtp_frame),
         AVDTP_GET_CONFIGURATION => avdtp_get_configuration(avdtp_frame),
         AVDTP_RECONFIGURE => avdtp_reconfigure(avdtp_frame),
@@ -752,11 +739,7 @@ fn avdtp_signalling_packet(avdtp_frame: &mut AvdtpFrame) -> bool {
 /// If `seq_num == 1` the frame is a signaling packet; otherwise it is a media
 /// stream packet (hexdumped only when the A2DP_STREAM filter is active).
 pub fn avdtp_packet(frame: &L2capFrame) {
-    let mut avdtp_frame = AvdtpFrame {
-        hdr: 0,
-        sig_id: 0,
-        l2cap_frame: frame.clone(),
-    };
+    let mut avdtp_frame = AvdtpFrame { hdr: 0, sig_id: 0, l2cap_frame: frame.clone() };
 
     match frame.seq_num {
         1 => {
@@ -885,11 +868,7 @@ mod tests {
         // Discover command: hdr=0x00 (command, single, label 0), sig_id=0x01
         let data = vec![0x00, 0x01];
         let l2cap_frame = L2capFrame::new(data.clone(), data.len() as u16);
-        let mut af = AvdtpFrame {
-            hdr: 0,
-            sig_id: 0,
-            l2cap_frame,
-        };
+        let mut af = AvdtpFrame { hdr: 0, sig_id: 0, l2cap_frame };
         // Parse signalling packet — should succeed
         let result = avdtp_signalling_packet(&mut af);
         assert!(result);
@@ -901,11 +880,7 @@ mod tests {
         // Then 2 bytes per SEP entry: seid=0x04 (SEID 1), info=0x08 (Audio, SNK)
         let data = vec![0x02, 0x01, 0x04, 0x08];
         let l2cap_frame = L2capFrame::new(data.clone(), data.len() as u16);
-        let mut af = AvdtpFrame {
-            hdr: 0,
-            sig_id: 0,
-            l2cap_frame,
-        };
+        let mut af = AvdtpFrame { hdr: 0, sig_id: 0, l2cap_frame };
         let result = avdtp_signalling_packet(&mut af);
         assert!(result);
     }
@@ -915,11 +890,7 @@ mod tests {
         // Delay Report command: hdr=0x00, sig_id=0x0d, SEID=0x04, delay=0x0064 (10.0ms)
         let data = vec![0x00, 0x0d, 0x04, 0x00, 0x64];
         let l2cap_frame = L2capFrame::new(data.clone(), data.len() as u16);
-        let mut af = AvdtpFrame {
-            hdr: 0,
-            sig_id: 0,
-            l2cap_frame,
-        };
+        let mut af = AvdtpFrame { hdr: 0, sig_id: 0, l2cap_frame };
         let result = avdtp_signalling_packet(&mut af);
         assert!(result);
     }
@@ -938,11 +909,7 @@ mod tests {
         // Abort command: hdr=0x00, sig_id=0x0a, SEID=0x04
         let data = vec![0x00, 0x0a, 0x04];
         let l2cap_frame = L2capFrame::new(data.clone(), data.len() as u16);
-        let mut af = AvdtpFrame {
-            hdr: 0,
-            sig_id: 0,
-            l2cap_frame,
-        };
+        let mut af = AvdtpFrame { hdr: 0, sig_id: 0, l2cap_frame };
         let result = avdtp_signalling_packet(&mut af);
         assert!(result);
     }
@@ -952,11 +919,7 @@ mod tests {
         // Abort accept: hdr=0x02, sig_id=0x0a
         let data = vec![0x02, 0x0a];
         let l2cap_frame = L2capFrame::new(data.clone(), data.len() as u16);
-        let mut af = AvdtpFrame {
-            hdr: 0,
-            sig_id: 0,
-            l2cap_frame,
-        };
+        let mut af = AvdtpFrame { hdr: 0, sig_id: 0, l2cap_frame };
         let result = avdtp_signalling_packet(&mut af);
         assert!(result);
     }
@@ -966,11 +929,7 @@ mod tests {
         // Continuation packet: packet type 0x08
         let data = vec![0x08, 0x01, 0x02, 0x03];
         let l2cap_frame = L2capFrame::new(data.clone(), data.len() as u16);
-        let mut af = AvdtpFrame {
-            hdr: 0,
-            sig_id: 0,
-            l2cap_frame,
-        };
+        let mut af = AvdtpFrame { hdr: 0, sig_id: 0, l2cap_frame };
         let result = avdtp_signalling_packet(&mut af);
         assert!(result);
     }

@@ -6,4 +6,5 @@
 // GATT client procedures, and the GAttrib transport abstraction.
 
 pub mod att;
+pub mod gatt;
 pub mod gattrib;

@@ -13,13 +13,13 @@
 //! dissectors based on CID and PSM values.
 
 // Dissector sub-modules — uncommented as each implementation is created.
+pub mod a2dp;
 pub mod att;
 pub mod avctp;
+pub mod avdtp;
 pub mod bnep;
 pub mod l2cap;
-pub mod rfcomm;
-pub mod sdp;
-pub mod avdtp;
-pub mod a2dp;
 pub mod ll;
 pub mod lmp;
+pub mod rfcomm;
+pub mod sdp;

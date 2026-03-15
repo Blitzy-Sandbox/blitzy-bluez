@@ -3,4 +3,5 @@
 //! OBEX client subsystem — session management, transfer engine, and
 //! profile-specific interfaces.
 
+pub mod session;
 pub mod transfer;

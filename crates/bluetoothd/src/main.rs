@@ -5,6 +5,7 @@ pub mod adapter;
 pub mod advertising;
 pub mod config;
 pub mod dbus_common;
+pub mod device;
 pub mod error;
 pub mod gatt;
 pub mod legacy_gatt;

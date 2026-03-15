@@ -163,6 +163,11 @@ name = "btmon_throughput"
 path = "benches/btmon_throughput.rs"
 harness = false
 
+[[bench]]
+name = "startup"
+path = "benches/startup.rs"
+harness = false
+
 # ---------------------------------------------------------------------------
 # Unit test targets — tests/unit/*.rs (converted from unit/test-*.c)
 # ---------------------------------------------------------------------------

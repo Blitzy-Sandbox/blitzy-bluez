@@ -4,6 +4,7 @@
 //! Re-exports all public btmon modules for use by integration tests and
 //! external consumers.
 
+pub mod analyze;
 pub mod backends;
 pub mod crc;
 pub mod display;

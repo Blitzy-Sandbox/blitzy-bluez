@@ -127,7 +127,7 @@ tempfile = { workspace = true }
 # Raw C types for low-level test operations
 libc = { workspace = true }
 # POSIX syscalls — signal handling for daemon lifecycle, socketpair for ATT tests
-nix = { workspace = true, features = ["signal", "process"] }
+nix = { workspace = true, features = ["signal", "process", "feature"] }
 # Microbenchmark harness
 criterion = { workspace = true }
 # Zero-copy struct conversion for packed protocol test data
@@ -269,6 +269,10 @@ path = "tests/unit/test_uhid.rs"
 [[test]]
 name = "test_tester"
 path = "tests/unit/test_tester.rs"
+
+[[test]]
+name = "test_textfile"
+path = "tests/unit/test_textfile.rs"
 
 [[test]]
 name = "test_gobex"

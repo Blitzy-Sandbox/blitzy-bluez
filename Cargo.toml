@@ -19,42 +19,70 @@ repository = "https://git.kernel.org/pub/scm/bluetooth/bluez.git"
 rust-version = "1.85"
 
 [workspace.dependencies]
+# Async runtime — multi-thread for bluetoothd, current-thread for bluetooth-meshd
 tokio = { version = "1.50", features = ["full"] }
+# D-Bus via tokio backend (NOT async-io) — replaces gdbus/ + libdbus-1 + l_dbus
 zbus = { version = "5.12", default-features = false, features = ["tokio"] }
+# POSIX syscalls — socket, ioctl, net for Bluetooth kernel API
 nix = { version = "0.29", features = ["socket", "ioctl", "net"] }
+# Raw C types for AF_BLUETOOTH, sockaddr structs, ioctl numbers
 libc = "0.2"
+# INI configuration parsing — replaces GKeyFile (identical section/key semantics)
 rust-ini = "0.21"
+# Serialization framework (internal data, NOT for config format changes)
 serde = { version = "1.0", features = ["derive"] }
+# JSON serialization — mesh daemon node/model/config persistence
 serde_json = "1.0"
+# Structured logging — replaces syslog + btmon HCI_CHANNEL_LOGGING
 tracing = "0.1"
+# Log output formatting and filtering
 tracing-subscriber = "0.3"
+# Interactive CLI shell — replaces GNU readline
 rustyline = "14"
+# Plugin registration via trait collection — replaces BLUETOOTH_PLUGIN_DEFINE + linker sections
 inventory = "0.3"
+# External plugin loading via dlopen/dlsym equivalent
 libloading = "0.8"
+# Cryptographic primitives: AES-128 GCM, HMAC, P-256 ECC/ECDH
 ring = "0.17"
+# Microbenchmark framework for performance gate validation
 criterion = { version = "0.5", features = ["html_reports"] }
+# Zero-copy byte-level struct conversion for HCI/MGMT packed structures
 zerocopy = { version = "0.8", features = ["derive"] }
+# Type-safe bitfield definitions for BT flags, permissions, capabilities
 bitflags = "2.6"
+# Efficient byte buffer management for protocol packet handling
 bytes = "1.7"
+# Derive macro for Error trait implementations on typed error enums
 thiserror = "2.0"
+# Stream utilities for async event processing
 tokio-stream = "0.1"
+# Future combinators and stream extensions
 futures = "0.3"
+# XML parsing — SDP record XML conversion in bluetoothd
 quick-xml = "0.37"
+# MD5 hashing — OBEX daemon transfer identification
 md-5 = "0.10"
-# AAP 0.6.1 deviation: aes, cmac, and p256 are justified additions not in the
-# original dependency inventory.  ring 0.17 (the AAP-specified crypto crate)
+# Temporary file/directory management — test isolation and cleanup
+tempfile = "3.15"
+# Random number generation — bluetooth-meshd and fuzz/shuffle tests
+rand = "0.8"
+# AAP 0.6.1 deviation: aes, cmac, ccm, and p256 are justified additions not in
+# the original dependency inventory.  ring 0.17 (the AAP-specified crypto crate)
 # only exposes AES-GCM — it cannot perform the raw AES-ECB block cipher needed
 # by Bluetooth SMP functions e(), ah(), c1(), s1(), etc.  Similarly,
 # ring::agreement::EphemeralPrivateKey does not expose raw private key bytes
-# required for BT HCI LE Generate DHKey.  These three crates fill those gaps
-# with minimal additional dependency surface.
+# required for BT HCI LE Generate DHKey.  These crates fill those gaps with
+# minimal additional dependency surface.
 aes = "0.8"
 cmac = "0.7"
 ccm = "0.5"
 p256 = { version = "0.13", features = ["ecdh"] }
-rand = "0.8"
 
-# Root package — enables workspace-level integration tests in tests/
+# ---------------------------------------------------------------------------
+# Root package — enables workspace-level unit tests (tests/unit/*.rs),
+# integration tests (tests/integration/*.rs), and benchmarks (benches/*.rs).
+# ---------------------------------------------------------------------------
 [package]
 name = "bluez"
 version.workspace = true
@@ -68,23 +96,58 @@ name = "bluez"
 path = "src/lib.rs"
 
 [dev-dependencies]
+# D-Bus client/server for integration tests
 zbus = { workspace = true }
+# Async test runtime via #[tokio::test]
 tokio = { workspace = true }
+# Future combinators for async test utilities
 futures = { workspace = true }
+# Shared Bluetooth protocol library — ATT, GATT, MGMT, crypto, utilities
 bluez-shared = { path = "crates/bluez-shared" }
+# HCI emulator for virtual controller in integration tests
 bluez-emulator = { path = "crates/bluez-emulator" }
+# Core daemon library access with test-support feature for internal API exposure
 bluetoothd = { path = "crates/bluetoothd", features = ["test-support"] }
+# Packet monitor library access for btsnoop replay tests
 btmon = { path = "crates/btmon" }
+# OBEX daemon library access for OBEX protocol tests
 obexd = { path = "crates/obexd" }
+# Raw AES-ECB block cipher for SMP crypto test vectors
 aes = { workspace = true }
+# AES-CMAC for Bluetooth crypto function test vectors
 cmac = { workspace = true }
+# AES-CCM for mesh crypto test vectors
 ccm = { workspace = true }
-tempfile = "3.15"
+# P-256 ECC for key generation and ECDH test vectors
+p256 = { workspace = true }
+# Random number generation for fuzz/shuffle test cases
+rand = { workspace = true }
+# Temporary directories for isolated test file I/O
+tempfile = { workspace = true }
+# Raw C types for low-level test operations
 libc = { workspace = true }
-nix = { workspace = true }
+# POSIX syscalls — signal handling for daemon lifecycle, socketpair for ATT tests
+nix = { workspace = true, features = ["signal", "process"] }
+# Microbenchmark harness
 criterion = { workspace = true }
+# Zero-copy struct conversion for packed protocol test data
 zerocopy = { workspace = true }
+# Serialization for test data structures
+serde = { workspace = true }
+# JSON serialization for mesh crypto and config test data
+serde_json = { workspace = true }
+# Type-safe bitflags for protocol test assertions
+bitflags = { workspace = true }
+# Byte buffers for protocol test packet construction
+bytes = { workspace = true }
+# Error type derivation for test error handling
+thiserror = { workspace = true }
+# Structured logging for test diagnostics
+tracing = { workspace = true }
 
+# ---------------------------------------------------------------------------
+# Benchmark targets — Criterion-based, custom harness
+# ---------------------------------------------------------------------------
 [[bench]]
 name = "gatt_discovery"
 path = "benches/gatt_discovery.rs"
@@ -100,25 +163,24 @@ name = "btmon_throughput"
 path = "benches/btmon_throughput.rs"
 harness = false
 
+# ---------------------------------------------------------------------------
+# Unit test targets — tests/unit/*.rs (converted from unit/test-*.c)
+# ---------------------------------------------------------------------------
 [[test]]
-name = "test_gdbus_client"
-path = "tests/unit/test_gdbus_client.rs"
+name = "test_att"
+path = "tests/unit/test_att.rs"
 
 [[test]]
-name = "test_eir"
-path = "tests/unit/test_eir.rs"
+name = "test_gatt"
+path = "tests/unit/test_gatt.rs"
 
 [[test]]
-name = "test_queue"
-path = "tests/unit/test_queue.rs"
+name = "test_mgmt"
+path = "tests/unit/test_mgmt.rs"
 
 [[test]]
-name = "test_rap"
-path = "tests/unit/test_rap.rs"
-
-[[test]]
-name = "test_ringbuf"
-path = "tests/unit/test_ringbuf.rs"
+name = "test_crypto"
+path = "tests/unit/test_crypto.rs"
 
 [[test]]
 name = "test_ecc"
@@ -129,88 +191,8 @@ name = "test_mesh_crypto"
 path = "tests/unit/test_mesh_crypto.rs"
 
 [[test]]
-name = "test_crypto"
-path = "tests/unit/test_crypto.rs"
-
-[[test]]
-name = "test_battery"
-path = "tests/unit/test_battery.rs"
-
-[[test]]
-name = "test_gobex_apparam"
-path = "tests/unit/test_gobex_apparam.rs"
-
-[[test]]
-name = "test_gobex_header"
-path = "tests/unit/test_gobex_header.rs"
-
-[[test]]
-name = "test_gobex"
-path = "tests/unit/test_gobex.rs"
-
-[[test]]
-name = "test_gobex_packet"
-path = "tests/unit/test_gobex_packet.rs"
-
-[[test]]
-name = "test_gobex_transfer"
-path = "tests/unit/test_gobex_transfer.rs"
-
-[[test]]
 name = "test_crc"
 path = "tests/unit/test_crc.rs"
-
-[[test]]
-name = "test_hfp"
-path = "tests/unit/test_hfp.rs"
-
-[[test]]
-name = "test_uhid"
-path = "tests/unit/test_uhid.rs"
-
-[[test]]
-name = "test_uuid"
-path = "tests/unit/test_uuid.rs"
-
-[[test]]
-name = "test_mgmt"
-path = "tests/unit/test_mgmt.rs"
-
-[[test]]
-name = "test_gatt"
-path = "tests/unit/test_gatt.rs"
-
-[[test]]
-name = "test_gmap"
-path = "tests/unit/test_gmap.rs"
-
-[[test]]
-name = "test_tmap"
-path = "tests/unit/test_tmap.rs"
-
-[[test]]
-name = "test_att"
-path = "tests/unit/test_att.rs"
-
-[[test]]
-name = "test_tester"
-path = "tests/unit/test_tester.rs"
-
-[[test]]
-name = "test_csip"
-path = "tests/unit/test_csip.rs"
-
-[[test]]
-name = "test_ccp"
-path = "tests/unit/test_ccp.rs"
-
-[[test]]
-name = "test_micp"
-path = "tests/unit/test_micp.rs"
-
-[[test]]
-name = "test_vcp"
-path = "tests/unit/test_vcp.rs"
 
 [[test]]
 name = "test_bap"
@@ -221,13 +203,100 @@ name = "test_bass"
 path = "tests/unit/test_bass.rs"
 
 [[test]]
-name = "test_sdp"
-path = "tests/unit/test_sdp.rs"
+name = "test_vcp"
+path = "tests/unit/test_vcp.rs"
+
+[[test]]
+name = "test_micp"
+path = "tests/unit/test_micp.rs"
 
 [[test]]
 name = "test_mcp"
 path = "tests/unit/test_mcp.rs"
 
+[[test]]
+name = "test_ccp"
+path = "tests/unit/test_ccp.rs"
+
+[[test]]
+name = "test_csip"
+path = "tests/unit/test_csip.rs"
+
+[[test]]
+name = "test_tmap"
+path = "tests/unit/test_tmap.rs"
+
+[[test]]
+name = "test_gmap"
+path = "tests/unit/test_gmap.rs"
+
+[[test]]
+name = "test_battery"
+path = "tests/unit/test_battery.rs"
+
+[[test]]
+name = "test_hfp"
+path = "tests/unit/test_hfp.rs"
+
+[[test]]
+name = "test_rap"
+path = "tests/unit/test_rap.rs"
+
+[[test]]
+name = "test_queue"
+path = "tests/unit/test_queue.rs"
+
+[[test]]
+name = "test_ringbuf"
+path = "tests/unit/test_ringbuf.rs"
+
+[[test]]
+name = "test_eir"
+path = "tests/unit/test_eir.rs"
+
+[[test]]
+name = "test_uuid"
+path = "tests/unit/test_uuid.rs"
+
+[[test]]
+name = "test_sdp"
+path = "tests/unit/test_sdp.rs"
+
+[[test]]
+name = "test_uhid"
+path = "tests/unit/test_uhid.rs"
+
+[[test]]
+name = "test_tester"
+path = "tests/unit/test_tester.rs"
+
+[[test]]
+name = "test_gobex"
+path = "tests/unit/test_gobex.rs"
+
+[[test]]
+name = "test_gobex_header"
+path = "tests/unit/test_gobex_header.rs"
+
+[[test]]
+name = "test_gobex_packet"
+path = "tests/unit/test_gobex_packet.rs"
+
+[[test]]
+name = "test_gobex_apparam"
+path = "tests/unit/test_gobex_apparam.rs"
+
+[[test]]
+name = "test_gobex_transfer"
+path = "tests/unit/test_gobex_transfer.rs"
+
+[[test]]
+name = "test_gdbus_client"
+path = "tests/unit/test_gdbus_client.rs"
+
+# ---------------------------------------------------------------------------
+# Integration test targets — tests/integration/*.rs
+# ---------------------------------------------------------------------------
 [[test]]
 name = "btsnoop_replay_test"
 path = "tests/integration/btsnoop_replay_test.rs"
@@ -236,6 +305,9 @@ path = "tests/integration/btsnoop_replay_test.rs"
 name = "dbus_contract_test"
 path = "tests/integration/dbus_contract_test.rs"
 
+# ---------------------------------------------------------------------------
+# Workspace lint configuration
+# ---------------------------------------------------------------------------
 [lints]
 workspace = true
 

@@ -12,4 +12,5 @@ pub mod ccp;
 pub mod csip;
 pub mod micp;
 pub mod player;
+pub mod tmap;
 pub mod vcp;

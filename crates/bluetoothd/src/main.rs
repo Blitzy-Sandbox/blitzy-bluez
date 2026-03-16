@@ -6,6 +6,7 @@ pub mod adv_monitor;
 pub mod advertising;
 pub mod agent;
 pub mod battery;
+pub mod bearer;
 pub mod config;
 pub mod dbus_common;
 pub mod device;

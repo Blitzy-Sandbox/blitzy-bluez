@@ -28,5 +28,6 @@ pub mod profile;
 pub mod profiles;
 pub mod rfkill;
 pub mod sdp;
+pub mod service;
 pub mod set;
 pub mod storage;

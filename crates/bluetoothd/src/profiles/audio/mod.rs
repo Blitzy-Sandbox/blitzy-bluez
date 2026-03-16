@@ -5,6 +5,7 @@
 //! mcp, ccp, csip, tmap, gmap, sink, source, control, asha, hfp, telephony)
 //! will be added by their respective implementation agents.
 
+pub mod a2dp;
 pub mod avctp;
 pub mod avdtp;
 pub mod player;

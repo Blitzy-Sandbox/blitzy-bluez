@@ -4,6 +4,7 @@
 //! as plugins with the daemon's profile framework.
 
 pub mod audio;
+pub mod deviceinfo;
 pub mod gap;
 pub mod midi;
 pub mod ranging;

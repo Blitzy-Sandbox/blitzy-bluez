@@ -13,6 +13,7 @@
 pub mod adapter;
 pub mod adv_monitor;
 pub mod advertising;
+pub mod agent;
 pub mod battery;
 pub mod config;
 pub mod dbus_common;

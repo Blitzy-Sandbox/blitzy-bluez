@@ -1,7 +1,7 @@
 //! Bluetooth profile plugin implementations.
 //!
-//! Currently only the audio sub-module is available. Other profile modules
-//! (input, network, battery, deviceinfo, gap, midi, ranging, scanparam)
-//! will be added by their respective implementation agents.
+//! Profile modules provide Bluetooth protocol implementations registered
+//! as plugins with the daemon's profile framework.
 
 pub mod audio;
+pub mod scanparam;

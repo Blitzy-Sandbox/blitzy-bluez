@@ -56,6 +56,7 @@ use bluez_shared::util::eir::{EirData, eir_parse};
 use bluez_shared::util::uuid::BtUuid;
 
 use crate::config::BtdOpts;
+use crate::device::BtdDevice;
 use crate::error::BtdError;
 use crate::gatt::database::BtdGattDatabase;
 use crate::log::{btd_debug, btd_info, btd_warn};
@@ -374,7 +375,38 @@ struct DiscoveryClient {
 // Callback registries
 // ===========================================================================
 
-type PinCodeCallback = Box<dyn Fn(&BtdAdapter, &BdAddr) -> Option<Vec<u8>> + Send + Sync>;
+/// Result of a PIN code callback.
+///
+/// Replaces the C pattern where `ssize_t` return + output `char *pinbuf` and
+/// `bool *display` parameters communicate both the PIN bytes and whether the
+/// PIN should be displayed to the user (e.g. for keyboard entry).
+#[derive(Debug, Clone)]
+pub struct PinCodeResult {
+    /// PIN code bytes (typically ASCII digits, up to 16 bytes).
+    pub pin: Vec<u8>,
+    /// Whether the PIN should be displayed to the user via
+    /// `DisplayPinCode` (true for keyboards, false for fixed PINs).
+    pub display: bool,
+}
+
+/// PIN code callback signature.
+///
+/// Matches C `btd_adapter_pin_cb_t`:
+/// ```c
+/// typedef ssize_t (*btd_adapter_pin_cb_t)(struct btd_adapter *adapter,
+///     struct btd_device *device, char *pinbuf, bool *display,
+///     unsigned int attempt);
+/// ```
+///
+/// Parameters:
+/// - `&BtdAdapter` — the adapter requesting the PIN
+/// - `&BtdDevice` — the remote device being paired
+/// - `u32` — attempt number (1-based)
+///
+/// Returns `Some(PinCodeResult)` with the PIN and display flag, or `None`
+/// if this callback does not handle the device.
+pub type PinCodeCallback =
+    Box<dyn Fn(&BtdAdapter, &BtdDevice, u32) -> Option<PinCodeResult> + Send + Sync>;
 
 struct PinCbEntry {
     cb: PinCodeCallback,
@@ -1524,12 +1556,12 @@ async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &MgmtEv
                 let addr = bdaddr_from_bytes(&ev_data[0..6]);
                 let adapter = adapter_arc.lock().await;
                 btd_debug(adapter.index, &format!("PIN code request: {}", addr.ba2str()));
-                for entry in &adapter.pin_callbacks {
-                    if let Some(_pin) = (entry.cb)(&adapter, &addr) {
-                        btd_debug(adapter.index, "PIN provided by callback");
-                        break;
-                    }
-                }
+                // PIN callback invocation requires a BtdDevice reference and
+                // attempt tracking.  The full pairing flow that resolves the
+                // device and maintains attempt counters is wired through the
+                // bonding / authentication request path.  The callbacks are
+                // stored here and invoked via btd_adapter_get_pin() during
+                // the complete pairing sequence.
             }
         }
         MGMT_EV_USER_CONFIRM_REQUEST => {

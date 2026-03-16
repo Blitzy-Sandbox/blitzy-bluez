@@ -4,6 +4,7 @@
 //! as plugins with the daemon's profile framework.
 
 pub mod audio;
+pub mod battery;
 pub mod deviceinfo;
 pub mod gap;
 pub mod midi;

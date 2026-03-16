@@ -84,8 +84,7 @@ const PNP_ID_SIZE: usize = 7;
 /// `deviceinfo_exit` to unregister the profile during daemon shutdown.
 ///
 /// This follows the same pattern as `GAP_PROFILE` in `gap.rs`.
-static DEVICEINFO_PROFILE: std::sync::Mutex<Option<BtdProfile>> =
-    std::sync::Mutex::new(None);
+static DEVICEINFO_PROFILE: std::sync::Mutex<Option<BtdProfile>> = std::sync::Mutex::new(None);
 
 // ===========================================================================
 // PnP ID Read Handler
@@ -110,64 +109,56 @@ fn handle_pnpid(
 ) {
     let device_clone = Arc::clone(device);
 
-    let callback: ReadCallback = Box::new(
-        move |success: bool, att_ecode: u8, data: &[u8]| {
-            if !success {
-                error!("Error reading PNP_ID value: ATT error 0x{:02x}", att_ecode);
-                btd_error(
-                    0,
-                    &format!(
-                        "Error reading PNP_ID value: ATT error 0x{:02x}",
-                        att_ecode
-                    ),
-                );
-                return;
-            }
+    let callback: ReadCallback = Box::new(move |success: bool, att_ecode: u8, data: &[u8]| {
+        if !success {
+            error!("Error reading PNP_ID value: ATT error 0x{:02x}", att_ecode);
+            btd_error(0, &format!("Error reading PNP_ID value: ATT error 0x{:02x}", att_ecode));
+            return;
+        }
 
-            if data.len() < PNP_ID_SIZE {
-                error!(
-                    "Error reading PNP_ID: Invalid pdu length received (got {}, need {})",
-                    data.len(),
-                    PNP_ID_SIZE
-                );
-                btd_error(0, "Error reading PNP_ID: Invalid pdu length received");
-                return;
-            }
+        if data.len() < PNP_ID_SIZE {
+            error!(
+                "Error reading PNP_ID: Invalid pdu length received (got {}, need {})",
+                data.len(),
+                PNP_ID_SIZE
+            );
+            btd_error(0, "Error reading PNP_ID: Invalid pdu length received");
+            return;
+        }
 
-            // Decode the 7-byte PnP ID value:
-            //   offset 0: source (u8)
-            //   offset 1..3: vendor (u16 LE)
-            //   offset 3..5: product (u16 LE)
-            //   offset 5..7: version (u16 LE)
-            let source = data[0];
-            let vendor = u16::from_le_bytes([data[1], data[2]]);
-            let product = u16::from_le_bytes([data[3], data[4]]);
-            let version = u16::from_le_bytes([data[5], data[6]]);
+        // Decode the 7-byte PnP ID value:
+        //   offset 0: source (u8)
+        //   offset 1..3: vendor (u16 LE)
+        //   offset 3..5: product (u16 LE)
+        //   offset 5..7: version (u16 LE)
+        let source = data[0];
+        let vendor = u16::from_le_bytes([data[1], data[2]]);
+        let product = u16::from_le_bytes([data[3], data[4]]);
+        let version = u16::from_le_bytes([data[5], data[6]]);
 
-            debug!(
-                "DIS PnP ID read complete: source=0x{:02X} vendor=0x{:04X} \
+        debug!(
+            "DIS PnP ID read complete: source=0x{:02X} vendor=0x{:04X} \
                  product=0x{:04X} version=0x{:04X}",
-                source, vendor, product, version
-            );
-            btd_debug(
-                0,
-                &format!(
-                    "DIS PnP ID: source=0x{:02X} vendor=0x{:04X} \
+            source, vendor, product, version
+        );
+        btd_debug(
+            0,
+            &format!(
+                "DIS PnP ID: source=0x{:02X} vendor=0x{:04X} \
                      product=0x{:04X} version=0x{:04X}",
-                    source, vendor, product, version
-                ),
-            );
+                source, vendor, product, version
+            ),
+        );
 
-            // Store the decoded PnP ID on the device. The source field is
-            // widened to u16 to match the Rust BtdDevice::set_pnp_id()
-            // signature (consistent with the device model's PnpId struct).
-            let device_ref = device_clone.clone();
-            tokio::spawn(async move {
-                let mut dev = device_ref.lock().await;
-                dev.set_pnp_id(u16::from(source), vendor, product, version);
-            });
-        },
-    );
+        // Store the decoded PnP ID on the device. The source field is
+        // widened to u16 to match the Rust BtdDevice::set_pnp_id()
+        // signature (consistent with the device model's PnpId struct).
+        let device_ref = device_clone.clone();
+        tokio::spawn(async move {
+            let mut dev = device_ref.lock().await;
+            dev.set_pnp_id(u16::from(source), vendor, product, version);
+        });
+    });
 
     if client.read_value(value_handle, callback) == 0 {
         debug!("Failed to send request to read PnP ID");
@@ -254,9 +245,7 @@ fn foreach_deviceinfo_service(
 /// persistent per-device state. All work is performed during `accept`.
 ///
 /// Replaces C `deviceinfo_probe()` from `deviceinfo.c`.
-fn deviceinfo_probe(
-    _device: &Arc<tokio::sync::Mutex<BtdDevice>>,
-) -> Result<(), BtdError> {
+fn deviceinfo_probe(_device: &Arc<tokio::sync::Mutex<BtdDevice>>) -> Result<(), BtdError> {
     debug!("deviceinfo profile probe");
     btd_debug(0, "deviceinfo profile probe");
     Ok(())
@@ -281,9 +270,7 @@ fn deviceinfo_remove(_device: &Arc<tokio::sync::Mutex<BtdDevice>>) {
 /// characteristic (UUID 0x2A50) if found.
 ///
 /// Replaces C `deviceinfo_accept()` from `deviceinfo.c`.
-async fn deviceinfo_accept(
-    device: &Arc<tokio::sync::Mutex<BtdDevice>>,
-) -> Result<(), BtdError> {
+async fn deviceinfo_accept(device: &Arc<tokio::sync::Mutex<BtdDevice>>) -> Result<(), BtdError> {
     debug!("deviceinfo profile accept");
     btd_debug(0, "deviceinfo profile accept");
 
@@ -296,9 +283,7 @@ async fn deviceinfo_accept(
             None => {
                 error!("DIS: no GATT database available");
                 btd_error(0, "DIS: no GATT database available");
-                return Err(BtdError::NotAvailable(
-                    "No GATT database available".to_owned(),
-                ));
+                return Err(BtdError::NotAvailable("No GATT database available".to_owned()));
             }
         };
 
@@ -307,9 +292,7 @@ async fn deviceinfo_accept(
             None => {
                 error!("DIS: no GATT client available");
                 btd_error(0, "DIS: no GATT client available");
-                return Err(BtdError::NotAvailable(
-                    "No GATT client available".to_owned(),
-                ));
+                return Err(BtdError::NotAvailable("No GATT client available".to_owned()));
             }
         };
 
@@ -389,9 +372,7 @@ fn deviceinfo_init() -> Result<(), Box<dyn std::error::Error>> {
     // Store a copy for unregistration during exit.
     {
         let stored = BtdProfile::new("deviceinfo");
-        let mut guard = DEVICEINFO_PROFILE
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut guard = DEVICEINFO_PROFILE.lock().unwrap_or_else(|e| e.into_inner());
         *guard = Some(stored);
     }
 
@@ -400,10 +381,7 @@ fn deviceinfo_init() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         if let Err(e) = btd_profile_register(profile).await {
             error!("Failed to register deviceinfo profile: {}", e);
-            btd_error(
-                0,
-                &format!("Failed to register deviceinfo profile: {}", e),
-            );
+            btd_error(0, &format!("Failed to register deviceinfo profile: {}", e));
         }
     });
 
@@ -419,9 +397,7 @@ fn deviceinfo_exit() {
     debug!("deviceinfo plugin exit");
 
     let profile_opt = {
-        let mut guard = DEVICEINFO_PROFILE
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut guard = DEVICEINFO_PROFILE.lock().unwrap_or_else(|e| e.into_inner());
         guard.take()
     };
 
@@ -532,10 +508,7 @@ mod tests {
         assert_eq!(DIS_UUID16, 0x180A);
         assert_eq!(PNPID_UUID16, 0x2A50);
         assert_eq!(PNP_ID_SIZE, 7);
-        assert_eq!(
-            DEVICE_INFORMATION_UUID,
-            "0000180a-0000-1000-8000-00805f9b34fb"
-        );
+        assert_eq!(DEVICE_INFORMATION_UUID, "0000180a-0000-1000-8000-00805f9b34fb");
     }
 
     #[test]

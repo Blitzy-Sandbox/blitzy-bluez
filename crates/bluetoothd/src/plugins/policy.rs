@@ -49,8 +49,8 @@ use bluez_shared::util::uuid::{
 };
 
 use crate::adapter::{
-    BtdAdapter, BtdAdapterDriver, KernelFeatures, adapter_find, btd_add_conn_fail_cb,
-    btd_add_disconnect_cb, btd_adapter_restore_powered, btd_has_kernel_features,
+    BtdAdapter, BtdAdapterDriver, KernelFeatures, adapter_find, btd_adapter_restore_powered,
+    btd_add_conn_fail_cb, btd_add_disconnect_cb, btd_has_kernel_features,
     btd_register_adapter_driver, btd_remove_conn_fail_cb, btd_remove_disconnect_cb,
     btd_unregister_adapter_driver,
 };
@@ -99,7 +99,8 @@ const CT_RETRIES: u8 = 1;
 const TG_RETRIES: u8 = 1;
 
 /// Default reconnection UUIDs when no `[Policy] ReconnectUUIDs` is configured.
-const DEFAULT_RECONNECT_UUIDS: &[&str] = &[HSP_AG_UUID, HFP_AG_UUID, A2DP_SOURCE_UUID, A2DP_SINK_UUID];
+const DEFAULT_RECONNECT_UUIDS: &[&str] =
+    &[HSP_AG_UUID, HFP_AG_UUID, A2DP_SOURCE_UUID, A2DP_SINK_UUID];
 
 /// Default reconnection attempt count.
 const DEFAULT_RECONNECT_ATTEMPTS: u8 = 7;
@@ -258,7 +259,6 @@ impl Drop for PolicyData {
 /// in a synchronous context.
 struct PolicyState {
     // --- Configuration (from [Policy] section) ---
-
     /// UUIDs eligible for automatic reconnection.
     reconnect_uuids: Vec<String>,
 
@@ -277,7 +277,6 @@ struct PolicyState {
     resume_delay: u32,
 
     // --- Runtime state ---
-
     /// Active reconnection entries keyed by device address.
     reconnects: Vec<ReconnectData>,
 
@@ -344,8 +343,7 @@ fn reconnect_add(state: &mut PolicyState, addr: &BdAddr, uuid: &str) {
     let data = &mut state.reconnects[idx];
 
     // Check if the UUID is in the configured reconnect UUIDs list.
-    let eligible =
-        state.reconnect_uuids.iter().any(|u| u.as_str() == uuid);
+    let eligible = state.reconnect_uuids.iter().any(|u| u.as_str() == uuid);
 
     if !eligible {
         return;
@@ -492,10 +490,7 @@ fn sink_cb(event: &ServiceStateEvent) {
                 return;
             }
 
-            debug!(
-                "policy: A2DP Sink connected for {:?}, scheduling AVRCP Remote + HS",
-                addr
-            );
+            debug!("policy: A2DP Sink connected for {:?}, scheduling AVRCP Remote + HS", addr);
 
             let mut state = POLICY_STATE.lock().unwrap();
             let idx = policy_data_find_or_create(&mut state, &addr);
@@ -560,10 +555,7 @@ fn source_cb(event: &ServiceStateEvent) {
                 return;
             }
 
-            debug!(
-                "policy: A2DP Source connected for {:?}, scheduling AVRCP Target",
-                addr
-            );
+            debug!("policy: A2DP Source connected for {:?}, scheduling AVRCP Target", addr);
 
             let mut state = POLICY_STATE.lock().unwrap();
             let idx = policy_data_find_or_create(&mut state, &addr);
@@ -1014,10 +1006,7 @@ fn policy_connect_hs(addr: BdAddr) {
     state.devices[dev_idx].hs_timer = None;
     state.devices[dev_idx].hs_retries += 1;
 
-    debug!(
-        "policy: connect HSP/HFP on {:?}, retry {}",
-        addr, state.devices[dev_idx].hs_retries
-    );
+    debug!("policy: connect HSP/HFP on {:?}, retry {}", addr, state.devices[dev_idx].hs_retries);
 
     if let Some(ri) = reconnect_find_index(&state, &addr) {
         if state.reconnects[ri].active {
@@ -1049,10 +1038,7 @@ fn policy_connect_hs(addr: BdAddr) {
 /// `connect_services()` method. The actual service resolution happens
 /// at the adapter/device level.
 fn policy_connect_service(addr: &BdAddr, uuid: &str) {
-    btd_debug(
-        0,
-        &format!("policy: connect service {} on {:?}", uuid, addr),
-    );
+    btd_debug(0, &format!("policy: connect service {} on {:?}", uuid, addr));
 
     let addr_copy = *addr;
     let uuid_owned = uuid.to_owned();
@@ -1065,13 +1051,7 @@ fn policy_connect_service(addr: &BdAddr, uuid: &str) {
         //
         // In a fully connected codebase, this would resolve through the
         // device's btd_service instances. For now, we log the intent.
-        btd_debug(
-            0,
-            &format!(
-                "policy: async connect {} on {:?}",
-                uuid_owned, addr_copy
-            ),
-        );
+        btd_debug(0, &format!("policy: async connect {} on {:?}", uuid_owned, addr_copy));
     });
 }
 
@@ -1097,8 +1077,7 @@ fn reconnect_set_timer(state: &mut PolicyState, addr: &BdAddr) {
     }
 
     let attempt = state.reconnects[idx].attempt as usize;
-    let interval_idx =
-        std::cmp::min(attempt, state.reconnect_intervals.len() - 1);
+    let interval_idx = std::cmp::min(attempt, state.reconnect_intervals.len() - 1);
     let interval = state.reconnect_intervals[interval_idx];
 
     // Cancel any existing timer.
@@ -1162,11 +1141,7 @@ fn reconnect_timeout(addr: BdAddr) {
     tokio::spawn(async move {
         btd_debug(
             0,
-            &format!(
-                "policy: reconnecting {} services on {:?}",
-                services_clone.len(),
-                addr
-            ),
+            &format!("policy: reconnecting {} services on {:?}", services_clone.len(), addr),
         );
     });
 }
@@ -1210,21 +1185,14 @@ fn disconnect_cb(addr: &BdAddr, reason: u8) {
 
     if is_suspend {
         state.reconnects[idx].on_resume = true;
-        btd_debug(
-            0,
-            &format!(
-                "policy: suspend disconnect for {:?}, deferring to resume",
-                addr
-            ),
-        );
+        btd_debug(0, &format!("policy: suspend disconnect for {:?}, deferring to resume", addr));
 
         // For suspend disconnects, check if kernel supports resume events.
         // If it does, we defer reconnection to the adapter resume callback.
         // If not, schedule reconnection immediately with resume_delay.
         let supports_resume_evt = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current().block_on(async {
-                btd_has_kernel_features(KernelFeatures::HAS_RESUME_EVT).await
-            })
+            tokio::runtime::Handle::current()
+                .block_on(async { btd_has_kernel_features(KernelFeatures::HAS_RESUME_EVT).await })
         });
 
         if supports_resume_evt {
@@ -1275,14 +1243,10 @@ fn conn_fail_cb(addr: &BdAddr, status: u8) {
 
     // If the adapter is not powered, give up entirely.
     if status == MGMT_STATUS_NOT_POWERED {
-        btd_debug(
-            0,
-            &format!("policy: adapter not powered, giving up reconnect for {:?}", addr),
-        );
+        btd_debug(0, &format!("policy: adapter not powered, giving up reconnect for {:?}", addr));
         reconnect_reset(&mut state.reconnects[idx]);
         // Remove all services from the reconnect list for this device.
-        let services_to_remove: Vec<String> =
-            state.reconnects[idx].services.clone();
+        let services_to_remove: Vec<String> = state.reconnects[idx].services.clone();
         for uuid in &services_to_remove {
             reconnect_remove_service(&mut state, addr, uuid);
         }
@@ -1349,17 +1313,11 @@ impl BtdAdapterDriver for PolicyAdapterDriver {
 
                         // Register disconnect and conn_fail callbacks for this
                         // adapter.
-                        let dc_id = btd_add_disconnect_cb(
-                            &adapter_arc,
-                            Box::new(disconnect_cb),
-                        )
-                        .await;
+                        let dc_id =
+                            btd_add_disconnect_cb(&adapter_arc, Box::new(disconnect_cb)).await;
 
-                        let cf_id = btd_add_conn_fail_cb(
-                            &adapter_arc,
-                            Box::new(conn_fail_cb),
-                        )
-                        .await;
+                        let cf_id =
+                            btd_add_conn_fail_cb(&adapter_arc, Box::new(conn_fail_cb)).await;
 
                         let mut state = POLICY_STATE.lock().unwrap();
                         state.disconnect_cb_ids.push((adapter_index, dc_id));
@@ -1379,17 +1337,11 @@ impl BtdAdapterDriver for PolicyAdapterDriver {
                 tokio::task::block_in_place(|| {
                     tokio::runtime::Handle::current().block_on(async {
                         if let Some(adapter_arc) = adapter_find(adapter_index).await {
-                            let dc_id = btd_add_disconnect_cb(
-                                &adapter_arc,
-                                Box::new(disconnect_cb),
-                            )
-                            .await;
+                            let dc_id =
+                                btd_add_disconnect_cb(&adapter_arc, Box::new(disconnect_cb)).await;
 
-                            let cf_id = btd_add_conn_fail_cb(
-                                &adapter_arc,
-                                Box::new(conn_fail_cb),
-                            )
-                            .await;
+                            let cf_id =
+                                btd_add_conn_fail_cb(&adapter_arc, Box::new(conn_fail_cb)).await;
 
                             let mut state = POLICY_STATE.lock().unwrap();
                             state.disconnect_cb_ids.push((adapter_index, dc_id));
@@ -1435,10 +1387,8 @@ impl BtdAdapterDriver for PolicyAdapterDriver {
         // Clean up policy data and reconnect data for devices on this
         // adapter. We collect all known device addresses and remove their
         // entries.
-        let device_addrs: Vec<BdAddr> =
-            state.devices.iter().map(|d| d.addr).collect();
-        let reconnect_addrs: Vec<BdAddr> =
-            state.reconnects.iter().map(|r| r.addr).collect();
+        let device_addrs: Vec<BdAddr> = state.devices.iter().map(|d| d.addr).collect();
+        let reconnect_addrs: Vec<BdAddr> = state.reconnects.iter().map(|r| r.addr).collect();
 
         for addr in &device_addrs {
             policy_data_remove(&mut state, addr);
@@ -1480,12 +1430,8 @@ impl BtdAdapterDriver for PolicyAdapterDriver {
         let resume_delay = state.resume_delay;
 
         // Find all reconnect entries with on_resume flag set.
-        let resume_addrs: Vec<BdAddr> = state
-            .reconnects
-            .iter()
-            .filter(|r| r.on_resume)
-            .map(|r| r.addr)
-            .collect();
+        let resume_addrs: Vec<BdAddr> =
+            state.reconnects.iter().filter(|r| r.on_resume).map(|r| r.addr).collect();
 
         for addr in &resume_addrs {
             if let Some(idx) = reconnect_find_index(&state, addr) {

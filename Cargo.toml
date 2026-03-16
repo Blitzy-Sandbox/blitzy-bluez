@@ -75,6 +75,7 @@ rand = "0.8"
 # required for BT HCI LE Generate DHKey.  These crates fill those gaps with
 # minimal additional dependency surface.
 aes = "0.8"
+alsa = "0.9"
 cmac = "0.7"
 ccm = "0.5"
 p256 = { version = "0.13", features = ["ecdh"] }

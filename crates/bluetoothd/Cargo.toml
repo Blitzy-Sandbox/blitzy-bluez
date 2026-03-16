@@ -15,6 +15,7 @@ name = "bluetoothd"
 path = "src/main.rs"
 
 [dependencies]
+alsa = { workspace = true }
 bluez-shared = { path = "../bluez-shared" }
 tokio = { workspace = true }
 zbus = { workspace = true }

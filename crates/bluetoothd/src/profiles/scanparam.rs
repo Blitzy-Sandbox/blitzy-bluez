@@ -45,8 +45,7 @@ use crate::error::BtdError;
 use crate::log::{btd_debug, btd_error};
 use crate::plugin::PluginPriority;
 use crate::profile::{
-    BTD_PROFILE_BEARER_LE, BtdProfile,
-    btd_profile_register, btd_profile_unregister,
+    BTD_PROFILE_BEARER_LE, BtdProfile, btd_profile_register, btd_profile_unregister,
 };
 
 use bluez_shared::sys::bluetooth::BdAddr;
@@ -130,8 +129,7 @@ static SCAN_STATE: LazyLock<StdMutex<HashMap<BdAddr, Arc<StdMutex<Scan>>>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
 
 /// Stored profile definition for unregistration during plugin exit.
-static SCAN_PROFILE: LazyLock<StdMutex<Option<BtdProfile>>> =
-    LazyLock::new(|| StdMutex::new(None));
+static SCAN_PROFILE: LazyLock<StdMutex<Option<BtdProfile>>> = LazyLock::new(|| StdMutex::new(None));
 
 // ===========================================================================
 // Scan Parameters Writing
@@ -197,14 +195,8 @@ fn handle_refresh(scan: &mut Scan, value_handle: u16) {
     let register_cb: bluez_shared::gatt::client::RegisterCallback =
         Box::new(move |att_ecode: u16| {
             if att_ecode != 0 {
-                error!(
-                    "Scan Refresh: notifications not enabled {}",
-                    att_ecode
-                );
-                btd_error(
-                    0,
-                    &format!("Scan Refresh: notifications not enabled {}", att_ecode),
-                );
+                error!("Scan Refresh: notifications not enabled {}", att_ecode);
+                btd_error(0, &format!("Scan Refresh: notifications not enabled {}", att_ecode));
             } else {
                 debug!("Scan Refresh: notification enabled");
                 btd_debug(0, "Scan Refresh: notification enabled");
@@ -246,10 +238,7 @@ fn handle_iwin(scan: &mut Scan, value_handle: u16) {
     scan.iw_handle = value_handle;
 
     debug!("Scan Interval Window handle: 0x{:04x}", value_handle);
-    btd_debug(
-        0,
-        &format!("Scan Interval Window handle: 0x{:04x}", value_handle),
-    );
+    btd_debug(0, &format!("Scan Interval Window handle: 0x{:04x}", value_handle));
 
     // Immediately write current scan parameters to the device.
     if let Some(ref client) = scan.gatt_client {
@@ -282,10 +271,7 @@ fn handle_characteristic(char_attr: &GattDbAttribute, scan: &mut Scan) {
         handle_refresh(scan, char_data.value_handle);
     } else {
         debug!("Unsupported Characteristic: {}", char_data.uuid);
-        btd_debug(
-            0,
-            &format!("Unsupported Characteristic: {}", char_data.uuid),
-        );
+        btd_debug(0, &format!("Unsupported Characteristic: {}", char_data.uuid));
     }
 }
 
@@ -298,17 +284,11 @@ fn handle_characteristic(char_attr: &GattDbAttribute, scan: &mut Scan) {
 ///
 /// Returns `true` if this was the first service found (success),
 /// `false` if a duplicate was detected (the service is skipped).
-fn foreach_scan_param_service(
-    service_attr: GattDbAttribute,
-    scan: &mut Scan,
-) -> bool {
+fn foreach_scan_param_service(service_attr: GattDbAttribute, scan: &mut Scan) -> bool {
     // Guard: reject duplicate Scan Parameters services.
     if scan.scan_param_attr_handle.is_some() {
         error!("More than one scan params service exists for this device");
-        btd_error(
-            0,
-            "More than one scan params service exists for this device",
-        );
+        btd_error(0, "More than one scan params service exists for this device");
         return false;
     }
 
@@ -336,9 +316,7 @@ fn foreach_scan_param_service(
 /// and parameter writing.
 ///
 /// Replaces C `scan_param_accept()` from scan.c.
-async fn scan_param_accept(
-    device: &Arc<tokio::sync::Mutex<BtdDevice>>,
-) -> Result<(), BtdError> {
+async fn scan_param_accept(device: &Arc<tokio::sync::Mutex<BtdDevice>>) -> Result<(), BtdError> {
     // Lock device to extract address, GATT DB, and GATT client.
     let (addr, gatt_db, gatt_client) = {
         let dev = device.lock().await;
@@ -349,9 +327,7 @@ async fn scan_param_accept(
             None => {
                 error!("Scan Parameters: no GATT database available");
                 btd_error(0, "Scan Parameters: no GATT database available");
-                return Err(BtdError::NotAvailable(
-                    "No GATT database available".to_owned(),
-                ));
+                return Err(BtdError::NotAvailable("No GATT database available".to_owned()));
             }
         };
 
@@ -360,9 +336,7 @@ async fn scan_param_accept(
             None => {
                 error!("Scan Parameters: no GATT client available");
                 btd_error(0, "Scan Parameters: no GATT client available");
-                return Err(BtdError::NotAvailable(
-                    "No GATT client available".to_owned(),
-                ));
+                return Err(BtdError::NotAvailable("No GATT client available".to_owned()));
             }
         };
 
@@ -377,9 +351,7 @@ async fn scan_param_accept(
             None => {
                 error!("Scan Parameters: no scan context for device");
                 btd_error(0, "Scan Parameters: no scan context for device");
-                return Err(BtdError::DoesNotExist(
-                    "No scan context for device".to_owned(),
-                ));
+                return Err(BtdError::DoesNotExist("No scan context for device".to_owned()));
             }
         }
     };
@@ -411,9 +383,7 @@ async fn scan_param_accept(
             error!("Scan Parameters Service not found");
             btd_error(0, "Scan Parameters Service not found");
             scan_reset(&mut scan);
-            return Err(BtdError::DoesNotExist(
-                "Scan Parameters Service not found".to_owned(),
-            ));
+            return Err(BtdError::DoesNotExist("Scan Parameters Service not found".to_owned()));
         }
     }
 
@@ -610,10 +580,7 @@ fn scan_param_init() -> Result<(), Box<dyn std::error::Error>> {
     tokio::spawn(async move {
         if let Err(e) = btd_profile_register(profile).await {
             error!("Failed to register Scan Parameters profile: {}", e);
-            btd_error(
-                0,
-                &format!("Failed to register Scan Parameters profile: {}", e),
-            );
+            btd_error(0, &format!("Failed to register Scan Parameters profile: {}", e));
         }
     });
 
@@ -815,10 +782,7 @@ mod tests {
     /// Verify the Scan Parameters Service UUID string format.
     #[test]
     fn test_scan_parameters_uuid_str() {
-        assert_eq!(
-            SCAN_PARAMETERS_UUID_STR,
-            "00001813-0000-1000-8000-00805f9b34fb"
-        );
+        assert_eq!(SCAN_PARAMETERS_UUID_STR, "00001813-0000-1000-8000-00805f9b34fb");
     }
 
     /// Verify scan interval/window LE byte encoding.

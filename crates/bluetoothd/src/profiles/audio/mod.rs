@@ -10,6 +10,7 @@ pub mod avctp;
 pub mod avdtp;
 pub mod ccp;
 pub mod csip;
+pub mod gmap;
 pub mod micp;
 pub mod player;
 pub mod tmap;

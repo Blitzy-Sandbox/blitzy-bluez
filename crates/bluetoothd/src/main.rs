@@ -2,6 +2,7 @@
 // Stub file - will be replaced by implementation agents
 
 pub mod adapter;
+pub mod adv_monitor;
 pub mod advertising;
 pub mod battery;
 pub mod config;

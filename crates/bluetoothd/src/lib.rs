@@ -11,6 +11,7 @@
 // compiles both targets independently.
 
 pub mod adapter;
+pub mod adv_monitor;
 pub mod advertising;
 pub mod battery;
 pub mod config;

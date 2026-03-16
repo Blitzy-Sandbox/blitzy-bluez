@@ -9,3 +9,4 @@ pub mod a2dp;
 pub mod avctp;
 pub mod avdtp;
 pub mod player;
+pub mod vcp;

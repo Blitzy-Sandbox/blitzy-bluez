@@ -315,6 +315,10 @@ path = "tests/unit/test_gdbus_client.rs"
 name = "test_lib"
 path = "tests/unit/test_lib.rs"
 
+[[test]]
+name = "test_profile"
+path = "tests/unit/test_profile.rs"
+
 # ---------------------------------------------------------------------------
 # Integration test targets — tests/integration/*.rs
 # ---------------------------------------------------------------------------

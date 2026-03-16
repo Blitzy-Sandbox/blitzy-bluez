@@ -4,4 +4,5 @@
 //! as plugins with the daemon's profile framework.
 
 pub mod audio;
+pub mod ranging;
 pub mod scanparam;

@@ -15,6 +15,7 @@ pub mod plugins;
 pub mod profiles;
 pub mod rfkill;
 pub mod sdp;
+pub mod set;
 pub mod storage;
 
 fn main() {

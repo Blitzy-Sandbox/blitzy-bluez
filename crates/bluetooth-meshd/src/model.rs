@@ -847,7 +847,7 @@ pub fn mesh_model_recv(
     // Try virtual address decryption for group addresses (bit 15 set, non-fixed)
     if dst & 0x8000 != 0 && !is_fixed_group_address(dst) {
         if let Some((plaintext, app_idx, found_net_idx)) = virt_packet_decrypt(
-            &node.net.borrow(),
+            &node.net.lock().unwrap(),
             data,
             size,
             szmics,
@@ -873,7 +873,7 @@ pub fn mesh_model_recv(
 
     // Try application key decryption
     if let Some((plaintext, app_idx, found_net_idx)) = app_packet_decrypt(
-        &node.net.borrow(),
+        &node.net.lock().unwrap(),
         data,
         size,
         szmics,
@@ -986,7 +986,7 @@ fn dispatch_dev_key_msg(
         };
 
         {
-            let elements = node.elements.borrow();
+            let elements = node.elements.lock().unwrap();
             if let Some(ele) = elements.get(ele_idx as usize) {
                 for model in &ele.models {
                     if forward_model(model, &mut fwd) {
@@ -1012,7 +1012,7 @@ fn dispatch_dev_key_msg(
         };
 
         {
-            let elements = node.elements.borrow();
+            let elements = node.elements.lock().unwrap();
             if let Some(ele) = elements.get(ele_idx as usize) {
                 for model in &ele.models {
                     if forward_model(model, &mut fwd) {
@@ -1059,7 +1059,7 @@ fn dispatch_decrypted(
         };
 
         {
-            let elements = node.elements.borrow();
+            let elements = node.elements.lock().unwrap();
             if let Some(ele) = elements.get(ele_idx as usize) {
                 for model in &ele.models {
                     if forward_model(model, &mut fwd) {
@@ -1082,7 +1082,7 @@ fn dispatch_decrypted(
     // Group/subscription address: dispatch to all subscribed elements
     for ele_idx in 0..num_ele {
         let has_sub = {
-            let elements = node.elements.borrow();
+            let elements = node.elements.lock().unwrap();
             if let Some(ele) = elements.get(ele_idx as usize) {
                 ele.models.iter().any(|m| {
                     m.sub_enabled && m.subs.contains(&dst) && has_binding(&m.bindings, app_idx)
@@ -1106,7 +1106,7 @@ fn dispatch_decrypted(
         };
 
         {
-            let elements = node.elements.borrow();
+            let elements = node.elements.lock().unwrap();
             if let Some(ele) = elements.get(ele_idx as usize) {
                 for model in &ele.models {
                     forward_model(model, &mut fwd);
@@ -1150,7 +1150,7 @@ pub fn mesh_model_send(
     let dev_key = node.get_dev_key();
 
     msg_send(
-        &mut node.net.borrow_mut(),
+        &mut node.net.lock().unwrap(),
         is_dev_key,
         src,
         dst,
@@ -1180,7 +1180,7 @@ pub fn mesh_model_publish(
     let primary = node.get_primary();
 
     let (dst, app_idx, ttl, is_dev) = {
-        let elements = node.elements.borrow();
+        let elements = node.elements.lock().unwrap();
         let model = match get_model(&elements, src_ele, model_id) {
             Some(m) => m,
             None => {
@@ -1212,13 +1212,13 @@ pub fn mesh_model_publish(
         (pub_state.addr, ai, pub_state.ttl, is_dev)
     };
 
-    let net_idx = if is_dev { 0 } else { appkey_net_idx(&node.net.borrow(), app_idx) };
+    let net_idx = if is_dev { 0 } else { appkey_net_idx(&node.net.lock().unwrap(), app_idx) };
 
     let dev_key = node.get_dev_key();
     let _ = virtual_label; // AAD handled in crypto layer for virt addresses
 
     msg_send(
-        &mut node.net.borrow_mut(),
+        &mut node.net.lock().unwrap(),
         is_dev,
         primary + src_ele as u16,
         dst,
@@ -1286,7 +1286,7 @@ pub fn mesh_model_register(
     model_id: u32,
     ops: Box<dyn MeshModelOps>,
 ) -> bool {
-    let mut elements = node.elements.borrow_mut();
+    let mut elements = node.elements.lock().unwrap();
     let model = match get_model_mut(&mut elements, ele_idx, model_id) {
         Some(m) => m,
         None => {
@@ -1310,7 +1310,7 @@ pub fn mesh_model_register(
 ///
 /// Replaces C `mesh_model_app_key_delete()`.
 pub fn mesh_model_app_key_delete(node: &MeshNode, ele_count: u8, app_idx: u16) {
-    let mut elements = node.elements.borrow_mut();
+    let mut elements = node.elements.lock().unwrap();
     for ele_idx in 0..ele_count {
         if let Some(ele) = elements.get_mut(ele_idx as usize) {
             for model in &mut ele.models {
@@ -1335,7 +1335,7 @@ pub fn mesh_model_app_key_delete(node: &MeshNode, ele_count: u8, app_idx: u16) {
 /// Replaces C `mesh_model_binding_add()`.
 pub fn mesh_model_binding_add(node: &MeshNode, ele_idx: u8, model_id: u32, app_idx: u16) -> u8 {
     {
-        let elements = node.elements.borrow();
+        let elements = node.elements.lock().unwrap();
         match get_model(&elements, ele_idx, model_id) {
             Some(m) => {
                 if is_internal(model_id) {
@@ -1356,7 +1356,7 @@ pub fn mesh_model_binding_add(node: &MeshNode, ele_idx: u8, model_id: u32, app_i
     let vendor = is_vendor(model_id);
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             if config.model_binding_add(ele_addr, model_id, vendor, app_idx).is_err() {
                 return MESH_STATUS_STORAGE_FAIL;
@@ -1364,7 +1364,7 @@ pub fn mesh_model_binding_add(node: &MeshNode, ele_idx: u8, model_id: u32, app_i
         }
     }
 
-    let mut elements = node.elements.borrow_mut();
+    let mut elements = node.elements.lock().unwrap();
     if let Some(model) = get_model_mut(&mut elements, ele_idx, model_id) {
         model.bindings.push(app_idx);
         if let Some(ref ops) = model.ops {
@@ -1380,7 +1380,7 @@ pub fn mesh_model_binding_add(node: &MeshNode, ele_idx: u8, model_id: u32, app_i
 /// Replaces C `mesh_model_binding_del()`.
 pub fn mesh_model_binding_del(node: &MeshNode, ele_idx: u8, model_id: u32, app_idx: u16) -> u8 {
     let has_it = {
-        let elements = node.elements.borrow();
+        let elements = node.elements.lock().unwrap();
         match get_model(&elements, ele_idx, model_id) {
             Some(m) => has_binding(&m.bindings, app_idx),
             None => return MESH_STATUS_INVALID_MODEL,
@@ -1398,7 +1398,7 @@ pub fn mesh_model_binding_del(node: &MeshNode, ele_idx: u8, model_id: u32, app_i
     let vendor = is_vendor(model_id);
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             if config.model_binding_del(ele_addr, model_id, vendor, app_idx).is_err() {
                 return MESH_STATUS_STORAGE_FAIL;
@@ -1406,7 +1406,7 @@ pub fn mesh_model_binding_del(node: &MeshNode, ele_idx: u8, model_id: u32, app_i
         }
     }
 
-    let mut elements = node.elements.borrow_mut();
+    let mut elements = node.elements.lock().unwrap();
     if let Some(model) = get_model_mut(&mut elements, ele_idx, model_id) {
         model.bindings.retain(|&b| b != app_idx);
         if let Some(ref ops) = model.ops {
@@ -1421,7 +1421,7 @@ pub fn mesh_model_binding_del(node: &MeshNode, ele_idx: u8, model_id: u32, app_i
 ///
 /// Replaces C `mesh_model_get_bindings()`.
 pub fn mesh_model_get_bindings(node: &MeshNode, ele_idx: u8, model_id: u32) -> Option<Vec<u16>> {
-    let elements = node.elements.borrow();
+    let elements = node.elements.lock().unwrap();
     let model = get_model(&elements, ele_idx, model_id)?;
     Some(model.bindings.clone())
 }
@@ -1440,7 +1440,7 @@ pub fn mesh_model_sub_add(node: &MeshNode, ele_addr: u16, model_id: u32, group: 
     };
 
     {
-        let elements = node.elements.borrow();
+        let elements = node.elements.lock().unwrap();
         let model = match get_model(&elements, ele_idx, model_id) {
             Some(m) => m,
             None => return MESH_STATUS_INVALID_MODEL,
@@ -1460,7 +1460,7 @@ pub fn mesh_model_sub_add(node: &MeshNode, ele_addr: u16, model_id: u32, group: 
     let sub = MeshConfigSub { virt: false, addr: group, virt_addr: [0u8; 16] };
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             if config.model_sub_add(ele_addr, model_id, vendor, &sub).is_err() {
                 return MESH_STATUS_STORAGE_FAIL;
@@ -1469,7 +1469,7 @@ pub fn mesh_model_sub_add(node: &MeshNode, ele_addr: u16, model_id: u32, group: 
     }
 
     {
-        let mut elements = node.elements.borrow_mut();
+        let mut elements = node.elements.lock().unwrap();
         if let Some(model) = get_model_mut(&mut elements, ele_idx, model_id) {
             model.subs.push(group);
             if let Some(ref ops) = model.ops {
@@ -1479,7 +1479,7 @@ pub fn mesh_model_sub_add(node: &MeshNode, ele_addr: u16, model_id: u32, group: 
     }
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.dst_reg(group);
     }
 
@@ -1501,7 +1501,7 @@ pub fn mesh_model_virt_sub_add(
     };
 
     {
-        let elements = node.elements.borrow();
+        let elements = node.elements.lock().unwrap();
         match get_model(&elements, ele_idx, model_id) {
             Some(_) => {
                 if is_internal(model_id) {
@@ -1534,7 +1534,7 @@ pub fn mesh_model_virt_sub_add(
 
     // Check if already subscribed or at capacity
     {
-        let elements = node.elements.borrow();
+        let elements = node.elements.lock().unwrap();
         let model = match get_model(&elements, ele_idx, model_id) {
             Some(m) => m,
             None => {
@@ -1556,7 +1556,7 @@ pub fn mesh_model_virt_sub_add(
     let sub = MeshConfigSub { virt: true, addr, virt_addr: *label };
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             if config.model_sub_add(ele_addr, model_id, vendor, &sub).is_err() {
                 unref_virt(&virt);
@@ -1566,7 +1566,7 @@ pub fn mesh_model_virt_sub_add(
     }
 
     {
-        let mut elements = node.elements.borrow_mut();
+        let mut elements = node.elements.lock().unwrap();
         if let Some(model) = get_model_mut(&mut elements, ele_idx, model_id) {
             model.subs.push(addr);
             model.virtuals.push(virt);
@@ -1577,7 +1577,7 @@ pub fn mesh_model_virt_sub_add(
     }
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.dst_reg(addr);
     }
 
@@ -1594,7 +1594,7 @@ pub fn mesh_model_sub_del(node: &MeshNode, ele_addr: u16, model_id: u32, group: 
     };
 
     {
-        let elements = node.elements.borrow();
+        let elements = node.elements.lock().unwrap();
         match get_model(&elements, ele_idx, model_id) {
             Some(m) => {
                 if is_internal(model_id) {
@@ -1612,7 +1612,7 @@ pub fn mesh_model_sub_del(node: &MeshNode, ele_addr: u16, model_id: u32, group: 
     let sub = MeshConfigSub { virt: false, addr: group, virt_addr: [0u8; 16] };
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             if config.model_sub_del(ele_addr, model_id, vendor, &sub).is_err() {
                 return MESH_STATUS_STORAGE_FAIL;
@@ -1621,7 +1621,7 @@ pub fn mesh_model_sub_del(node: &MeshNode, ele_addr: u16, model_id: u32, group: 
     }
 
     {
-        let mut elements = node.elements.borrow_mut();
+        let mut elements = node.elements.lock().unwrap();
         if let Some(model) = get_model_mut(&mut elements, ele_idx, model_id) {
             model.subs.retain(|&s| s != group);
             if let Some(ref ops) = model.ops {
@@ -1631,7 +1631,7 @@ pub fn mesh_model_sub_del(node: &MeshNode, ele_addr: u16, model_id: u32, group: 
     }
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.dst_unreg(group);
     }
 
@@ -1653,7 +1653,7 @@ pub fn mesh_model_virt_sub_del(
     };
 
     let addr = {
-        let elements = node.elements.borrow();
+        let elements = node.elements.lock().unwrap();
         let model = match get_model(&elements, ele_idx, model_id) {
             Some(m) => m,
             None => return (MESH_STATUS_INVALID_MODEL, 0),
@@ -1671,7 +1671,7 @@ pub fn mesh_model_virt_sub_del(
     let sub = MeshConfigSub { virt: true, addr, virt_addr: *label };
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             if config.model_sub_del(ele_addr, model_id, vendor, &sub).is_err() {
                 return (MESH_STATUS_STORAGE_FAIL, 0);
@@ -1680,7 +1680,7 @@ pub fn mesh_model_virt_sub_del(
     }
 
     {
-        let mut elements = node.elements.borrow_mut();
+        let mut elements = node.elements.lock().unwrap();
         if let Some(model) = get_model_mut(&mut elements, ele_idx, model_id) {
             if let Some(idx) = model.virtuals.iter().position(|v| v.label == *label) {
                 let virt = model.virtuals.remove(idx);
@@ -1694,7 +1694,7 @@ pub fn mesh_model_virt_sub_del(
     }
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.dst_unreg(addr);
     }
 
@@ -1711,7 +1711,7 @@ pub fn mesh_model_sub_del_all(node: &MeshNode, ele_addr: u16, model_id: u32) -> 
     };
 
     {
-        let elements = node.elements.borrow();
+        let elements = node.elements.lock().unwrap();
         if get_model(&elements, ele_idx, model_id).is_none() {
             return MESH_STATUS_INVALID_MODEL;
         }
@@ -1723,7 +1723,7 @@ pub fn mesh_model_sub_del_all(node: &MeshNode, ele_addr: u16, model_id: u32) -> 
     let vendor = is_vendor(model_id);
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             if config.model_sub_del_all(ele_addr, model_id, vendor).is_err() {
                 return MESH_STATUS_STORAGE_FAIL;
@@ -1732,7 +1732,7 @@ pub fn mesh_model_sub_del_all(node: &MeshNode, ele_addr: u16, model_id: u32) -> 
     }
 
     let (old_subs, old_virts) = {
-        let mut elements = node.elements.borrow_mut();
+        let mut elements = node.elements.lock().unwrap();
         if let Some(model) = get_model_mut(&mut elements, ele_idx, model_id) {
             let subs = std::mem::take(&mut model.subs);
             let virts = std::mem::take(&mut model.virtuals);
@@ -1746,7 +1746,7 @@ pub fn mesh_model_sub_del_all(node: &MeshNode, ele_addr: u16, model_id: u32) -> 
     };
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         for &sub in &old_subs {
             net.dst_unreg(sub);
         }
@@ -1791,7 +1791,7 @@ pub fn mesh_model_virt_sub_ovrt(
 /// Replaces C `mesh_model_sub_get()`.
 pub fn mesh_model_sub_get(node: &MeshNode, ele_addr: u16, model_id: u32) -> Option<Vec<u16>> {
     let ele_idx = node.get_element_idx(ele_addr)?;
-    let elements = node.elements.borrow();
+    let elements = node.elements.lock().unwrap();
     let model = get_model(&elements, ele_idx, model_id)?;
     Some(model.subs.clone())
 }
@@ -1805,7 +1805,7 @@ pub fn mesh_model_sub_get(node: &MeshNode, ele_addr: u16, model_id: u32) -> Opti
 /// Replaces C `mesh_model_pub_get()`.
 pub fn mesh_model_pub_get(node: &MeshNode, ele_addr: u16, model_id: u32) -> Option<MeshModelPub> {
     let ele_idx = node.get_element_idx(ele_addr)?;
-    let elements = node.elements.borrow();
+    let elements = node.elements.lock().unwrap();
     let model = get_model(&elements, ele_idx, model_id)?;
     model.pub_state.clone()
 }
@@ -1829,14 +1829,14 @@ pub fn mesh_model_pub_set(
         let app_idx = pub_cfg.idx;
         if app_idx != APP_IDX_DEV_LOCAL
             && app_idx != APP_IDX_DEV_REMOTE
-            && !appkey_have_key(&node.net.borrow(), app_idx)
+            && !appkey_have_key(&node.net.lock().unwrap(), app_idx)
         {
             return MESH_STATUS_INVALID_APPKEY;
         }
     }
 
     {
-        let elements = node.elements.borrow();
+        let elements = node.elements.lock().unwrap();
         if get_model(&elements, ele_idx, model_id).is_none() {
             return MESH_STATUS_INVALID_MODEL;
         }
@@ -1844,7 +1844,7 @@ pub fn mesh_model_pub_set(
 
     // Clean old publication virtual label
     {
-        let elements = node.elements.borrow();
+        let elements = node.elements.lock().unwrap();
         if let Some(model) = get_model(&elements, ele_idx, model_id) {
             if let Some(ref old_pub) = model.pub_state {
                 if let Some(ref virt) = old_pub.virt {
@@ -1892,7 +1892,7 @@ pub fn mesh_model_pub_set(
     let vendor = is_vendor(model_id);
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             if is_unassigned(pub_cfg.addr) {
                 let _ = config.model_pub_del(ele_addr, model_id, vendor);
@@ -1903,7 +1903,7 @@ pub fn mesh_model_pub_set(
     }
 
     {
-        let mut elements = node.elements.borrow_mut();
+        let mut elements = node.elements.lock().unwrap();
         if let Some(model) = get_model_mut(&mut elements, ele_idx, model_id) {
             if let Some(ref ops) = model.ops {
                 ops.publish(&new_pub);
@@ -1929,10 +1929,10 @@ pub fn mesh_model_add_from_storage(
 ) -> bool {
     // Ensure model exists
     {
-        let elements = node.elements.borrow();
+        let elements = node.elements.lock().unwrap();
         if get_model(&elements, ele_idx, cfg_model.id).is_none() {
             drop(elements);
-            let mut elements = node.elements.borrow_mut();
+            let mut elements = node.elements.lock().unwrap();
             if let Some(ele) = elements.get_mut(ele_idx as usize) {
                 ele.models.push(MeshModel::new(cfg_model.id));
             } else {
@@ -1943,7 +1943,7 @@ pub fn mesh_model_add_from_storage(
 
     // Restore bindings
     {
-        let mut elements = node.elements.borrow_mut();
+        let mut elements = node.elements.lock().unwrap();
         if let Some(model) = get_model_mut(&mut elements, ele_idx, cfg_model.id) {
             for &binding in &cfg_model.bindings {
                 if !has_binding(&model.bindings, binding) {
@@ -1974,7 +1974,7 @@ pub fn mesh_model_add_from_storage(
             };
             let addr = virt.addr;
             {
-                let mut elements = node.elements.borrow_mut();
+                let mut elements = node.elements.lock().unwrap();
                 if let Some(model) = get_model_mut(&mut elements, ele_idx, cfg_model.id) {
                     if !model.subs.contains(&addr) {
                         model.subs.push(addr);
@@ -1983,12 +1983,12 @@ pub fn mesh_model_add_from_storage(
                 }
             }
             {
-                let mut net = node.net.borrow_mut();
+                let mut net = node.net.lock().unwrap();
                 net.dst_reg(addr);
             }
         } else {
             {
-                let mut elements = node.elements.borrow_mut();
+                let mut elements = node.elements.lock().unwrap();
                 if let Some(model) = get_model_mut(&mut elements, ele_idx, cfg_model.id) {
                     if !model.subs.contains(&sub.addr) {
                         model.subs.push(sub.addr);
@@ -1996,7 +1996,7 @@ pub fn mesh_model_add_from_storage(
                 }
             }
             if sub.addr != 0 {
-                let mut net = node.net.borrow_mut();
+                let mut net = node.net.lock().unwrap();
                 net.dst_reg(sub.addr);
             }
         }
@@ -2025,7 +2025,7 @@ pub fn mesh_model_add_from_storage(
             None
         };
 
-        let mut elements = node.elements.borrow_mut();
+        let mut elements = node.elements.lock().unwrap();
         if let Some(model) = get_model_mut(&mut elements, ele_idx, cfg_model.id) {
             model.pub_state = Some(MeshModelPub {
                 virt,
@@ -2044,7 +2044,7 @@ pub fn mesh_model_add_from_storage(
 
     // Restore enable flags
     {
-        let mut elements = node.elements.borrow_mut();
+        let mut elements = node.elements.lock().unwrap();
         if let Some(model) = get_model_mut(&mut elements, ele_idx, cfg_model.id) {
             model.sub_enabled = cfg_model.sub_enabled;
             model.pub_enabled = cfg_model.pub_enabled;
@@ -2106,7 +2106,7 @@ pub fn mesh_model_build_config(
     ele_idx: u8,
     model_id: u32,
 ) -> Option<HashMap<String, Value<'static>>> {
-    let elements = node.elements.borrow();
+    let elements = node.elements.lock().unwrap();
     let model = get_model(&elements, ele_idx, model_id)?;
 
     let mut dict: HashMap<String, Value<'static>> = HashMap::new();
@@ -2154,7 +2154,7 @@ pub fn mesh_model_update_opts(
     let vendor = is_vendor(model_id);
 
     let (old_sub, old_pub) = {
-        let elements = node.elements.borrow();
+        let elements = node.elements.lock().unwrap();
         match get_model(&elements, ele_idx, model_id) {
             Some(m) => (m.sub_enabled, m.pub_enabled),
             None => return,
@@ -2162,20 +2162,20 @@ pub fn mesh_model_update_opts(
     };
 
     if old_sub != sub_enabled {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             let _ = config.model_sub_enable(ele_addr, model_id, vendor, sub_enabled);
         }
     }
 
     if old_pub != pub_enabled {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             let _ = config.model_pub_enable(ele_addr, model_id, vendor, pub_enabled);
         }
     }
 
-    let mut elements = node.elements.borrow_mut();
+    let mut elements = node.elements.lock().unwrap();
     if let Some(model) = get_model_mut(&mut elements, ele_idx, model_id) {
         model.sub_enabled = sub_enabled;
         model.pub_enabled = pub_enabled;
@@ -2190,9 +2190,9 @@ pub fn mesh_model_update_opts(
 ///
 /// Replaces C `mesh_model_generate_composition()`.
 pub fn mesh_model_generate_composition(node: &MeshNode, buf: &mut Vec<u8>) {
-    let elements = node.elements.borrow();
-    let crpl = node.crpl.get();
-    let lpn_mode = node.lpn_mode.get();
+    let elements = node.elements.lock().unwrap();
+    let crpl = node.crpl.load(Ordering::Relaxed);
+    let lpn_mode = node.lpn_mode.load(Ordering::Relaxed);
 
     // CID (Company Identifier) — 0x0000 for unassigned
     buf.extend_from_slice(&0u16.to_le_bytes());
@@ -2206,7 +2206,7 @@ pub fn mesh_model_generate_composition(node: &MeshNode, buf: &mut Vec<u8>) {
     // Features bitmask: Relay(0), Proxy(1), Friend(2), LPN(3)
     let mut features: u16 = 0;
     {
-        let net = node.net.borrow();
+        let net = node.net.lock().unwrap();
         if net.is_relay_enabled() {
             features |= 0x0001;
         }
@@ -2448,9 +2448,9 @@ mod tests {
     #[test]
     fn test_mesh_node_element_idx() {
         let node = MeshNode::new();
-        node.primary.set(0x0100);
+        node.primary.store(0x0100, Ordering::Relaxed);
         {
-            let mut elements = node.elements.borrow_mut();
+            let mut elements = node.elements.lock().unwrap();
             elements.push(MeshElement {
                 models: Vec::new(),
                 path: String::from("/e0"),

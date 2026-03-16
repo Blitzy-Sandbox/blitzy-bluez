@@ -498,7 +498,12 @@ async fn store_params(adapter: &Arc<tokio::sync::Mutex<BtdAdapter>>, params: &Oo
     let _dev_addr = btd_adapter_get_device(adapter, &params.address, BDADDR_BREDR).await;
 
     // Construct a temporary BtdDevice to apply OOB-sourced metadata.
-    let mut device = BtdDevice::new(Arc::clone(adapter), params.address, AddressType::Bredr);
+    let adapter_path = {
+        let a = adapter.lock().await;
+        a.path.clone()
+    };
+    let mut device =
+        BtdDevice::new(Arc::clone(adapter), params.address, AddressType::Bredr, &adapter_path);
 
     // Set Class of Device from OOB data.
     if params.class != 0 {
@@ -550,7 +555,12 @@ async fn create_paired_device(
     params: &OobParams,
 ) -> Result<(), nix::errno::Errno> {
     // Construct a BtdDevice to query pairing/bonding state.
-    let device = BtdDevice::new(Arc::clone(adapter), params.address, AddressType::Bredr);
+    let adapter_path = {
+        let a = adapter.lock().await;
+        a.path.clone()
+    };
+    let device =
+        BtdDevice::new(Arc::clone(adapter), params.address, AddressType::Bredr, &adapter_path);
 
     // Skip if the device is already paired.
     if device.is_paired() {

@@ -832,7 +832,7 @@ fn cfg_relay_msg(node: &MeshNode, msg: &mut [u8]) -> usize {
 fn cfg_key_refresh_phase(node: &MeshNode, net_idx: u16, msg: &mut [u8]) -> usize {
     let mut n = mesh_model_opcode_set(OP_CONFIG_KEY_REFRESH_PHASE_STATUS, msg);
 
-    let net = node.net.borrow();
+    let net = node.net.lock().unwrap();
     let phase = net.key_refresh_phase_get(net_idx);
     drop(net);
 
@@ -852,7 +852,7 @@ fn cfg_key_refresh_phase(node: &MeshNode, net_idx: u16, msg: &mut [u8]) -> usize
 fn hb_subscription_status(node: &MeshNode, msg: &mut [u8]) -> usize {
     let mut n = mesh_model_opcode_set(OP_CONFIG_HEARTBEAT_SUB_STATUS, msg);
 
-    let net = node.net.borrow();
+    let net = node.net.lock().unwrap();
     let sub = net.get_heartbeat_sub();
     drop(net);
 
@@ -927,7 +927,7 @@ fn hb_subscription_set(node: &MeshNode, pkt: &[u8], msg: &mut [u8]) -> usize {
     };
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.set_heartbeat_sub(sub);
     }
 
@@ -938,7 +938,7 @@ fn hb_subscription_set(node: &MeshNode, pkt: &[u8], msg: &mut [u8]) -> usize {
 fn hb_publication_status(node: &MeshNode, msg: &mut [u8]) -> usize {
     let mut n = mesh_model_opcode_set(OP_CONFIG_HEARTBEAT_PUB_STATUS, msg);
 
-    let net = node.net.borrow();
+    let net = node.net.lock().unwrap();
     let pub_state = net.get_heartbeat_pub();
     drop(net);
 
@@ -999,7 +999,7 @@ fn hb_publication_set(node: &MeshNode, pkt: &[u8], msg: &mut [u8]) -> usize {
     let pub_state = MeshNetHeartbeatPub { dst, count, period, ttl, features, net_idx };
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.set_heartbeat_pub(pub_state);
     }
 
@@ -1021,17 +1021,17 @@ fn cfg_netkey_msg(node: &MeshNode, pkt: &[u8], opcode: u32, msg: &mut [u8]) -> u
         OP_NETKEY_ADD => {
             let mut key = [0u8; 16];
             key.copy_from_slice(&pkt[2..18]);
-            let mut net = node.net.borrow_mut();
+            let mut net = node.net.lock().unwrap();
             net.add_key(net_idx, &key)
         }
         OP_NETKEY_UPDATE => {
             let mut key = [0u8; 16];
             key.copy_from_slice(&pkt[2..18]);
-            let mut net = node.net.borrow_mut();
+            let mut net = node.net.lock().unwrap();
             net.update_key(net_idx, &key)
         }
         OP_NETKEY_DELETE => {
-            let mut net = node.net.borrow_mut();
+            let mut net = node.net.lock().unwrap();
             net.del_key(net_idx)
         }
         _ => return 0,
@@ -1064,7 +1064,7 @@ fn cfg_appkey_msg(node: &MeshNode, pkt: &[u8], opcode: u32, msg: &mut [u8]) -> u
     let app_idx = (((b1 >> 4) | (b2 << 4)) & 0x0FFF) as u16;
 
     let status = {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         match opcode {
             OP_APPKEY_ADD => {
                 let mut key = [0u8; 16];
@@ -1108,7 +1108,7 @@ fn cfg_get_appkeys_msg(node: &MeshNode, pkt: &[u8], msg: &mut [u8]) -> usize {
 
     let mut n = mesh_model_opcode_set(OP_APPKEY_LIST, msg);
 
-    let net = node.net.borrow();
+    let net = node.net.lock().unwrap();
     let (status, packed_len) = appkey_list(&net, net_idx, &mut msg[n + 3..]);
     drop(net);
 
@@ -1133,7 +1133,7 @@ fn cfg_poll_timeout_msg(node: &MeshNode, pkt: &[u8], msg: &mut [u8]) -> usize {
 
     // Look up the friend entry by LPN address to get poll timeout
     let poll_timeout: u32 = {
-        let net = node.net.borrow();
+        let net = node.net.lock().unwrap();
         let friends = net.get_friends();
         friends.iter().find(|f| f.lp_addr == lpn_addr).map(|f| f.poll_timeout).unwrap_or(0)
     };
@@ -1166,13 +1166,13 @@ fn cfg_net_tx_msg(node: &MeshNode, pkt: &[u8], is_set: bool, msg: &mut [u8]) -> 
         let interval = u16::from((val >> 3) & 0x1F) * 10 + 10;
 
         {
-            let mut net = node.net.borrow_mut();
+            let mut net = node.net.lock().unwrap();
             net.transmit_params_set(count, interval);
         }
 
         // Persist
         {
-            let mut cfg = node.config.borrow_mut();
+            let mut cfg = node.config.lock().unwrap();
             if let Some(ref mut config) = *cfg {
                 let _ = config.write_net_transmit(u16::from(count), interval);
             }
@@ -1180,7 +1180,7 @@ fn cfg_net_tx_msg(node: &MeshNode, pkt: &[u8], is_set: bool, msg: &mut [u8]) -> 
     }
 
     let (count, interval) = {
-        let net = node.net.borrow();
+        let net = node.net.lock().unwrap();
         net.transmit_params_get()
     };
 
@@ -1313,7 +1313,7 @@ fn cfg_srv_pkt(
 
             // Persist TTL
             {
-                let mut cfg = node.config.borrow_mut();
+                let mut cfg = node.config.lock().unwrap();
                 if let Some(ref mut config) = *cfg {
                     let _ = config.write_ttl(ttl);
                 }
@@ -1343,7 +1343,7 @@ fn cfg_srv_pkt(
 
             // Persist relay mode
             {
-                let mut cfg = node.config.borrow_mut();
+                let mut cfg = node.config.lock().unwrap();
                 if let Some(ref mut config) = *cfg {
                     let _ = config.write_relay_mode(mode_val, cnt, interval);
                 }
@@ -1376,7 +1376,7 @@ fn cfg_srv_pkt(
 
             // Persist beacon mode
             {
-                let mut cfg = node.config.borrow_mut();
+                let mut cfg = node.config.lock().unwrap();
                 if let Some(ref mut config) = *cfg {
                     let _ = config.write_mode("beacon", mode_val);
                 }
@@ -1413,7 +1413,7 @@ fn cfg_srv_pkt(
 
             // Persist friend mode
             {
-                let mut cfg = node.config.borrow_mut();
+                let mut cfg = node.config.lock().unwrap();
                 if let Some(ref mut config) = *cfg {
                     let _ = config.write_mode("friend", mode_val);
                 }
@@ -1450,7 +1450,7 @@ fn cfg_srv_pkt(
 
             // Persist proxy mode
             {
-                let mut cfg = node.config.borrow_mut();
+                let mut cfg = node.config.lock().unwrap();
                 if let Some(ref mut config) = *cfg {
                     let _ = config.write_mode("proxy", mode_val);
                 }
@@ -1487,7 +1487,7 @@ fn cfg_srv_pkt(
             let kf_net_idx = u16::from_le_bytes([pkt[0], pkt[1]]) & NET_IDX_MAX;
             let transition = pkt[2];
 
-            let mut net = node.net.borrow_mut();
+            let mut net = node.net.lock().unwrap();
 
             // Enforce valid transitions as per Mesh spec:
             // Only KEY_REFRESH_TRANS_TWO (=2) and KEY_REFRESH_TRANS_THREE (=3) are valid
@@ -1507,7 +1507,7 @@ fn cfg_srv_pkt(
             n += 2;
 
             let current_phase = {
-                let net = node.net.borrow();
+                let net = node.net.lock().unwrap();
                 net.key_refresh_phase_get(kf_net_idx)
             };
             msg[n] = current_phase;
@@ -1526,7 +1526,7 @@ fn cfg_srv_pkt(
         OP_NETKEY_GET => {
             let mut n = mesh_model_opcode_set(OP_NETKEY_LIST, &mut msg);
 
-            let net = node.net.borrow();
+            let net = node.net.lock().unwrap();
             let key_list = net.key_list_get();
             drop(net);
 
@@ -1646,7 +1646,7 @@ fn cfg_srv_pkt(
             }
             let id_net_idx = u16::from_le_bytes([pkt[0], pkt[1]]) & NET_IDX_MAX;
 
-            let net = node.net.borrow();
+            let net = node.net.lock().unwrap();
             let identity = net.get_identity_mode(id_net_idx);
             drop(net);
 
@@ -1669,7 +1669,7 @@ fn cfg_srv_pkt(
 
             // Node Identity set is acknowledged but typically a no-op for
             // the config server (the proxy feature manages identity advertising).
-            let net = node.net.borrow();
+            let net = node.net.lock().unwrap();
             let identity = net.get_identity_mode(id_net_idx);
             drop(net);
 

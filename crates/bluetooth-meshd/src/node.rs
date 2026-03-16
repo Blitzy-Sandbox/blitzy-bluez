@@ -10,8 +10,8 @@
 // AddNetKey/AddAppKey/Publish), feature modes (relay/proxy/beacon/friend/LPN),
 // candidate device keys, and teardown.
 
-use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use tracing::{debug, error, info, warn};
@@ -104,70 +104,59 @@ pub struct NodeComposition {
 
 /// A mesh node — central state structure for one provisioned mesh node.
 ///
-/// Uses interior mutability (`RefCell`/`Cell`) for compatibility with
+/// Uses interior mutability (`Mutex`/`Atomic*`) for compatibility with
 /// the model layer, which takes `&MeshNode` (shared reference) but needs
-/// to mutate internal state. This is safe because `bluetooth-meshd` runs
-/// on a single-threaded tokio runtime.
+/// to mutate internal state.  `Mutex` and atomics are thread-safe, so
+/// `MeshNode` is naturally `Send + Sync`.
 pub struct MeshNode {
-    // ── Fields used by model.rs (must use RefCell/Cell) ──────────
+    // ── Fields used by model.rs ──────────────────────────────────
     /// Mesh network layer state.
-    pub net: RefCell<MeshNet>,
+    pub net: Mutex<MeshNet>,
     /// Elements within this node (model-layer view).
-    pub elements: RefCell<Vec<MeshElement>>,
+    pub elements: Mutex<Vec<MeshElement>>,
     /// Primary unicast address.
-    pub primary: Cell<u16>,
+    pub primary: AtomicU16,
     /// Storage directory path for this node.
-    pub storage_dir: RefCell<String>,
+    pub storage_dir: Mutex<String>,
     /// Configuration persistence handle.
-    pub config: RefCell<Option<Box<dyn MeshConfig>>>,
+    pub config: Mutex<Option<Box<dyn MeshConfig>>>,
     /// LPN mode flag.
-    pub lpn_mode: Cell<u8>,
+    pub lpn_mode: AtomicU8,
     /// Cache Replay Protection List size.
-    pub crpl: Cell<u16>,
+    pub crpl: AtomicU16,
     /// Device key (16 bytes).
-    pub dev_key: RefCell<[u8; 16]>,
+    pub dev_key: Mutex<[u8; 16]>,
 
     // ── Node-specific fields ─────────────────────────────────────
     /// Composition data pages.
-    pages: RefCell<Vec<MeshConfigCompPage>>,
+    pages: Mutex<Vec<MeshConfigCompPage>>,
     /// D-Bus application object path root.
-    app_path: RefCell<Option<String>>,
+    app_path: Mutex<Option<String>>,
     /// D-Bus unique name (bus owner) of the application.
-    owner: RefCell<Option<String>>,
+    owner: Mutex<Option<String>>,
     /// Security token identifying this node.
-    token: Cell<u64>,
+    token: AtomicU64,
     /// Number of elements.
-    num_ele: Cell<u8>,
+    num_ele: AtomicU8,
     /// Current sequence number for outgoing messages.
-    seq_number: Cell<u32>,
+    seq_number: AtomicU32,
     /// Default TTL for outgoing messages.
-    ttl: Cell<u8>,
+    ttl: AtomicU8,
     /// Composition identifiers (CID/PID/VID/CRPL).
-    comp: RefCell<NodeComposition>,
+    comp: Mutex<NodeComposition>,
     /// Feature mode settings (relay, proxy, beacon, friend, mpb, lpn).
-    modes: RefCell<MeshConfigModes>,
+    modes: Mutex<MeshConfigModes>,
     /// Candidate device key (for key rotation).
-    candidate_key: RefCell<Option<[u8; 16]>>,
+    candidate_key: Mutex<Option<[u8; 16]>>,
     /// Whether this node is a provisioner.
-    provisioner: Cell<bool>,
+    provisioner: AtomicBool,
     /// Whether an operation is in progress.
-    busy: Cell<bool>,
+    busy: AtomicBool,
     /// Node UUID.
-    uuid: RefCell<[u8; 16]>,
+    uuid: Mutex<[u8; 16]>,
     /// Provisioning agent for this node.
-    agent: RefCell<Option<MeshAgent>>,
+    agent: Mutex<Option<MeshAgent>>,
 }
-
-// SAFETY: MeshNode uses RefCell/Cell for interior mutability. This is safe
-// because bluetooth-meshd runs exclusively on a single-threaded tokio runtime
-// (tokio::runtime::Builder::new_current_thread()), so there is no concurrent
-// access from multiple threads. The Send + Sync impls are required because
-// Arc<MeshNode> is stored in a global Mutex and zbus interface structs
-// require Send + Sync.
-#[allow(unsafe_code)]
-unsafe impl Send for MeshNode {}
-#[allow(unsafe_code)]
-unsafe impl Sync for MeshNode {}
 
 impl Default for MeshNode {
     fn default() -> Self {
@@ -179,28 +168,28 @@ impl MeshNode {
     /// Create a new empty mesh node.
     pub fn new() -> Self {
         Self {
-            net: RefCell::new(MeshNet::new()),
-            elements: RefCell::new(Vec::new()),
-            primary: Cell::new(UNASSIGNED_ADDRESS),
-            storage_dir: RefCell::new(String::new()),
-            config: RefCell::new(None),
-            lpn_mode: Cell::new(MESH_MODE_DISABLED),
-            crpl: Cell::new(0),
-            dev_key: RefCell::new([0u8; 16]),
-            pages: RefCell::new(Vec::new()),
-            app_path: RefCell::new(None),
-            owner: RefCell::new(None),
-            token: Cell::new(0),
-            num_ele: Cell::new(0),
-            seq_number: Cell::new(0),
-            ttl: Cell::new(DEFAULT_TTL),
-            comp: RefCell::new(NodeComposition::default()),
-            modes: RefCell::new(MeshConfigModes::default()),
-            candidate_key: RefCell::new(None),
-            provisioner: Cell::new(false),
-            busy: Cell::new(false),
-            uuid: RefCell::new([0u8; 16]),
-            agent: RefCell::new(None),
+            net: Mutex::new(MeshNet::new()),
+            elements: Mutex::new(Vec::new()),
+            primary: AtomicU16::new(UNASSIGNED_ADDRESS),
+            storage_dir: Mutex::new(String::new()),
+            config: Mutex::new(None),
+            lpn_mode: AtomicU8::new(MESH_MODE_DISABLED),
+            crpl: AtomicU16::new(0),
+            dev_key: Mutex::new([0u8; 16]),
+            pages: Mutex::new(Vec::new()),
+            app_path: Mutex::new(None),
+            owner: Mutex::new(None),
+            token: AtomicU64::new(0),
+            num_ele: AtomicU8::new(0),
+            seq_number: AtomicU32::new(0),
+            ttl: AtomicU8::new(DEFAULT_TTL),
+            comp: Mutex::new(NodeComposition::default()),
+            modes: Mutex::new(MeshConfigModes::default()),
+            candidate_key: Mutex::new(None),
+            provisioner: AtomicBool::new(false),
+            busy: AtomicBool::new(false),
+            uuid: Mutex::new([0u8; 16]),
+            agent: Mutex::new(None),
         }
     }
 
@@ -208,33 +197,33 @@ impl MeshNode {
 
     /// Get the node's storage directory path.
     pub fn get_storage_dir(&self) -> String {
-        self.storage_dir.borrow().clone()
+        self.storage_dir.lock().unwrap().clone()
     }
 
-    /// Get a reference to the network layer (borrows RefCell).
-    pub fn get_net(&self) -> std::cell::Ref<'_, MeshNet> {
-        self.net.borrow()
+    /// Get a reference to the network layer (locks Mutex).
+    pub fn get_net(&self) -> std::sync::MutexGuard<'_, MeshNet> {
+        self.net.lock().unwrap()
     }
 
     /// Get the primary unicast address.
     pub fn get_primary(&self) -> u16 {
-        self.primary.get()
+        self.primary.load(Ordering::Relaxed)
     }
 
     /// Get the number of elements.
     pub fn get_num_elements(&self) -> u8 {
-        self.num_ele.get()
+        self.num_ele.load(Ordering::Relaxed)
     }
 
     /// Get the current sequence number.
     pub fn get_sequence_number(&self) -> u32 {
-        self.seq_number.get()
+        self.seq_number.load(Ordering::Relaxed)
     }
 
     /// Set the sequence number and persist if config is available.
     pub fn set_sequence_number(&self, seq: u32) {
-        self.seq_number.set(seq);
-        let mut cfg = self.config.borrow_mut();
+        self.seq_number.store(seq, Ordering::Relaxed);
+        let mut cfg = self.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             let _ = config.write_seq_number(seq, true);
         }
@@ -242,7 +231,7 @@ impl MeshNode {
 
     /// Get the default TTL.
     pub fn default_ttl_get(&self) -> u8 {
-        self.ttl.get()
+        self.ttl.load(Ordering::Relaxed)
     }
 
     /// Set the default TTL.
@@ -250,41 +239,41 @@ impl MeshNode {
         if ttl > TTL_MASK && ttl != 0xFF {
             return false;
         }
-        self.ttl.set(ttl);
+        self.ttl.store(ttl, Ordering::Relaxed);
         true
     }
 
     /// Check whether this node has provisioner capabilities.
     pub fn is_provisioner(&self) -> bool {
-        self.provisioner.get()
+        self.provisioner.load(Ordering::Relaxed)
     }
 
     /// Check whether an operation is in progress on this node.
     pub fn is_busy(&self) -> bool {
-        self.busy.get()
+        self.busy.load(Ordering::Relaxed)
     }
 
     /// Get the device key (copy).
     pub fn get_device_key(&self) -> [u8; 16] {
-        *self.dev_key.borrow()
+        *self.dev_key.lock().unwrap()
     }
 
     /// Get the candidate device key (copy).
     pub fn get_device_key_candidate(&self) -> Option<[u8; 16]> {
-        *self.candidate_key.borrow()
+        *self.candidate_key.lock().unwrap()
     }
 
     /// Finalize the candidate device key — promote candidate to primary.
     pub fn finalize_candidate(&self) -> bool {
         let candidate = {
-            let ck = self.candidate_key.borrow();
+            let ck = self.candidate_key.lock().unwrap();
             *ck
         };
         match candidate {
             Some(key) => {
-                *self.dev_key.borrow_mut() = key;
-                *self.candidate_key.borrow_mut() = None;
-                let mut cfg = self.config.borrow_mut();
+                *self.dev_key.lock().unwrap() = key;
+                *self.candidate_key.lock().unwrap() = None;
+                let mut cfg = self.config.lock().unwrap();
                 if let Some(ref mut config) = *cfg {
                     let _ = config.finalize_candidate();
                 }
@@ -296,22 +285,25 @@ impl MeshNode {
 
     /// Get the security token.
     pub fn get_token(&self) -> u64 {
-        self.token.get()
+        self.token.load(Ordering::Relaxed)
     }
 
     /// Get model IDs on a specific element by index.
     pub fn get_element_models(&self, ele_idx: u8) -> Option<Vec<u32>> {
-        let elements = self.elements.borrow();
+        let elements = self.elements.lock().unwrap();
         elements.get(ele_idx as usize).map(|ele| ele.models.iter().map(|m| m.id).collect())
     }
 
     /// Get element index from an element address.
     pub fn get_element_idx(&self, addr: u16) -> Option<u8> {
-        let primary = self.primary.get();
+        let primary = self.primary.load(Ordering::Relaxed);
         // Use num_ele if set, otherwise fall back to elements.len()
-        let num_from_cell = self.num_ele.get();
-        let num =
-            if num_from_cell > 0 { num_from_cell } else { self.elements.borrow().len() as u8 };
+        let num_from_cell = self.num_ele.load(Ordering::Relaxed);
+        let num = if num_from_cell > 0 {
+            num_from_cell
+        } else {
+            self.elements.lock().unwrap().len() as u8
+        };
         if num == 0 || addr < primary || addr >= primary + num as u16 {
             return None;
         }
@@ -320,41 +312,41 @@ impl MeshNode {
 
     /// Get the D-Bus path for a specific element.
     pub fn get_element_path(&self, ele_idx: u8) -> Option<String> {
-        let elements = self.elements.borrow();
+        let elements = self.elements.lock().unwrap();
         elements.get(ele_idx as usize).map(|e| e.path.clone())
     }
 
     /// Get the D-Bus bus name of the owning application.
     pub fn get_owner(&self) -> Option<String> {
-        self.owner.borrow().clone()
+        self.owner.lock().unwrap().clone()
     }
 
     /// Get the D-Bus application object path root.
     pub fn get_app_path(&self) -> Option<String> {
-        self.app_path.borrow().clone()
+        self.app_path.lock().unwrap().clone()
     }
 
     /// Get a reference to the configuration persistence handle.
-    pub fn config_get(&self) -> std::cell::Ref<'_, Option<Box<dyn MeshConfig>>> {
-        self.config.borrow()
+    pub fn config_get(&self) -> std::sync::MutexGuard<'_, Option<Box<dyn MeshConfig>>> {
+        self.config.lock().unwrap()
     }
 
     /// Get the provisioning agent.
-    pub fn get_agent(&self) -> std::cell::Ref<'_, Option<MeshAgent>> {
-        self.agent.borrow()
+    pub fn get_agent(&self) -> std::sync::MutexGuard<'_, Option<MeshAgent>> {
+        self.agent.lock().unwrap()
     }
 
     /// Get the CRPL (Replay Protection List) size.
     pub fn get_crpl(&self) -> u16 {
-        self.crpl.get()
+        self.crpl.load(Ordering::Relaxed)
     }
 
     /// Set the IV index and IV Update flag on the network layer.
     pub fn iv_index_set(&self, iv_index: u32, iv_update: bool) {
-        let mut net = self.net.borrow_mut();
+        let mut net = self.net.lock().unwrap();
         net.set_iv_index(iv_index, iv_update);
         drop(net);
-        let mut cfg = self.config.borrow_mut();
+        let mut cfg = self.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             let _ = config.write_iv_index(iv_index, iv_update);
         }
@@ -362,28 +354,28 @@ impl MeshNode {
 
     /// Get the LPN mode value.
     pub fn lpn_mode_get(&self) -> u8 {
-        self.lpn_mode.get()
+        self.lpn_mode.load(Ordering::Relaxed)
     }
 
     /// Get the UUID of this node.
     pub fn get_uuid(&self) -> [u8; 16] {
-        *self.uuid.borrow()
+        *self.uuid.lock().unwrap()
     }
 
     /// Get the number of elements (identical to num_ele, for model layer).
     pub fn num_ele(&self) -> u8 {
-        self.num_ele.get()
+        self.num_ele.load(Ordering::Relaxed)
     }
 
     /// Get the element location descriptor.
     pub fn get_element_location(&self, ele_idx: u8) -> Option<u16> {
-        let elements = self.elements.borrow();
+        let elements = self.elements.lock().unwrap();
         elements.get(ele_idx as usize).map(|e| e.location)
     }
 
     /// Get the device key (alias for model layer compatibility).
     pub fn get_dev_key(&self) -> [u8; 16] {
-        *self.dev_key.borrow()
+        *self.dev_key.lock().unwrap()
     }
 }
 
@@ -424,8 +416,8 @@ pub fn node_find_by_addr(addr: u16) -> Option<Arc<MeshNode>> {
     let list = nodes().lock().ok()?;
     list.iter()
         .find(|n| {
-            let primary = n.primary.get();
-            let count = n.num_ele.get() as u16;
+            let primary = n.primary.load(Ordering::Relaxed);
+            let count = n.num_ele.load(Ordering::Relaxed) as u16;
             addr >= primary && addr < primary + count
         })
         .cloned()
@@ -434,7 +426,7 @@ pub fn node_find_by_addr(addr: u16) -> Option<Arc<MeshNode>> {
 /// Find a node by its 16-byte UUID.
 pub fn node_find_by_uuid(uuid: &[u8; 16]) -> Option<Arc<MeshNode>> {
     let list = nodes().lock().ok()?;
-    list.iter().find(|n| *n.uuid.borrow() == *uuid).cloned()
+    list.iter().find(|n| *n.uuid.lock().unwrap() == *uuid).cloned()
 }
 
 /// Find a node by its security token.
@@ -443,7 +435,7 @@ pub fn node_find_by_token(token: u64) -> Option<Arc<MeshNode>> {
         return None;
     }
     let list = nodes().lock().ok()?;
-    list.iter().find(|n| n.token.get() == token).cloned()
+    list.iter().find(|n| n.token.load(Ordering::Relaxed) == token).cloned()
 }
 
 // =========================================================================
@@ -482,13 +474,13 @@ fn generate_token() -> u64 {
 
 /// Get the relay mode value.
 pub fn node_relay_mode_get(node: &MeshNode) -> u8 {
-    let modes = node.modes.borrow();
+    let modes = node.modes.lock().unwrap();
     modes.relay
 }
 
 /// Get the relay retransmit parameters (count, interval).
 pub fn node_relay_params_get(node: &MeshNode) -> (u16, u16) {
-    let modes = node.modes.borrow();
+    let modes = node.modes.lock().unwrap();
     (modes.relay_cnt, modes.relay_interval)
 }
 
@@ -501,20 +493,20 @@ pub fn node_relay_mode_set(node: &MeshNode, enabled: bool, cnt: u16, interval: u
     }
 
     {
-        let mut modes = node.modes.borrow_mut();
+        let mut modes = node.modes.lock().unwrap();
         modes.relay = new_mode;
         modes.relay_cnt = cnt;
         modes.relay_interval = interval;
     }
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         // net.set_relay_mode takes count as u8
         net.set_relay_mode(enabled, cnt as u8, interval);
     }
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             let _ = config.write_relay_mode(new_mode, cnt, interval);
         }
@@ -525,7 +517,7 @@ pub fn node_relay_mode_set(node: &MeshNode, enabled: bool, cnt: u16, interval: u
 
 /// Get the beacon (SNB) mode value.
 pub fn node_beacon_mode_get(node: &MeshNode) -> u8 {
-    let modes = node.modes.borrow();
+    let modes = node.modes.lock().unwrap();
     modes.beacon
 }
 
@@ -534,17 +526,17 @@ pub fn node_beacon_mode_set(node: &MeshNode, enabled: bool) -> bool {
     let new_mode = if enabled { MESH_MODE_ENABLED } else { MESH_MODE_DISABLED };
 
     {
-        let mut modes = node.modes.borrow_mut();
+        let mut modes = node.modes.lock().unwrap();
         modes.beacon = new_mode;
     }
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.set_snb_mode(enabled);
     }
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             let _ = config.write_mode("beacon", new_mode);
         }
@@ -555,7 +547,7 @@ pub fn node_beacon_mode_set(node: &MeshNode, enabled: bool) -> bool {
 
 /// Get the friend mode value.
 pub fn node_friend_mode_get(node: &MeshNode) -> u8 {
-    let modes = node.modes.borrow();
+    let modes = node.modes.lock().unwrap();
     modes.friend
 }
 
@@ -568,17 +560,17 @@ pub fn node_friend_mode_set(node: &MeshNode, enabled: bool) -> bool {
     }
 
     {
-        let mut modes = node.modes.borrow_mut();
+        let mut modes = node.modes.lock().unwrap();
         modes.friend = new_mode;
     }
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.set_friend_mode(enabled);
     }
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             let _ = config.write_mode("friend", new_mode);
         }
@@ -589,7 +581,7 @@ pub fn node_friend_mode_set(node: &MeshNode, enabled: bool) -> bool {
 
 /// Get the proxy mode value.
 pub fn node_proxy_mode_get(node: &MeshNode) -> u8 {
-    let modes = node.modes.borrow();
+    let modes = node.modes.lock().unwrap();
     modes.proxy
 }
 
@@ -598,17 +590,17 @@ pub fn node_proxy_mode_set(node: &MeshNode, enabled: bool) -> bool {
     let new_mode = if enabled { MESH_MODE_ENABLED } else { MESH_MODE_DISABLED };
 
     {
-        let mut modes = node.modes.borrow_mut();
+        let mut modes = node.modes.lock().unwrap();
         modes.proxy = new_mode;
     }
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.set_proxy_mode(enabled);
     }
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             let _ = config.write_mode("proxy", new_mode);
         }
@@ -619,7 +611,7 @@ pub fn node_proxy_mode_set(node: &MeshNode, enabled: bool) -> bool {
 
 /// Get the MPB (Mesh Private Beacon) mode value.
 pub fn node_mpb_mode_get(node: &MeshNode) -> u8 {
-    let modes = node.modes.borrow();
+    let modes = node.modes.lock().unwrap();
     modes.mpb
 }
 
@@ -628,18 +620,18 @@ pub fn node_mpb_mode_set(node: &MeshNode, enabled: bool) -> bool {
     let new_mode = if enabled { MESH_MODE_ENABLED } else { MESH_MODE_DISABLED };
 
     let period = {
-        let mut modes = node.modes.borrow_mut();
+        let mut modes = node.modes.lock().unwrap();
         modes.mpb = new_mode;
         modes.mpb_period
     };
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.set_mpb_mode(enabled, period);
     }
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             let _ = config.write_mpb(new_mode, period);
         }
@@ -650,20 +642,20 @@ pub fn node_mpb_mode_set(node: &MeshNode, enabled: bool) -> bool {
 
 /// Get the MPB (Mesh Private Beacon) period value.
 pub fn node_mpb_period_get(node: &MeshNode) -> u8 {
-    let modes = node.modes.borrow();
+    let modes = node.modes.lock().unwrap();
     modes.mpb_period
 }
 
 /// Set the MPB period.
 pub fn node_mpb_period_set(node: &MeshNode, period: u8) {
     let mpb_mode = {
-        let mut modes = node.modes.borrow_mut();
+        let mut modes = node.modes.lock().unwrap();
         modes.mpb_period = period;
         modes.mpb
     };
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             let _ = config.write_mpb(mpb_mode, period);
         }
@@ -672,7 +664,7 @@ pub fn node_mpb_period_set(node: &MeshNode, period: u8) {
 
 /// Get the default TTL for the node.
 pub fn node_default_ttl_get(node: &MeshNode) -> u8 {
-    node.ttl.get()
+    node.ttl.load(Ordering::Relaxed)
 }
 
 /// Set the default TTL for the node.
@@ -681,15 +673,15 @@ pub fn node_default_ttl_set(node: &MeshNode, ttl: u8) -> bool {
         return false;
     }
 
-    node.ttl.set(ttl);
+    node.ttl.store(ttl, Ordering::Relaxed);
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.set_default_ttl(ttl);
     }
 
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             let _ = config.write_ttl(ttl);
         }
@@ -698,9 +690,9 @@ pub fn node_default_ttl_set(node: &MeshNode, ttl: u8) -> bool {
     true
 }
 
-/// Get the configuration handle (immutable borrow).
-pub fn node_config_get(node: &MeshNode) -> std::cell::Ref<'_, Option<Box<dyn MeshConfig>>> {
-    node.config.borrow()
+/// Get the configuration handle (locks Mutex).
+pub fn node_config_get(node: &MeshNode) -> std::sync::MutexGuard<'_, Option<Box<dyn MeshConfig>>> {
+    node.config.lock().unwrap()
 }
 
 // =========================================================================
@@ -709,7 +701,7 @@ pub fn node_config_get(node: &MeshNode) -> std::cell::Ref<'_, Option<Box<dyn Mes
 
 /// Get a composition page by page number.
 pub fn node_get_comp(node: &MeshNode, page_num: u8) -> Option<MeshConfigCompPage> {
-    let pages = node.pages.borrow();
+    let pages = node.pages.lock().unwrap();
     pages.iter().find(|p| p.page_num == page_num).cloned()
 }
 
@@ -720,14 +712,14 @@ pub fn node_replace_comp(node: &MeshNode, page: MeshConfigCompPage) -> bool {
 
     // Store to config
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             let _ = config.comp_page_add(page_num, &data);
         }
     }
 
     // Update in-memory pages
-    let mut pages = node.pages.borrow_mut();
+    let mut pages = node.pages.lock().unwrap();
     if let Some(existing) = pages.iter_mut().find(|p| p.page_num == page_num) {
         *existing = page;
     } else {
@@ -743,7 +735,7 @@ pub fn node_replace_comp(node: &MeshNode, page: MeshConfigCompPage) -> bool {
 
 /// Delete an application key binding from all models in the node.
 pub fn node_app_key_delete(node: &MeshNode, app_idx: u16) {
-    let num_ele = node.num_ele.get();
+    let num_ele = node.num_ele.load(Ordering::Relaxed);
     mesh_model_app_key_delete(node, num_ele, app_idx);
 }
 
@@ -754,11 +746,11 @@ pub fn node_app_key_delete(node: &MeshNode, app_idx: u16) {
 /// Remove a node from the mesh stack — unregister D-Bus, release config,
 /// remove from global list.
 pub fn node_remove(node: &Arc<MeshNode>) {
-    debug!("node_remove: removing node primary={:#06x}", node.primary.get());
+    debug!("node_remove: removing node primary={:#06x}", node.primary.load(Ordering::Relaxed));
 
     // Remove agent
     {
-        let mut agent = node.agent.borrow_mut();
+        let mut agent = node.agent.lock().unwrap();
         if let Some(ref a) = *agent {
             mesh_agent_remove(a);
         }
@@ -767,7 +759,7 @@ pub fn node_remove(node: &Arc<MeshNode>) {
 
     // Destroy NVM
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref config) = *cfg {
             config.destroy_nvm();
         }
@@ -776,7 +768,7 @@ pub fn node_remove(node: &Arc<MeshNode>) {
 
     // Free the network layer
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.free();
     }
 
@@ -792,7 +784,7 @@ pub fn node_remove(node: &Arc<MeshNode>) {
 pub fn node_property_changed(node: &MeshNode, property: &str) {
     debug!(
         "node_property_changed: node primary={:#06x}, property={}",
-        node.primary.get(),
+        node.primary.load(Ordering::Relaxed),
         property
     );
 }
@@ -804,30 +796,30 @@ pub fn node_property_changed(node: &MeshNode, property: &str) {
 /// Initialize a node from a MeshConfigNode loaded from storage.
 fn init_storage_node(node: &MeshNode, db_node: &MeshConfigNode, uuid: &[u8; 16]) {
     // Set UUID
-    *node.uuid.borrow_mut() = *uuid;
+    *node.uuid.lock().unwrap() = *uuid;
 
     // Set composition data
     {
-        let mut comp = node.comp.borrow_mut();
+        let mut comp = node.comp.lock().unwrap();
         comp.cid = db_node.cid;
         comp.pid = db_node.pid;
         comp.vid = db_node.vid;
         comp.crpl = db_node.crpl;
     }
 
-    node.crpl.set(db_node.crpl);
-    node.primary.set(db_node.unicast);
-    node.seq_number.set(db_node.seq_number);
-    node.ttl.set(db_node.ttl);
-    *node.dev_key.borrow_mut() = db_node.dev_key;
-    node.token.set(token_from_bytes(&db_node.token));
+    node.crpl.store(db_node.crpl, Ordering::Relaxed);
+    node.primary.store(db_node.unicast, Ordering::Relaxed);
+    node.seq_number.store(db_node.seq_number, Ordering::Relaxed);
+    node.ttl.store(db_node.ttl, Ordering::Relaxed);
+    *node.dev_key.lock().unwrap() = db_node.dev_key;
+    node.token.store(token_from_bytes(&db_node.token), Ordering::Relaxed);
 
     // Set modes
-    *node.modes.borrow_mut() = db_node.modes.clone();
+    *node.modes.lock().unwrap() = db_node.modes.clone();
 
     // Composition pages
     {
-        let mut pages = node.pages.borrow_mut();
+        let mut pages = node.pages.lock().unwrap();
         for page in &db_node.comp_pages {
             pages.push(page.clone());
         }
@@ -835,7 +827,7 @@ fn init_storage_node(node: &MeshNode, db_node: &MeshConfigNode, uuid: &[u8; 16])
 
     // Set up network layer
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
 
         // Set IV index
         net.set_iv_index(db_node.iv_index, db_node.iv_update);
@@ -848,7 +840,7 @@ fn init_storage_node(node: &MeshNode, db_node: &MeshConfigNode, uuid: &[u8; 16])
 
         // Register unicast range
         let num_ele = db_node.elements.len() as u8;
-        node.num_ele.set(num_ele);
+        node.num_ele.store(num_ele, Ordering::Relaxed);
         net.register_unicast(db_node.unicast, num_ele);
 
         // Set feature modes from config
@@ -870,15 +862,15 @@ fn init_storage_node(node: &MeshNode, db_node: &MeshConfigNode, uuid: &[u8; 16])
     }
 
     // LPN mode
-    node.lpn_mode.set(db_node.modes.lpn);
+    node.lpn_mode.store(db_node.modes.lpn, Ordering::Relaxed);
 
     // Storage directory
     let storage_dir = format!("{}/{}", mesh_get_storage_dir(), hex2str(uuid));
-    *node.storage_dir.borrow_mut() = storage_dir;
+    *node.storage_dir.lock().unwrap() = storage_dir;
 
     // Initialize network keys
     for nk in &db_node.netkeys {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.set_key(nk.idx, &nk.key, nk.phase);
 
         if nk.phase != KEY_REFRESH_PHASE_NONE {
@@ -889,14 +881,14 @@ fn init_storage_node(node: &MeshNode, db_node: &MeshConfigNode, uuid: &[u8; 16])
 
     // Initialize application keys
     for ak in &db_node.appkeys {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         let new_key_ref: Option<&[u8; 16]> = Some(&ak.new_key);
         appkey_key_init(&mut net, ak.net_idx, ak.app_idx, &ak.key, new_key_ref);
     }
 
     // Initialize models from storage
     {
-        let mut elements = node.elements.borrow_mut();
+        let mut elements = node.elements.lock().unwrap();
 
         // Create elements matching config
         for (idx, cfg_ele) in db_node.elements.iter().enumerate() {
@@ -904,7 +896,7 @@ fn init_storage_node(node: &MeshNode, db_node: &MeshConfigNode, uuid: &[u8; 16])
                 "{}{}/{:04x}/ele{:02x}",
                 BLUEZ_MESH_PATH,
                 MESH_NODE_PATH_PREFIX,
-                node.primary.get(),
+                node.primary.load(Ordering::Relaxed),
                 idx
             );
 
@@ -929,15 +921,15 @@ fn init_storage_node(node: &MeshNode, db_node: &MeshConfigNode, uuid: &[u8; 16])
 
     // Load RPL into net
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.load_rpl();
     }
 
     debug!(
         "init_storage_node: loaded node uuid={} primary={:#06x} elements={}",
         hex2str(uuid),
-        node.primary.get(),
-        node.num_ele.get()
+        node.primary.load(Ordering::Relaxed),
+        node.num_ele.load(Ordering::Relaxed)
     );
 }
 
@@ -981,7 +973,7 @@ pub fn node_load_from_storage(cfgdir: &str) -> bool {
 
             match MeshConfigJson::create(&cfgdir_owned, uuid, &node_cfg) {
                 Ok(cfg) => {
-                    *node.config.borrow_mut() = Some(Box::new(cfg));
+                    *node.config.lock().unwrap() = Some(Box::new(cfg));
                 }
                 Err(e) => {
                     error!("Failed to create config for node {}: {:?}", hex2str(uuid), e);
@@ -1010,7 +1002,7 @@ pub fn node_load_from_storage(cfgdir: &str) -> bool {
 
 /// Resolve a D-Bus element path to an element index within a node.
 fn get_element_index(node: &MeshNode, element_path: &str) -> Option<u8> {
-    let elements = node.elements.borrow();
+    let elements = node.elements.lock().unwrap();
     for (idx, ele) in elements.iter().enumerate() {
         if ele.path == element_path {
             return Some(idx as u8);
@@ -1039,14 +1031,14 @@ pub fn node_join(
     }
 
     let node = Arc::new(MeshNode::new());
-    *node.uuid.borrow_mut() = *uuid;
-    *node.app_path.borrow_mut() = Some(app_root.to_string());
-    *node.owner.borrow_mut() = Some(sender.to_string());
-    node.busy.set(true);
+    *node.uuid.lock().unwrap() = *uuid;
+    *node.app_path.lock().unwrap() = Some(app_root.to_string());
+    *node.owner.lock().unwrap() = Some(sender.to_string());
+    node.busy.store(true, Ordering::Relaxed);
 
     // Create agent
     let agent = mesh_agent_create(sender, app_root, properties);
-    *node.agent.borrow_mut() = agent;
+    *node.agent.lock().unwrap() = agent;
 
     add_node(Arc::clone(&node));
 
@@ -1075,11 +1067,11 @@ pub fn node_attach(
         return Err(MeshDbusError::Busy("Node is busy".into()));
     }
 
-    node.busy.set(true);
-    *node.app_path.borrow_mut() = Some(app_root.to_string());
-    *node.owner.borrow_mut() = Some(sender.to_string());
+    node.busy.store(true, Ordering::Relaxed);
+    *node.app_path.lock().unwrap() = Some(app_root.to_string());
+    *node.owner.lock().unwrap() = Some(sender.to_string());
 
-    info!("node_attach: attached to node primary={:#06x}", node.primary.get());
+    info!("node_attach: attached to node primary={:#06x}", node.primary.load(Ordering::Relaxed));
     Ok(node)
 }
 
@@ -1099,24 +1091,24 @@ pub fn node_create(
     }
 
     let node = Arc::new(MeshNode::new());
-    *node.uuid.borrow_mut() = *uuid;
-    *node.app_path.borrow_mut() = Some(app_root.to_string());
-    *node.owner.borrow_mut() = Some(sender.to_string());
+    *node.uuid.lock().unwrap() = *uuid;
+    *node.app_path.lock().unwrap() = Some(app_root.to_string());
+    *node.owner.lock().unwrap() = Some(sender.to_string());
 
     // Generate token
     let token = generate_token();
-    node.token.set(token);
+    node.token.store(token, Ordering::Relaxed);
 
     // Set default composition
     {
-        let mut comp = node.comp.borrow_mut();
+        let mut comp = node.comp.lock().unwrap();
         comp.crpl = mesh_get_crpl();
     }
-    node.crpl.set(mesh_get_crpl());
+    node.crpl.store(mesh_get_crpl(), Ordering::Relaxed);
 
     // Set default provisioning parameters
-    node.primary.set(DEFAULT_NEW_UNICAST);
-    node.provisioner.set(true);
+    node.primary.store(DEFAULT_NEW_UNICAST, Ordering::Relaxed);
+    node.provisioner.store(true, Ordering::Relaxed);
 
     // Generate device key
     let mut dev_key = [0u8; 16];
@@ -1126,13 +1118,13 @@ pub fn node_create(
         .as_nanos();
     dev_key[..8].copy_from_slice(&ts.to_le_bytes()[..8]);
     dev_key[8..].copy_from_slice(&ts.to_le_bytes()[8..16]);
-    *node.dev_key.borrow_mut() = dev_key;
+    *node.dev_key.lock().unwrap() = dev_key;
 
     // Create agent
     let agent = mesh_agent_create(sender, app_root, properties);
-    *node.agent.borrow_mut() = agent;
+    *node.agent.lock().unwrap() = agent;
 
-    node.busy.set(true);
+    node.busy.store(true, Ordering::Relaxed);
 
     add_node(Arc::clone(&node));
 
@@ -1168,30 +1160,30 @@ pub fn node_import(
     }
 
     let node = Arc::new(MeshNode::new());
-    *node.uuid.borrow_mut() = *uuid;
-    *node.app_path.borrow_mut() = Some(app_root.to_string());
-    *node.owner.borrow_mut() = Some(sender.to_string());
+    *node.uuid.lock().unwrap() = *uuid;
+    *node.app_path.lock().unwrap() = Some(app_root.to_string());
+    *node.owner.lock().unwrap() = Some(sender.to_string());
 
     // Generate token
     let token = generate_token();
-    node.token.set(token);
+    node.token.store(token, Ordering::Relaxed);
 
     // Set provisioning data
-    *node.dev_key.borrow_mut() = *dev_key;
-    node.primary.set(unicast);
+    *node.dev_key.lock().unwrap() = *dev_key;
+    node.primary.store(unicast, Ordering::Relaxed);
 
     // Set composition defaults
     {
-        let mut comp = node.comp.borrow_mut();
+        let mut comp = node.comp.lock().unwrap();
         comp.crpl = mesh_get_crpl();
     }
-    node.crpl.set(mesh_get_crpl());
+    node.crpl.store(mesh_get_crpl(), Ordering::Relaxed);
 
     // Set IV index
     {
         let iv_update = (flags & PROV_FLAG_IVU) != 0;
         let kr = (flags & PROV_FLAG_KR) != 0;
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.set_iv_index(iv_index, iv_update);
 
         // Add network key
@@ -1214,9 +1206,9 @@ pub fn node_import(
 
     // Create agent
     let agent = mesh_agent_create(sender, app_root, properties);
-    *node.agent.borrow_mut() = agent;
+    *node.agent.lock().unwrap() = agent;
 
-    node.busy.set(true);
+    node.busy.store(true, Ordering::Relaxed);
 
     add_node(Arc::clone(&node));
 
@@ -1226,12 +1218,12 @@ pub fn node_import(
 
 /// Refresh a node's provisioning data after key rotation.
 pub fn node_refresh(node: &MeshNode, prov: &MeshProvNodeInfo) -> bool {
-    debug!("node_refresh: primary={:#06x}", node.primary.get());
+    debug!("node_refresh: primary={:#06x}", node.primary.load(Ordering::Relaxed));
 
-    *node.dev_key.borrow_mut() = prov.device_key;
+    *node.dev_key.lock().unwrap() = prov.device_key;
 
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         let iv_update = (prov.flags & PROV_FLAG_IVU) != 0;
         let kr = (prov.flags & PROV_FLAG_KR) != 0;
         net.set_iv_index(prov.iv_index, iv_update);
@@ -1244,7 +1236,7 @@ pub fn node_refresh(node: &MeshNode, prov: &MeshProvNodeInfo) -> bool {
 
     // Persist device key
     {
-        let mut cfg = node.config.borrow_mut();
+        let mut cfg = node.config.lock().unwrap();
         if let Some(ref mut config) = *cfg {
             let _ = config.write_device_key(&prov.device_key);
         }
@@ -1257,20 +1249,20 @@ pub fn node_refresh(node: &MeshNode, prov: &MeshProvNodeInfo) -> bool {
 pub fn node_add_pending_local(node: &MeshNode, prov: &MeshProvNodeInfo) -> bool {
     debug!("node_add_pending_local: unicast={:#06x}", prov.unicast);
 
-    *node.dev_key.borrow_mut() = prov.device_key;
-    node.primary.set(prov.unicast);
+    *node.dev_key.lock().unwrap() = prov.device_key;
+    node.primary.store(prov.unicast, Ordering::Relaxed);
 
     {
         let iv_update = (prov.flags & PROV_FLAG_IVU) != 0;
         let kr = (prov.flags & PROV_FLAG_KR) != 0;
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.set_iv_index(prov.iv_index, iv_update);
         net.set_key(
             prov.net_index,
             &prov.net_key,
             if kr { KEY_REFRESH_PHASE_TWO } else { KEY_REFRESH_PHASE_NONE },
         );
-        net.register_unicast(prov.unicast, node.num_ele.get());
+        net.register_unicast(prov.unicast, node.num_ele.load(Ordering::Relaxed));
     }
 
     true
@@ -1278,7 +1270,7 @@ pub fn node_add_pending_local(node: &MeshNode, prov: &MeshProvNodeInfo) -> bool 
 
 /// Finalize a newly-created node after provisioning completes.
 pub fn node_finalize_new_node(node: &MeshNode, _io: &MeshIoSendInfo) -> bool {
-    debug!("node_finalize_new_node: primary={:#06x}", node.primary.get());
+    debug!("node_finalize_new_node: primary={:#06x}", node.primary.load(Ordering::Relaxed));
 
     // Create storage directory
     let uuid = node.get_uuid();
@@ -1287,17 +1279,17 @@ pub fn node_finalize_new_node(node: &MeshNode, _io: &MeshIoSendInfo) -> bool {
         error!("node_finalize_new_node: failed to create storage dir {}", storage_dir);
         return false;
     }
-    *node.storage_dir.borrow_mut() = storage_dir;
+    *node.storage_dir.lock().unwrap() = storage_dir;
 
     // Build MeshConfigNode for persistence
-    let token_bytes = token_to_bytes(node.token.get());
+    let token_bytes = token_to_bytes(node.token.load(Ordering::Relaxed));
     let iv_index = {
-        let net = node.net.borrow();
+        let net = node.net.lock().unwrap();
         let (iv, _) = net.get_iv_index();
         iv
     };
     let iv_update = {
-        let net = node.net.borrow();
+        let net = node.net.lock().unwrap();
         let (_, upd) = net.get_iv_index();
         upd
     };
@@ -1305,18 +1297,18 @@ pub fn node_finalize_new_node(node: &MeshNode, _io: &MeshIoSendInfo) -> bool {
         elements: Vec::new(),
         netkeys: Vec::new(),
         appkeys: Vec::new(),
-        comp_pages: node.pages.borrow().clone(),
-        seq_number: node.seq_number.get(),
+        comp_pages: node.pages.lock().unwrap().clone(),
+        seq_number: node.seq_number.load(Ordering::Relaxed),
         iv_index,
         iv_update,
-        cid: node.comp.borrow().cid,
-        pid: node.comp.borrow().pid,
-        vid: node.comp.borrow().vid,
-        crpl: node.crpl.get(),
-        unicast: node.primary.get(),
+        cid: node.comp.lock().unwrap().cid,
+        pid: node.comp.lock().unwrap().pid,
+        vid: node.comp.lock().unwrap().vid,
+        crpl: node.crpl.load(Ordering::Relaxed),
+        unicast: node.primary.load(Ordering::Relaxed),
         net_transmit: None,
-        modes: node.modes.borrow().clone(),
-        ttl: node.ttl.get(),
+        modes: node.modes.lock().unwrap().clone(),
+        ttl: node.ttl.load(Ordering::Relaxed),
         dev_key: node.get_device_key(),
         token: token_bytes,
         uuid,
@@ -1325,7 +1317,7 @@ pub fn node_finalize_new_node(node: &MeshNode, _io: &MeshIoSendInfo) -> bool {
     let storage = mesh_get_storage_dir();
     match MeshConfigJson::create(storage, &uuid, &cfg_node) {
         Ok(cfg) => {
-            *node.config.borrow_mut() = Some(Box::new(cfg));
+            *node.config.lock().unwrap() = Some(Box::new(cfg));
         }
         Err(e) => {
             error!("node_finalize_new_node: config creation failed: {:?}", e);
@@ -1338,13 +1330,16 @@ pub fn node_finalize_new_node(node: &MeshNode, _io: &MeshIoSendInfo) -> bool {
 
     // Attach I/O to network
     {
-        let mut net = node.net.borrow_mut();
+        let mut net = node.net.lock().unwrap();
         net.attach();
     }
 
-    node.busy.set(false);
+    node.busy.store(false, Ordering::Relaxed);
 
-    info!("node_finalize_new_node: finalized node primary={:#06x}", node.primary.get());
+    info!(
+        "node_finalize_new_node: finalized node primary={:#06x}",
+        node.primary.load(Ordering::Relaxed)
+    );
     true
 }
 
@@ -1354,7 +1349,7 @@ pub fn node_finalize_new_node(node: &MeshNode, _io: &MeshIoSendInfo) -> bool {
 
 /// Attach I/O to a specific node.
 pub fn node_attach_io(node: &MeshNode, _io: &MeshIoSendInfo) {
-    let mut net = node.net.borrow_mut();
+    let mut net = node.net.lock().unwrap();
     net.attach();
 }
 
@@ -1362,7 +1357,7 @@ pub fn node_attach_io(node: &MeshNode, _io: &MeshIoSendInfo) {
 pub fn node_attach_io_all(_io: &MeshIoSendInfo) {
     if let Ok(list) = nodes().lock() {
         for node in list.iter() {
-            let mut net = node.net.borrow_mut();
+            let mut net = node.net.lock().unwrap();
             net.attach();
         }
     }
@@ -1378,14 +1373,14 @@ pub fn node_cleanup_all() {
     if let Ok(mut list) = nodes().lock() {
         for node in list.drain(..) {
             // Release config
-            let mut cfg = node.config.borrow_mut();
+            let mut cfg = node.config.lock().unwrap();
             if let Some(ref mut config) = *cfg {
                 config.release();
             }
             *cfg = None;
 
             // Free network
-            let mut net = node.net.borrow_mut();
+            let mut net = node.net.lock().unwrap();
             net.free();
         }
     }
@@ -1398,8 +1393,8 @@ pub fn node_cleanup_all() {
 /// Build the D-Bus reply content for a successful Attach operation.
 pub fn node_build_attach_reply(node: &MeshNode) -> Vec<(String, HashMap<String, Value<'static>>)> {
     let mut result = Vec::new();
-    let elements = node.elements.borrow();
-    let num_ele = node.num_ele.get();
+    let elements = node.elements.lock().unwrap();
+    let num_ele = node.num_ele.load(Ordering::Relaxed);
 
     for ele_idx in 0..num_ele {
         if let Some(ele) = elements.get(ele_idx as usize) {
@@ -1465,9 +1460,9 @@ impl NodeInterface {
         let ele_idx = get_element_index(&self.node, element_path)
             .ok_or_else(|| MeshDbusError::InvalidArgs("Invalid element path".into()))?;
 
-        let ttl = self.node.ttl.get();
+        let ttl = self.node.ttl.load(Ordering::Relaxed);
         let net_idx = {
-            let net = self.node.net.borrow();
+            let net = self.node.net.lock().unwrap();
             appkey_net_idx(&net, key_index)
         };
 
@@ -1491,7 +1486,7 @@ impl NodeInterface {
         let ele_idx = get_element_index(&self.node, element_path)
             .ok_or_else(|| MeshDbusError::InvalidArgs("Invalid element path".into()))?;
 
-        let ttl = self.node.ttl.get();
+        let ttl = self.node.ttl.load(Ordering::Relaxed);
         let app_idx = if remote { APP_IDX_DEV_REMOTE } else { APP_IDX_DEV_LOCAL };
 
         if !mesh_model_send(&self.node, ele_idx, destination, app_idx, net_index, ttl, true, &data)
@@ -1528,7 +1523,7 @@ impl NodeInterface {
         let key = if update { &net_key_entry.new_key } else { &net_key_entry.old_key };
         msg_data.extend_from_slice(key);
 
-        let ttl = self.node.ttl.get();
+        let ttl = self.node.ttl.load(Ordering::Relaxed);
 
         if !mesh_model_send(
             &self.node,
@@ -1576,7 +1571,7 @@ impl NodeInterface {
         let key = if update { &app_key_entry.new_key } else { &app_key_entry.old_key };
         msg_data.extend_from_slice(key);
 
-        let ttl = self.node.ttl.get();
+        let ttl = self.node.ttl.load(Ordering::Relaxed);
 
         if !mesh_model_send(
             &self.node,
@@ -1618,7 +1613,7 @@ impl NodeInterface {
     /// Node features bitmask.
     #[zbus(property)]
     pub fn features(&self) -> u16 {
-        let modes = self.node.modes.borrow();
+        let modes = self.node.modes.lock().unwrap();
         let mut features: u16 = 0;
 
         if modes.relay == MESH_MODE_ENABLED {
@@ -1630,7 +1625,7 @@ impl NodeInterface {
         if modes.friend == MESH_MODE_ENABLED {
             features |= FEATURE_FRIEND;
         }
-        if self.node.lpn_mode.get() == MESH_MODE_ENABLED {
+        if self.node.lpn_mode.load(Ordering::Relaxed) == MESH_MODE_ENABLED {
             features |= FEATURE_LPN;
         }
 
@@ -1640,14 +1635,14 @@ impl NodeInterface {
     /// Whether Secure Network Beaconing is enabled.
     #[zbus(property)]
     pub fn beacon(&self) -> bool {
-        let modes = self.node.modes.borrow();
+        let modes = self.node.modes.lock().unwrap();
         modes.beacon == MESH_MODE_ENABLED
     }
 
     /// Whether an IV Update procedure is in progress.
     #[zbus(property)]
     pub fn iv_update(&self) -> bool {
-        let net = self.node.net.borrow();
+        let net = self.node.net.lock().unwrap();
         let (_, update) = net.get_iv_index();
         update
     }
@@ -1655,7 +1650,7 @@ impl NodeInterface {
     /// Node's IV Index.
     #[zbus(property)]
     pub fn iv_index(&self) -> u32 {
-        let net = self.node.net.borrow();
+        let net = self.node.net.lock().unwrap();
         let (iv, _) = net.get_iv_index();
         iv
     }
@@ -1663,14 +1658,14 @@ impl NodeInterface {
     /// Sequence number cache for this node.
     #[zbus(property)]
     pub fn sequence_number(&self) -> u32 {
-        self.node.seq_number.get()
+        self.node.seq_number.load(Ordering::Relaxed)
     }
 
     /// Array of element addresses starting from the primary.
     #[zbus(property)]
     pub fn addresses(&self) -> Vec<u16> {
-        let primary = self.node.primary.get();
-        let count = self.node.num_ele.get() as u16;
+        let primary = self.node.primary.load(Ordering::Relaxed);
+        let count = self.node.num_ele.load(Ordering::Relaxed) as u16;
         (0..count).map(|i| primary + i).collect()
     }
 }
@@ -1700,13 +1695,13 @@ mod tests {
     #[test]
     fn test_mesh_node_new() {
         let node = MeshNode::new();
-        assert_eq!(node.primary.get(), UNASSIGNED_ADDRESS);
-        assert_eq!(node.num_ele.get(), 0);
-        assert_eq!(node.seq_number.get(), 0);
-        assert_eq!(node.ttl.get(), DEFAULT_TTL);
-        assert!(!node.provisioner.get());
-        assert!(!node.busy.get());
-        assert_eq!(node.token.get(), 0);
+        assert_eq!(node.primary.load(Ordering::Relaxed), UNASSIGNED_ADDRESS);
+        assert_eq!(node.num_ele.load(Ordering::Relaxed), 0);
+        assert_eq!(node.seq_number.load(Ordering::Relaxed), 0);
+        assert_eq!(node.ttl.load(Ordering::Relaxed), DEFAULT_TTL);
+        assert!(!node.provisioner.load(Ordering::Relaxed));
+        assert!(!node.busy.load(Ordering::Relaxed));
+        assert_eq!(node.token.load(Ordering::Relaxed), 0);
     }
 
     #[test]
@@ -1723,37 +1718,37 @@ mod tests {
     fn test_default_ttl_set_valid() {
         let node = MeshNode::new();
         assert!(node.default_ttl_set(0x7F));
-        assert_eq!(node.ttl.get(), 0x7F);
+        assert_eq!(node.ttl.load(Ordering::Relaxed), 0x7F);
     }
 
     #[test]
     fn test_default_ttl_set_invalid() {
         let node = MeshNode::new();
-        node.ttl.set(5);
+        node.ttl.store(5, Ordering::Relaxed);
         assert!(!node.default_ttl_set(0x80));
-        assert_eq!(node.ttl.get(), 5);
+        assert_eq!(node.ttl.load(Ordering::Relaxed), 5);
     }
 
     #[test]
     fn test_default_ttl_set_max() {
         let node = MeshNode::new();
         assert!(node.default_ttl_set(0xFF));
-        assert_eq!(node.ttl.get(), 0xFF);
+        assert_eq!(node.ttl.load(Ordering::Relaxed), 0xFF);
     }
 
     #[test]
     fn test_get_element_idx_empty() {
         let node = MeshNode::new();
-        node.primary.set(0x0100);
-        node.num_ele.set(0);
+        node.primary.store(0x0100, Ordering::Relaxed);
+        node.num_ele.store(0, Ordering::Relaxed);
         assert!(node.get_element_idx(0x0100).is_none());
     }
 
     #[test]
     fn test_get_element_idx_valid() {
         let node = MeshNode::new();
-        node.primary.set(0x0100);
-        node.num_ele.set(3);
+        node.primary.store(0x0100, Ordering::Relaxed);
+        node.num_ele.store(3, Ordering::Relaxed);
         assert_eq!(node.get_element_idx(0x0100), Some(0));
         assert_eq!(node.get_element_idx(0x0101), Some(1));
         assert_eq!(node.get_element_idx(0x0102), Some(2));

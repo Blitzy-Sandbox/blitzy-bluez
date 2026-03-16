@@ -26,7 +26,7 @@ use bluez_shared::gatt::db::GattDb;
 use bluez_shared::gatt::server::BtGattServer;
 use bluez_shared::sys::bluetooth::{BDADDR_BREDR, BDADDR_LE_PUBLIC, BDADDR_LE_RANDOM, BdAddr};
 use bluez_shared::sys::hci::HCI_OE_USER_ENDED_CONNECTION;
-use bluez_shared::sys::mgmt::MGMT_STATUS_SUCCESS;
+use bluez_shared::sys::mgmt::{MGMT_OP_ADD_DEVICE, MGMT_OP_PAIR_DEVICE, MGMT_STATUS_SUCCESS};
 use bluez_shared::util::ad::BtAd;
 use bluez_shared::util::eir::EirData;
 
@@ -211,17 +211,33 @@ struct DisconnectWatchEntry {
     callback: DisconnectWatch,
 }
 
+/// BR/EDR link key information persisted in `[LinkKey]` INI section.
 #[derive(Debug, Clone)]
-#[allow(dead_code)]
-pub struct LtkInfo {
-    key: [u8; 16],
-    authenticated: bool,
-    enc_size: u8,
-    ediv: u16,
-    rand: u64,
-    central: bool,
+pub struct LinkKeyInfo {
+    /// 128-bit link key value.
+    pub key: [u8; 16],
+    /// Key type (combination, local unit, remote unit, etc.).
+    pub key_type: u8,
+    /// PIN code length used during pairing (0 = no PIN / SSP).
+    pub pin_len: u8,
 }
 
+/// LE Long-Term Key information persisted in `[LongTermKey]` /
+/// `[SlaveLongTermKey]` INI sections.
+#[derive(Debug, Clone)]
+pub struct LtkInfo {
+    pub key: [u8; 16],
+    pub authenticated: bool,
+    pub enc_size: u8,
+    pub ediv: u16,
+    pub rand: u64,
+    pub central: bool,
+}
+
+/// Connection Signature Resolving Key information persisted in
+/// `[IdentityResolvingKey]` (CSRK isn't a separate section in the C
+/// daemon — the local/remote CSRKs are stored inline in `[LocalSignatureKey]`
+/// and `[RemoteSignatureKey]`).
 #[derive(Debug, Clone)]
 #[allow(dead_code)]
 struct CsrkInfo {
@@ -267,6 +283,8 @@ fn next_id() -> u32 {
 #[allow(dead_code)]
 pub struct BtdDevice {
     pub adapter: Arc<Mutex<BtdAdapter>>,
+    /// D-Bus object path of the owning adapter (e.g. `/org/bluez/hci0`).
+    pub adapter_path: String,
     pub address: BdAddr,
     pub address_type: AddressType,
     conn_bdaddr: BdAddr,
@@ -309,6 +327,7 @@ pub struct BtdDevice {
     gatt_server: Option<Arc<BtGattServer>>,
     gatt_ready_id: u32,
     client_dbus: bool,
+    link_key: Option<LinkKeyInfo>,
     local_csrk: Option<CsrkInfo>,
     remote_csrk: Option<CsrkInfo>,
     ltk: Option<LtkInfo>,
@@ -359,10 +378,12 @@ impl BtdDevice {
         adapter: Arc<Mutex<BtdAdapter>>,
         address: BdAddr,
         address_type: AddressType,
+        adapter_path: &str,
     ) -> Self {
-        let path = device_path_from_adapter_and_addr("", &address);
+        let path = device_path_from_adapter_and_addr(adapter_path, &address);
         Self {
             adapter,
+            adapter_path: adapter_path.to_string(),
             address,
             address_type,
             conn_bdaddr: address,
@@ -405,6 +426,7 @@ impl BtdDevice {
             gatt_server: None,
             gatt_ready_id: 0,
             client_dbus: false,
+            link_key: None,
             local_csrk: None,
             remote_csrk: None,
             ltk: None,
@@ -582,7 +604,7 @@ impl BtdDevice {
     pub fn update_addr(&mut self, addr: BdAddr, at: AddressType) {
         self.address = addr;
         self.address_type = at;
-        self.path = device_path_from_adapter_and_addr("", &addr);
+        self.path = device_path_from_adapter_and_addr(&self.adapter_path, &addr);
     }
 
     // ------- Bearer support -------
@@ -1091,7 +1113,9 @@ impl BtdDevice {
 
     // ------- Key management -------
 
-    pub fn set_linkkey(&mut self, _key: [u8; 16], _kt: u8, _pl: u8) {
+    /// Store a BR/EDR link key and mark the BR/EDR bearer as paired+bonded.
+    pub fn set_linkkey(&mut self, key: [u8; 16], key_type: u8, pin_len: u8) {
+        self.link_key = Some(LinkKeyInfo { key, key_type, pin_len });
         self.bredr_state.paired = true;
         self.bredr_state.bonded = true;
         self.paired = true;
@@ -1206,6 +1230,7 @@ impl BtdDevice {
     /// Strip all bonding information from the device.
     pub fn remove_bonding(&mut self) {
         self.set_unpaired();
+        self.link_key = None;
         self.ltk = None;
         self.slave_ltk = None;
         self.local_csrk = None;
@@ -1303,12 +1328,28 @@ impl BtdDevice {
     // ------- Store / Load (INI persistence) -------
 
     /// Persist device state to the storage directory in INI format.
-    /// Format is byte-identical to C BlueZ (AAP Section 0.7.10).
+    ///
+    /// The on-disk format is byte-identical to the C BlueZ daemon so that
+    /// existing Bluetooth pairings survive daemon replacement.  The file
+    /// contains the following INI sections (AAP §0.7.10):
+    ///
+    /// - `[General]` — name, alias, class, appearance, address type,
+    ///   trust/block flags, supported technologies
+    /// - `[DeviceID]`          — PnP vendor/product/version (when non-zero)
+    /// - `[LinkKey]`           — BR/EDR link key (when present)
+    /// - `[LongTermKey]`       — LE central LTK (when present)
+    /// - `[SlaveLongTermKey]`  — LE peripheral LTK (when present)
+    /// - `[IdentityResolvingKey]` — IRK (when present)
+    /// - `[LocalSignatureKey]` — local CSRK (when present)
+    /// - `[RemoteSignatureKey]`— remote CSRK (when present)
+    /// - `[ConnectionParameters]` — LE connection parameters (when set)
     pub fn store(&self) {
         if self.temporary {
             return;
         }
         let mut ini = ini::Ini::new();
+
+        // ----- [General] -----
         ini.with_section(Some("General"))
             .set("Name", self.name.as_deref().unwrap_or(""))
             .set("Alias", self.alias.as_deref().unwrap_or(""))
@@ -1330,12 +1371,61 @@ impl BtdDevice {
             ini.with_section(Some("General")).set("SupportedTechnologies", techs.join(";"));
         }
 
+        // ----- [DeviceID] -----
         if self.vendor_src != 0 {
             ini.with_section(Some("DeviceID"))
                 .set("Source", format!("0x{:04x}", self.vendor_src))
                 .set("Vendor", format!("0x{:04x}", self.vendor))
                 .set("Product", format!("0x{:04x}", self.product))
                 .set("Version", format!("0x{:04x}", self.version));
+        }
+
+        // ----- [LinkKey] — BR/EDR link key -----
+        if let Some(ref lk) = self.link_key {
+            ini.with_section(Some("LinkKey"))
+                .set("Key", hex_encode_key(&lk.key))
+                .set("Type", format!("{}", lk.key_type))
+                .set("PINLength", format!("{}", lk.pin_len));
+        }
+
+        // ----- [LongTermKey] — LE central (master) LTK -----
+        if let Some(ref ltk) = self.ltk {
+            store_ltk_section(&mut ini, "LongTermKey", ltk);
+        }
+
+        // ----- [SlaveLongTermKey] — LE peripheral (slave) LTK -----
+        if let Some(ref ltk) = self.slave_ltk {
+            store_ltk_section(&mut ini, "SlaveLongTermKey", ltk);
+        }
+
+        // ----- [IdentityResolvingKey] -----
+        if let Some(ref irk) = self.irk {
+            ini.with_section(Some("IdentityResolvingKey")).set("Key", hex_encode_key(irk));
+        }
+
+        // ----- [LocalSignatureKey] -----
+        if let Some(ref csrk) = self.local_csrk {
+            ini.with_section(Some("LocalSignatureKey"))
+                .set("Key", hex_encode_key(&csrk.key))
+                .set("Counter", format!("{}", csrk.counter))
+                .set("Authenticated", if csrk.authenticated { "true" } else { "false" });
+        }
+
+        // ----- [RemoteSignatureKey] -----
+        if let Some(ref csrk) = self.remote_csrk {
+            ini.with_section(Some("RemoteSignatureKey"))
+                .set("Key", hex_encode_key(&csrk.key))
+                .set("Counter", format!("{}", csrk.counter))
+                .set("Authenticated", if csrk.authenticated { "true" } else { "false" });
+        }
+
+        // ----- [ConnectionParameters] -----
+        if self.conn_min_interval != 0 || self.conn_max_interval != 0 {
+            ini.with_section(Some("ConnectionParameters"))
+                .set("MinInterval", format!("{}", self.conn_min_interval))
+                .set("MaxInterval", format!("{}", self.conn_max_interval))
+                .set("Latency", format!("{}", self.conn_latency))
+                .set("Timeout", format!("{}", self.conn_timeout));
         }
 
         let path = self.get_storage_path();
@@ -1404,6 +1494,71 @@ impl BtdDevice {
                 self.modalias = Some(self.get_pnp_id().to_modalias());
             }
         }
+
+        // ----- [LinkKey] — BR/EDR link key -----
+        if let Some(s) = ini.section(Some("LinkKey")) {
+            if let Some(key) = s.get("Key").and_then(hex_decode_key) {
+                let key_type = s.get("Type").and_then(|v| v.parse().ok()).unwrap_or(0);
+                let pin_len = s.get("PINLength").and_then(|v| v.parse().ok()).unwrap_or(0);
+                self.link_key = Some(LinkKeyInfo { key, key_type, pin_len });
+                self.bredr_state.paired = true;
+                self.bredr_state.bonded = true;
+                self.paired = true;
+                self.bonded = true;
+            }
+        }
+
+        // ----- [LongTermKey] — LE central (master) LTK -----
+        if let Some(ltk) = load_ltk_section(&ini, "LongTermKey", true) {
+            self.ltk = Some(ltk);
+            self.le_state.paired = true;
+            self.le_state.bonded = true;
+            self.paired = true;
+            self.bonded = true;
+        }
+
+        // ----- [SlaveLongTermKey] — LE peripheral (slave) LTK -----
+        if let Some(ltk) = load_ltk_section(&ini, "SlaveLongTermKey", false) {
+            self.slave_ltk = Some(ltk);
+            self.le_state.paired = true;
+            self.le_state.bonded = true;
+            self.paired = true;
+            self.bonded = true;
+        }
+
+        // ----- [IdentityResolvingKey] -----
+        if let Some(s) = ini.section(Some("IdentityResolvingKey")) {
+            if let Some(key) = s.get("Key").and_then(hex_decode_key) {
+                self.irk = Some(key);
+            }
+        }
+
+        // ----- [LocalSignatureKey] -----
+        if let Some(s) = ini.section(Some("LocalSignatureKey")) {
+            if let Some(key) = s.get("Key").and_then(hex_decode_key) {
+                let counter = s.get("Counter").and_then(|v| v.parse().ok()).unwrap_or(0);
+                let authenticated = s.get("Authenticated").is_some_and(|v| v == "true" || v == "1");
+                self.local_csrk = Some(CsrkInfo { key, authenticated, is_local: true, counter });
+            }
+        }
+
+        // ----- [RemoteSignatureKey] -----
+        if let Some(s) = ini.section(Some("RemoteSignatureKey")) {
+            if let Some(key) = s.get("Key").and_then(hex_decode_key) {
+                let counter = s.get("Counter").and_then(|v| v.parse().ok()).unwrap_or(0);
+                let authenticated = s.get("Authenticated").is_some_and(|v| v == "true" || v == "1");
+                self.remote_csrk = Some(CsrkInfo { key, authenticated, is_local: false, counter });
+            }
+        }
+
+        // ----- [ConnectionParameters] -----
+        if let Some(s) = ini.section(Some("ConnectionParameters")) {
+            self.conn_min_interval = s.get("MinInterval").and_then(|v| v.parse().ok()).unwrap_or(0);
+            self.conn_max_interval = s.get("MaxInterval").and_then(|v| v.parse().ok()).unwrap_or(0);
+            self.conn_latency = s.get("Latency").and_then(|v| v.parse().ok()).unwrap_or(0);
+            self.conn_timeout = s.get("Timeout").and_then(|v| v.parse().ok()).unwrap_or(0);
+        }
+
         self.temporary = false;
     }
 
@@ -1415,7 +1570,7 @@ impl BtdDevice {
             return Ok(());
         }
         let conn = btd_get_dbus_connection();
-        let iface = DeviceInterface::new(self);
+        let iface = DeviceInterface::new(self, &self.adapter_path);
         conn.object_server()
             .at(self.path.as_str(), iface)
             .await
@@ -1454,6 +1609,12 @@ impl BtdDevice {
 /// This struct caches device state for synchronous property reads while
 /// methods delegate to the shared `BtdDevice` via async adapter calls.
 pub struct DeviceInterface {
+    /// Back-reference to the adapter for MGMT operations (Connect, Pair).
+    adapter: Arc<Mutex<BtdAdapter>>,
+    /// Kernel address type for MGMT commands.
+    kernel_addr_type: u8,
+    /// Parsed BD_ADDR for MGMT commands.
+    bdaddr: BdAddr,
     address: String,
     address_type_str: String,
     device_name: String,
@@ -1482,8 +1643,16 @@ pub struct DeviceInterface {
 }
 
 impl DeviceInterface {
-    pub fn new(dev: &BtdDevice) -> Self {
+    /// Build the D-Bus interface snapshot from the live device state.
+    ///
+    /// `adapter_path` is the owning adapter's D-Bus object path (e.g.
+    /// `/org/bluez/hci0`).  It is used for the `Adapter` property so
+    /// that clients can navigate the object hierarchy.
+    pub fn new(dev: &BtdDevice, adapter_path: &str) -> Self {
         Self {
+            adapter: Arc::clone(&dev.adapter),
+            kernel_addr_type: dev.address_type.to_kernel(),
+            bdaddr: dev.address,
             address: dev.address.ba2str(),
             address_type_str: dev.address_type.as_str().into(),
             device_name: dev.name.clone().unwrap_or_default(),
@@ -1505,7 +1674,7 @@ impl DeviceInterface {
             services_resolved: dev.svc_resolved,
             advertising_flags: dev.advertising_flags.clone(),
             advertising_data: dev.advertising_data.clone(),
-            adapter_path: String::new(),
+            adapter_path: adapter_path.to_string(),
             sets: dev.sets.clone(),
             modalias: dev.modalias.clone().unwrap_or_default(),
             wake_allowed: dev.wake_allowed,
@@ -1517,6 +1686,12 @@ impl DeviceInterface {
 impl DeviceInterface {
     // ------ Methods ------
 
+    /// Initiate a connection to the remote device.
+    ///
+    /// Sends `MGMT_OP_ADD_DEVICE` to the kernel Management API which adds the
+    /// device to the controller's connection allow-list and triggers an
+    /// outgoing page/connection request.  The actual connection completion is
+    /// delivered asynchronously via `MGMT_EV_DEVICE_CONNECTED`.
     async fn connect(&self) -> Result<(), BtdError> {
         if self.blocked {
             return Err(BtdError::failed("Device is blocked"));
@@ -1524,9 +1699,33 @@ impl DeviceInterface {
         if self.connected_flag {
             return Err(BtdError::already_connected());
         }
-        Ok(())
+
+        let adapter = self.adapter.lock().await;
+        if !adapter.powered {
+            return Err(BtdError::not_ready());
+        }
+        let mgmt = adapter.mgmt().ok_or_else(BtdError::not_ready)?;
+        let idx = adapter.index;
+        drop(adapter);
+
+        // Build MGMT_OP_ADD_DEVICE parameter:
+        //   struct mgmt_cp_add_device { bdaddr[6], type, action }
+        //   action = 0x02 (auto-connect)
+        let mut param = [0u8; 8];
+        param[..6].copy_from_slice(&self.bdaddr.b);
+        param[6] = self.kernel_addr_type;
+        param[7] = 0x02; // ACTION_AUTO_CONNECT
+        let resp = mgmt.send_command(MGMT_OP_ADD_DEVICE, idx, &param).await;
+        match resp {
+            Ok(r) if r.status == MGMT_STATUS_SUCCESS => Ok(()),
+            Ok(r) => {
+                Err(BtdError::failed(&format!("MGMT_OP_ADD_DEVICE failed: status {}", r.status)))
+            }
+            Err(e) => Err(BtdError::failed(&format!("MGMT send error: {}", e))),
+        }
     }
 
+    /// Disconnect from the remote device.
     async fn disconnect(&self) -> Result<(), BtdError> {
         if !self.connected_flag {
             return Err(BtdError::not_connected());
@@ -1534,6 +1733,7 @@ impl DeviceInterface {
         Ok(())
     }
 
+    /// Connect a specific profile on the remote device.
     async fn connect_profile(&self, uuid: &str) -> Result<(), BtdError> {
         if uuid.is_empty() {
             return Err(BtdError::invalid_args());
@@ -1544,6 +1744,7 @@ impl DeviceInterface {
         Ok(())
     }
 
+    /// Disconnect a specific profile on the remote device.
     async fn disconnect_profile(&self, uuid: &str) -> Result<(), BtdError> {
         if uuid.is_empty() {
             return Err(BtdError::invalid_args());
@@ -1554,13 +1755,44 @@ impl DeviceInterface {
         Ok(())
     }
 
+    /// Initiate pairing with the remote device.
+    ///
+    /// Sends `MGMT_OP_PAIR_DEVICE` to the kernel Management API.  The kernel
+    /// handles IO capability exchange, authentication, and key distribution.
+    /// The pairing result is delivered asynchronously via MGMT events
+    /// (`MGMT_EV_NEW_LINK_KEY`, `MGMT_EV_NEW_LONG_TERM_KEY`, etc.) which are
+    /// processed in the adapter event loop.
     async fn pair(&self) -> Result<(), BtdError> {
         if self.paired {
             return Err(BtdError::already_exists());
         }
-        Ok(())
+
+        let adapter = self.adapter.lock().await;
+        if !adapter.powered {
+            return Err(BtdError::not_ready());
+        }
+        let mgmt = adapter.mgmt().ok_or_else(BtdError::not_ready)?;
+        let idx = adapter.index;
+        drop(adapter);
+
+        // Build MGMT_OP_PAIR_DEVICE parameter:
+        //   struct mgmt_cp_pair_device { bdaddr[6], type, io_cap }
+        //   io_cap = 0x03 (KeyboardDisplay — the daemon acts as a conduit)
+        let mut param = [0u8; 8];
+        param[..6].copy_from_slice(&self.bdaddr.b);
+        param[6] = self.kernel_addr_type;
+        param[7] = 0x03; // IO_CAPABILITY_KEYBOARD_DISPLAY
+        let resp = mgmt.send_command(MGMT_OP_PAIR_DEVICE, idx, &param).await;
+        match resp {
+            Ok(r) if r.status == MGMT_STATUS_SUCCESS => Ok(()),
+            Ok(r) => {
+                Err(BtdError::failed(&format!("MGMT_OP_PAIR_DEVICE failed: status {}", r.status)))
+            }
+            Err(e) => Err(BtdError::failed(&format!("MGMT send error: {}", e))),
+        }
     }
 
+    /// Cancel an in-progress pairing.
     async fn cancel_pairing(&self) -> Result<(), BtdError> {
         Ok(())
     }
@@ -1740,6 +1972,53 @@ pub fn device_addr_type_to_string(at: u8) -> &'static str {
     }
 }
 
+// ---------------------------------------------------------------------------
+// INI persistence helpers
+// ---------------------------------------------------------------------------
+
+/// Encode a 16-byte key as an uppercase hex string without separators.
+/// This matches the C `store_linkkey` / `store_longtermkey` format exactly.
+fn hex_encode_key(key: &[u8; 16]) -> String {
+    key.iter().map(|b| format!("{:02X}", b)).collect()
+}
+
+/// Decode a 32-character hex string into a 16-byte key array.
+fn hex_decode_key(s: &str) -> Option<[u8; 16]> {
+    if s.len() < 32 {
+        return None;
+    }
+    let mut out = [0u8; 16];
+    for (i, byte) in out.iter_mut().enumerate() {
+        *byte = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    Some(out)
+}
+
+/// Write an LTK (Long-Term Key) section to an INI file.
+fn store_ltk_section(ini: &mut ini::Ini, section: &str, ltk: &LtkInfo) {
+    ini.with_section(Some(section.to_string()))
+        .set("Key", hex_encode_key(&ltk.key))
+        .set("Authenticated", format!("{}", u8::from(ltk.authenticated)))
+        .set("EncSize", format!("{}", ltk.enc_size))
+        .set("EDiv", format!("{}", ltk.ediv))
+        .set("Rand", format!("{}", ltk.rand));
+}
+
+/// Load an LTK (Long-Term Key) from an INI section.
+fn load_ltk_section(ini: &ini::Ini, section: &str, central: bool) -> Option<LtkInfo> {
+    let s = ini.section(Some(section))?;
+    let key = hex_decode_key(s.get("Key")?)?;
+    let authenticated = s.get("Authenticated").is_some_and(|v| v == "1" || v == "true");
+    let enc_size = s.get("EncSize").and_then(|v| v.parse().ok()).unwrap_or(0);
+    let ediv = s.get("EDiv").and_then(|v| v.parse().ok()).unwrap_or(0);
+    let rand = s.get("Rand").and_then(|v| v.parse().ok()).unwrap_or(0);
+    Some(LtkInfo { key, authenticated, enc_size, ediv, rand, central })
+}
+
+// ---------------------------------------------------------------------------
+// Path helpers
+// ---------------------------------------------------------------------------
+
 /// Convert a `BdAddr` into the D-Bus path leaf (e.g. `dev_AA_BB_CC_DD_EE_FF`).
 pub fn device_name_to_path(address: &BdAddr) -> String {
     format!("dev_{}", address.ba2str().replace(':', "_"))
@@ -1749,30 +2028,40 @@ pub fn device_name_to_path(address: &BdAddr) -> String {
 fn device_path_from_adapter_and_addr(adapter_path: &str, address: &BdAddr) -> String {
     let dev = device_name_to_path(address);
     if adapter_path.is_empty() {
-        format!("/org/bluez/{}", dev)
+        // Fallback to hci0 when adapter_path is not provided.  This keeps
+        // existing tests working while ensuring a structurally correct path.
+        format!("/org/bluez/hci0/{}", dev)
     } else {
         format!("{}/{}", adapter_path, dev)
     }
 }
 
 /// Create a new device as a temporary (discovered) device.
+///
+/// `adapter_path` is the D-Bus object path of the owning adapter
+/// (e.g. `/org/bluez/hci0`).  It is embedded into the device's own
+/// D-Bus path so that clients see the correct hierarchy.
 pub fn device_create(
     adapter: Arc<Mutex<BtdAdapter>>,
     address: BdAddr,
     address_type: AddressType,
+    adapter_path: &str,
 ) -> Arc<Mutex<BtdDevice>> {
-    let mut d = BtdDevice::new(adapter, address, address_type);
+    let mut d = BtdDevice::new(adapter, address, address_type, adapter_path);
     d.temporary = true;
     Arc::new(Mutex::new(d))
 }
 
 /// Create a device populated from persistent storage.
+///
+/// `adapter_path` is the D-Bus object path of the owning adapter.
 pub fn device_create_from_storage(
     adapter: Arc<Mutex<BtdAdapter>>,
     address: BdAddr,
     address_type: AddressType,
+    adapter_path: &str,
 ) -> Arc<Mutex<BtdDevice>> {
-    let mut d = BtdDevice::new(adapter, address, address_type);
+    let mut d = BtdDevice::new(adapter, address, address_type, adapter_path);
     d.temporary = false;
     d.load();
     Arc::new(Mutex::new(d))
@@ -1874,15 +2163,17 @@ mod tests {
 
     #[tokio::test]
     async fn create_device() {
-        let d = device_create(adapter(), addr(), AddressType::Bredr);
+        let d = device_create(adapter(), addr(), AddressType::Bredr, "/org/bluez/hci0");
         let g = d.lock().await;
         assert!(g.is_temporary());
         assert!(!g.is_connected());
+        // Verify the device path includes the adapter path prefix
+        assert!(g.get_path().starts_with("/org/bluez/hci0/dev_"));
     }
 
     #[tokio::test]
     async fn name_alias() {
-        let d = device_create(adapter(), addr(), AddressType::Bredr);
+        let d = device_create(adapter(), addr(), AddressType::Bredr, "/org/bluez/hci0");
         let mut g = d.lock().await;
         assert!(!g.get_alias().is_empty());
         g.set_name("Test");
@@ -1895,7 +2186,7 @@ mod tests {
 
     #[tokio::test]
     async fn uuid_mgmt() {
-        let d = device_create(adapter(), addr(), AddressType::LePublic);
+        let d = device_create(adapter(), addr(), AddressType::LePublic, "/org/bluez/hci0");
         let mut g = d.lock().await;
         g.add_uuid("0000110a-0000-1000-8000-00805f9b34fb");
         assert!(g.has_uuid("0000110A-0000-1000-8000-00805F9B34FB"));
@@ -1905,7 +2196,7 @@ mod tests {
 
     #[tokio::test]
     async fn bearer_state() {
-        let d = device_create(adapter(), addr(), AddressType::Bredr);
+        let d = device_create(adapter(), addr(), AddressType::Bredr, "/org/bluez/hci0");
         let mut g = d.lock().await;
         g.add_connection(BDADDR_BREDR);
         assert!(g.is_connected());
@@ -1915,7 +2206,7 @@ mod tests {
 
     #[tokio::test]
     async fn bonding() {
-        let d = device_create(adapter(), addr(), AddressType::LePublic);
+        let d = device_create(adapter(), addr(), AddressType::LePublic, "/org/bluez/hci0");
         let mut g = d.lock().await;
         g.set_linkkey([0u8; 16], 0, 0);
         assert!(g.is_paired());
@@ -1925,7 +2216,7 @@ mod tests {
 
     #[tokio::test]
     async fn disconnect_watch() {
-        let d = device_create(adapter(), addr(), AddressType::Bredr);
+        let d = device_create(adapter(), addr(), AddressType::Bredr, "/org/bluez/hci0");
         let mut g = d.lock().await;
         let c = Arc::new(AtomicBool::new(false));
         let cc = c.clone();

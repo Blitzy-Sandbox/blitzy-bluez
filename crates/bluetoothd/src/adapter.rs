@@ -46,17 +46,22 @@ use bluez_shared::sys::mgmt::{
     MGMT_EV_NEW_CSRK, MGMT_EV_NEW_IRK, MGMT_EV_NEW_LINK_KEY, MGMT_EV_NEW_LONG_TERM_KEY,
     MGMT_EV_NEW_SETTINGS, MGMT_EV_PIN_CODE_REQUEST, MGMT_EV_USER_CONFIRM_REQUEST,
     MGMT_EV_USER_PASSKEY_REQUEST, MGMT_OP_ADD_DEVICE, MGMT_OP_ADD_UUID, MGMT_OP_DISCONNECT,
-    MGMT_OP_PAIR_DEVICE, MGMT_OP_REMOVE_UUID, MGMT_OP_SET_BONDABLE, MGMT_OP_SET_DEV_CLASS,
-    MGMT_OP_SET_DISCOVERABLE, MGMT_OP_SET_FAST_CONNECTABLE, MGMT_OP_SET_LOCAL_NAME,
-    MGMT_OP_SET_POWERED, MGMT_OP_START_DISCOVERY, MGMT_OP_STOP_DISCOVERY, MGMT_OP_UNPAIR_DEVICE,
-    MGMT_STATUS_RFKILLED, MGMT_STATUS_SUCCESS, MgmtSettings, mgmt_blocked_key_info,
-    mgmt_conn_param, mgmt_errstr, mgmt_rp_read_info,
+    MGMT_OP_PAIR_DEVICE, MGMT_OP_PIN_CODE_NEG_REPLY, MGMT_OP_PIN_CODE_REPLY, MGMT_OP_REMOVE_UUID,
+    MGMT_OP_SET_BONDABLE, MGMT_OP_SET_DEV_CLASS, MGMT_OP_SET_DISCOVERABLE,
+    MGMT_OP_SET_FAST_CONNECTABLE, MGMT_OP_SET_LOCAL_NAME, MGMT_OP_SET_POWERED,
+    MGMT_OP_START_DISCOVERY, MGMT_OP_STOP_DISCOVERY, MGMT_OP_UNPAIR_DEVICE,
+    MGMT_OP_USER_CONFIRM_NEG_REPLY, MGMT_OP_USER_CONFIRM_REPLY, MGMT_OP_USER_PASSKEY_NEG_REPLY,
+    MGMT_OP_USER_PASSKEY_REPLY, MGMT_STATUS_RFKILLED, MGMT_STATUS_SUCCESS, MgmtSettings,
+    mgmt_blocked_key_info, mgmt_conn_param, mgmt_errstr, mgmt_rp_read_info,
 };
 use bluez_shared::util::eir::{EirData, eir_parse};
 use bluez_shared::util::uuid::BtUuid;
 
+use crate::agent::{
+    agent_get, agent_request_confirmation, agent_request_passkey, agent_request_pincode,
+};
 use crate::config::BtdOpts;
-use crate::device::BtdDevice;
+use crate::device::{AddressType, BtdDevice, device_create_from_storage};
 use crate::error::BtdError;
 use crate::gatt::database::BtdGattDatabase;
 use crate::log::{btd_debug, btd_info, btd_warn};
@@ -748,6 +753,12 @@ impl BtdAdapter {
         }
     }
 
+    /// Public accessor for the optional MGMT socket.
+    /// Used by device.rs for issuing commands on behalf of the adapter.
+    pub fn mgmt(&self) -> Option<Arc<MgmtSocket>> {
+        self.mgmt.clone()
+    }
+
     fn uuid_list(&self) -> Vec<String> {
         self.uuids.iter().cloned().collect()
     }
@@ -1102,6 +1113,10 @@ impl Adapter1Interface {
     }
 
     /// Connect to a device directly (experimental).
+    ///
+    /// Parses Address and AddressType from the properties map, resolves the
+    /// kernel address type, then sends `MGMT_OP_ADD_DEVICE` to initiate an
+    /// outgoing connection.  Matches C `adapter_connect_device()` behaviour.
     async fn connect_device(
         &self,
         properties: HashMap<String, Value<'_>>,
@@ -1111,21 +1126,53 @@ impl Adapter1Interface {
             return Err(zbus::fdo::Error::Failed("Not Ready".into()));
         }
 
+        // Parse the mandatory "Address" property.
         let addr_str = match properties.get("Address") {
             Some(Value::Str(s)) => s.to_string(),
-            _ => return Err(zbus::fdo::Error::Failed("Invalid Arguments".into())),
+            _ => return Err(zbus::fdo::Error::InvalidArgs("Missing Address".into())),
         };
 
+        // Parse the address into a BdAddr.
+        let address: BdAddr = addr_str
+            .parse()
+            .map_err(|_| zbus::fdo::Error::InvalidArgs("Invalid Address format".into()))?;
+
+        // Parse the optional "AddressType" (default "public").
         let addr_type_str = match properties.get("AddressType") {
             Some(Value::Str(s)) => s.to_string(),
             _ => "public".to_string(),
         };
 
+        // Map user-facing address-type string to kernel MGMT address type byte.
+        let kernel_addr_type: u8 = match addr_type_str.as_str() {
+            "public" => BDADDR_LE_PUBLIC,
+            "random" => BDADDR_LE_RANDOM,
+            _ => return Err(zbus::fdo::Error::InvalidArgs("Invalid AddressType".into())),
+        };
+
         btd_info(adapter.index, &format!("ConnectDevice {addr_str} ({addr_type_str})"));
 
-        // ConnectDevice is experimental — just acknowledge for now.
-        // Full implementation requires MGMT_OP_ADD_DEVICE + connection tracking.
+        let mgmt = adapter.mgmt().ok_or_else(|| zbus::fdo::Error::Failed("Not Ready".into()))?;
+        let idx = adapter.index;
         drop(adapter);
+
+        // Build MGMT_OP_ADD_DEVICE parameter:
+        //   struct mgmt_cp_add_device { bdaddr[6], type, action }
+        //   action = 0x02 (ACTION_AUTO_CONNECT)
+        let mut param = [0u8; 8];
+        param[..6].copy_from_slice(&address.b);
+        param[6] = kernel_addr_type;
+        param[7] = 0x02; // ACTION_AUTO_CONNECT
+        let resp = mgmt
+            .send_command(MGMT_OP_ADD_DEVICE, idx, &param)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("MGMT send error: {e}")))?;
+        if resp.status != MGMT_STATUS_SUCCESS {
+            return Err(zbus::fdo::Error::Failed(format!(
+                "MGMT_OP_ADD_DEVICE failed: status {}",
+                mgmt_errstr(resp.status)
+            )));
+        }
         Ok(())
     }
 
@@ -1373,6 +1420,20 @@ impl Adapter1Interface {
         let adapter = self.inner.lock().await;
         adapter.experimental_features_list()
     }
+
+    /// HCI manufacturer ID from the `READ_INFO` MGMT response.
+    #[zbus(property)]
+    async fn manufacturer(&self) -> u16 {
+        let adapter = self.inner.lock().await;
+        adapter.manufacturer
+    }
+
+    /// HCI version number from the `READ_INFO` MGMT response.
+    #[zbus(property)]
+    async fn version(&self) -> u8 {
+        let adapter = self.inner.lock().await;
+        adapter.version
+    }
 }
 
 // ===========================================================================
@@ -1466,27 +1527,152 @@ async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &MgmtEv
             }
         }
         MGMT_EV_NEW_LINK_KEY => {
-            if !ev_data.is_empty() {
+            // mgmt_ev_new_link_key: store_hint(1) + addr(7) + type(1) + val[16] + pin_len(1) = 26
+            if ev_data.len() >= 26 {
+                let store_hint = ev_data[0];
+                let addr = bdaddr_from_bytes(&ev_data[1..7]);
+                let _addr_type = ev_data[7];
+                let key_type = ev_data[8];
+                let mut key = [0u8; 16];
+                key.copy_from_slice(&ev_data[9..25]);
+                let pin_len = ev_data[25];
+
                 let adapter = adapter_arc.lock().await;
-                btd_debug(adapter.index, "New link key received");
+                btd_debug(
+                    adapter.index,
+                    &format!("New link key: {} store_hint={}", addr.ba2str(), store_hint),
+                );
+                let adapter_path = adapter.path.clone();
+                drop(adapter);
+
+                if store_hint != 0 {
+                    let dev = device_create_from_storage(
+                        Arc::clone(adapter_arc),
+                        addr,
+                        AddressType::Bredr,
+                        &adapter_path,
+                    );
+                    let mut d = dev.lock().await;
+                    d.set_linkkey(key, key_type, pin_len);
+                    d.store();
+                }
             }
         }
         MGMT_EV_NEW_LONG_TERM_KEY => {
-            if !ev_data.is_empty() {
+            // mgmt_ev_new_long_term_key: store_hint(1) + addr(7) + type(1) + master(1) +
+            //     enc_size(1) + ediv(2) + rand(8) + val[16] = 37
+            if ev_data.len() >= 37 {
+                let store_hint = ev_data[0];
+                let addr = bdaddr_from_bytes(&ev_data[1..7]);
+                let addr_type_byte = ev_data[7];
+                let ltk_type = ev_data[8];
+                let master = ev_data[9];
+                let enc_size = ev_data[10];
+                let ediv = u16::from_le_bytes([ev_data[11], ev_data[12]]);
+                let rand = u64::from_le_bytes(ev_data[13..21].try_into().unwrap_or([0u8; 8]));
+                let mut val = [0u8; 16];
+                val.copy_from_slice(&ev_data[21..37]);
+
                 let adapter = adapter_arc.lock().await;
-                btd_debug(adapter.index, "New LTK received");
+                btd_debug(
+                    adapter.index,
+                    &format!(
+                        "New LTK: {} store_hint={} master={}",
+                        addr.ba2str(),
+                        store_hint,
+                        master
+                    ),
+                );
+                let adapter_path = adapter.path.clone();
+                drop(adapter);
+
+                if store_hint != 0 {
+                    let at = AddressType::from_kernel(addr_type_byte);
+                    let dev = device_create_from_storage(
+                        Arc::clone(adapter_arc),
+                        addr,
+                        at,
+                        &adapter_path,
+                    );
+                    let mut d = dev.lock().await;
+                    // master=1 means central (our) LTK, master=0 means peripheral (slave) LTK
+                    // ltk_type: 0 = unauthenticated, non-zero = authenticated
+                    d.set_ltk(val, master != 0, ltk_type != 0, enc_size, ediv, rand);
+                    d.store();
+                }
             }
         }
         MGMT_EV_NEW_IRK => {
-            if !ev_data.is_empty() {
+            // mgmt_ev_new_irk: store_hint(1) + rpa(6) + addr(7) + val[16] = 30
+            if ev_data.len() >= 30 {
+                let store_hint = ev_data[0];
+                let _rpa = bdaddr_from_bytes(&ev_data[1..7]);
+                let addr = bdaddr_from_bytes(&ev_data[7..13]);
+                let addr_type_byte = ev_data[13];
+                let mut val = [0u8; 16];
+                val.copy_from_slice(&ev_data[14..30]);
+
                 let adapter = adapter_arc.lock().await;
-                btd_debug(adapter.index, "New IRK received");
+                btd_debug(
+                    adapter.index,
+                    &format!("New IRK: {} store_hint={}", addr.ba2str(), store_hint),
+                );
+                let adapter_path = adapter.path.clone();
+                drop(adapter);
+
+                if store_hint != 0 {
+                    let at = AddressType::from_kernel(addr_type_byte);
+                    let dev = device_create_from_storage(
+                        Arc::clone(adapter_arc),
+                        addr,
+                        at,
+                        &adapter_path,
+                    );
+                    let mut d = dev.lock().await;
+                    d.set_irk(val);
+                    d.store();
+                }
             }
         }
         MGMT_EV_NEW_CSRK => {
-            if !ev_data.is_empty() {
+            // mgmt_ev_new_csrk: store_hint(1) + addr(7) + type(1) + val[16] = 25
+            if ev_data.len() >= 25 {
+                let store_hint = ev_data[0];
+                let addr = bdaddr_from_bytes(&ev_data[1..7]);
+                let addr_type_byte = ev_data[7];
+                let csrk_type = ev_data[8];
+                let mut val = [0u8; 16];
+                val.copy_from_slice(&ev_data[9..25]);
+
                 let adapter = adapter_arc.lock().await;
-                btd_debug(adapter.index, "New CSRK received");
+                btd_debug(
+                    adapter.index,
+                    &format!(
+                        "New CSRK: {} store_hint={} type={}",
+                        addr.ba2str(),
+                        store_hint,
+                        csrk_type
+                    ),
+                );
+                let adapter_path = adapter.path.clone();
+                drop(adapter);
+
+                if store_hint != 0 {
+                    let at = AddressType::from_kernel(addr_type_byte);
+                    // csrk_type: 0x00 = local unauthenticated, 0x01 = local authenticated,
+                    //            0x02 = remote unauthenticated, 0x03 = remote authenticated
+                    let is_local = csrk_type < 0x02;
+                    let authenticated = (csrk_type & 0x01) != 0;
+                    let dev = device_create_from_storage(
+                        Arc::clone(adapter_arc),
+                        addr,
+                        at,
+                        &adapter_path,
+                    );
+                    let mut d = dev.lock().await;
+                    d.set_csrk(val, is_local, authenticated);
+                    d.store();
+                }
             }
         }
         MGMT_EV_NEW_CONN_PARAM => {
@@ -1552,30 +1738,177 @@ async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &MgmtEv
             }
         }
         MGMT_EV_PIN_CODE_REQUEST => {
+            // mgmt_ev_pin_code_request: addr(6) + addr_type(1) + secure(1) = 8
             if ev_data.len() >= 7 {
                 let addr = bdaddr_from_bytes(&ev_data[0..6]);
+                let addr_type_byte = ev_data[6];
+                let secure = if ev_data.len() >= 8 { ev_data[7] != 0 } else { false };
+
                 let adapter = adapter_arc.lock().await;
-                btd_debug(adapter.index, &format!("PIN code request: {}", addr.ba2str()));
-                // PIN callback invocation requires a BtdDevice reference and
-                // attempt tracking.  The full pairing flow that resolves the
-                // device and maintains attempt counters is wired through the
-                // bonding / authentication request path.  The callbacks are
-                // stored here and invoked via btd_adapter_get_pin() during
-                // the complete pairing sequence.
+                let index = adapter.index;
+                let adapter_path = adapter.path.clone();
+                let mgmt_opt = adapter.mgmt();
+                drop(adapter);
+
+                btd_debug(index, &format!("PIN code request: {}", addr.ba2str()));
+
+                let at = AddressType::from_kernel(addr_type_byte);
+                let dev =
+                    device_create_from_storage(Arc::clone(adapter_arc), addr, at, &adapter_path);
+
+                if let Some(agent) = agent_get(None).await {
+                    let d = dev.lock().await;
+                    match agent_request_pincode(&agent, &d, secure).await {
+                        Ok(pin) => {
+                            if let Some(ref mgmt) = mgmt_opt {
+                                // Build PIN code reply: addr(6) + addr_type(1) + pin_len(1) + pin[16]
+                                let mut param = [0u8; 24];
+                                param[..6].copy_from_slice(&addr.b);
+                                param[6] = addr_type_byte;
+                                let pin_bytes = pin.as_bytes();
+                                let pin_len = pin_bytes.len().min(16) as u8;
+                                param[7] = pin_len;
+                                param[8..8 + pin_len as usize]
+                                    .copy_from_slice(&pin_bytes[..pin_len as usize]);
+                                let _ =
+                                    mgmt.send_command(MGMT_OP_PIN_CODE_REPLY, index, &param).await;
+                            }
+                        }
+                        Err(_) => {
+                            if let Some(ref mgmt) = mgmt_opt {
+                                // Negative reply: addr(6) + addr_type(1) = 7
+                                let mut param = [0u8; 7];
+                                param[..6].copy_from_slice(&addr.b);
+                                param[6] = addr_type_byte;
+                                let _ = mgmt
+                                    .send_command(MGMT_OP_PIN_CODE_NEG_REPLY, index, &param)
+                                    .await;
+                            }
+                        }
+                    }
+                } else {
+                    btd_warn(index, "No agent registered for PIN code request");
+                    if let Some(ref mgmt) = mgmt_opt {
+                        let mut param = [0u8; 7];
+                        param[..6].copy_from_slice(&addr.b);
+                        param[6] = addr_type_byte;
+                        let _ = mgmt.send_command(MGMT_OP_PIN_CODE_NEG_REPLY, index, &param).await;
+                    }
+                }
             }
         }
         MGMT_EV_USER_CONFIRM_REQUEST => {
-            if ev_data.len() >= 7 {
+            // mgmt_ev_user_confirm_request: addr(6) + addr_type(1) + confirm_hint(1) + value(4) = 12
+            if ev_data.len() >= 11 {
                 let addr = bdaddr_from_bytes(&ev_data[0..6]);
+                let addr_type_byte = ev_data[6];
+                let passkey = u32::from_le_bytes(ev_data[7..11].try_into().unwrap_or([0u8; 4]));
+
                 let adapter = adapter_arc.lock().await;
-                btd_debug(adapter.index, &format!("User confirm request: {}", addr.ba2str()));
+                let index = adapter.index;
+                let adapter_path = adapter.path.clone();
+                let mgmt_opt = adapter.mgmt();
+                drop(adapter);
+
+                btd_debug(
+                    index,
+                    &format!("User confirm request: {} passkey={:06}", addr.ba2str(), passkey),
+                );
+
+                let at = AddressType::from_kernel(addr_type_byte);
+                let dev =
+                    device_create_from_storage(Arc::clone(adapter_arc), addr, at, &adapter_path);
+
+                if let Some(agent) = agent_get(None).await {
+                    let d = dev.lock().await;
+                    match agent_request_confirmation(&agent, &d, passkey).await {
+                        Ok(()) => {
+                            if let Some(ref mgmt) = mgmt_opt {
+                                let mut param = [0u8; 7];
+                                param[..6].copy_from_slice(&addr.b);
+                                param[6] = addr_type_byte;
+                                let _ = mgmt
+                                    .send_command(MGMT_OP_USER_CONFIRM_REPLY, index, &param)
+                                    .await;
+                            }
+                        }
+                        Err(_) => {
+                            if let Some(ref mgmt) = mgmt_opt {
+                                let mut param = [0u8; 7];
+                                param[..6].copy_from_slice(&addr.b);
+                                param[6] = addr_type_byte;
+                                let _ = mgmt
+                                    .send_command(MGMT_OP_USER_CONFIRM_NEG_REPLY, index, &param)
+                                    .await;
+                            }
+                        }
+                    }
+                } else {
+                    btd_warn(index, "No agent registered for confirm request");
+                    if let Some(ref mgmt) = mgmt_opt {
+                        let mut param = [0u8; 7];
+                        param[..6].copy_from_slice(&addr.b);
+                        param[6] = addr_type_byte;
+                        let _ =
+                            mgmt.send_command(MGMT_OP_USER_CONFIRM_NEG_REPLY, index, &param).await;
+                    }
+                }
             }
         }
         MGMT_EV_USER_PASSKEY_REQUEST => {
+            // mgmt_ev_user_passkey_request: addr(6) + addr_type(1) = 7
             if ev_data.len() >= 7 {
                 let addr = bdaddr_from_bytes(&ev_data[0..6]);
+                let addr_type_byte = ev_data[6];
+
                 let adapter = adapter_arc.lock().await;
-                btd_debug(adapter.index, &format!("User passkey request: {}", addr.ba2str()));
+                let index = adapter.index;
+                let adapter_path = adapter.path.clone();
+                let mgmt_opt = adapter.mgmt();
+                drop(adapter);
+
+                btd_debug(index, &format!("User passkey request: {}", addr.ba2str()));
+
+                let at = AddressType::from_kernel(addr_type_byte);
+                let dev =
+                    device_create_from_storage(Arc::clone(adapter_arc), addr, at, &adapter_path);
+
+                if let Some(agent) = agent_get(None).await {
+                    let d = dev.lock().await;
+                    match agent_request_passkey(&agent, &d).await {
+                        Ok(passkey) => {
+                            if let Some(ref mgmt) = mgmt_opt {
+                                // Passkey reply: addr(6) + addr_type(1) + passkey(4) = 11
+                                let mut param = [0u8; 11];
+                                param[..6].copy_from_slice(&addr.b);
+                                param[6] = addr_type_byte;
+                                param[7..11].copy_from_slice(&passkey.to_le_bytes());
+                                let _ = mgmt
+                                    .send_command(MGMT_OP_USER_PASSKEY_REPLY, index, &param)
+                                    .await;
+                            }
+                        }
+                        Err(_) => {
+                            if let Some(ref mgmt) = mgmt_opt {
+                                let mut param = [0u8; 7];
+                                param[..6].copy_from_slice(&addr.b);
+                                param[6] = addr_type_byte;
+                                let _ = mgmt
+                                    .send_command(MGMT_OP_USER_PASSKEY_NEG_REPLY, index, &param)
+                                    .await;
+                            }
+                        }
+                    }
+                } else {
+                    btd_warn(index, "No agent registered for passkey request");
+                    if let Some(ref mgmt) = mgmt_opt {
+                        let mut param = [0u8; 7];
+                        param[..6].copy_from_slice(&addr.b);
+                        param[6] = addr_type_byte;
+                        let _ =
+                            mgmt.send_command(MGMT_OP_USER_PASSKEY_NEG_REPLY, index, &param).await;
+                    }
+                }
             }
         }
         MGMT_EV_DEVICE_BLOCKED => {

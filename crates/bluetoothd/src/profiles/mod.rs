@@ -8,5 +8,6 @@ pub mod battery;
 pub mod deviceinfo;
 pub mod gap;
 pub mod midi;
+pub mod network;
 pub mod ranging;
 pub mod scanparam;

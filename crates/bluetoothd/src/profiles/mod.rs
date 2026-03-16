@@ -7,6 +7,7 @@ pub mod audio;
 pub mod battery;
 pub mod deviceinfo;
 pub mod gap;
+pub mod input;
 pub mod midi;
 pub mod network;
 pub mod ranging;

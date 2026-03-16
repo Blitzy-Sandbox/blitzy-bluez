@@ -15,6 +15,7 @@ pub mod legacy_gatt;
 pub mod log;
 pub mod plugin;
 pub mod plugins;
+pub mod profile;
 pub mod profiles;
 pub mod rfkill;
 pub mod sdp;

@@ -3,6 +3,7 @@
 
 pub mod adapter;
 pub mod advertising;
+pub mod battery;
 pub mod config;
 pub mod dbus_common;
 pub mod device;

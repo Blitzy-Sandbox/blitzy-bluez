@@ -143,6 +143,9 @@ pub trait TransportOps: Send + Sync {
     fn init(&mut self, inner: &mut TransportInner);
     /// Profile-specific teardown.
     fn destroy(&mut self, inner: &mut TransportInner);
+    /// Inject an ASHA protocol engine into ASHA-type transport ops.
+    /// Default implementation does nothing (non-ASHA transports).
+    fn set_asha_engine(&self, _asha: BtAsha) {}
 }
 
 // ===================================================================
@@ -1069,6 +1072,11 @@ impl TransportOps for AshaOps {
         let mut d = self.data.lock().unwrap();
         d.asha = None;
     }
+
+    fn set_asha_engine(&self, asha: BtAsha) {
+        let mut d = self.data.lock().unwrap();
+        d.asha = Some(asha);
+    }
 }
 
 // ===================================================================
@@ -1493,6 +1501,19 @@ pub async fn media_transport_update_state(
     if state == TransportState::Active {
         complete_pending_acquire(&mut g.inner);
     }
+}
+
+/// Inject a [`BtAsha`] protocol engine into an ASHA-type transport's ops.
+///
+/// This allows the ASHA profile plugin to provide the `BtAsha` instance
+/// after the transport has been created (since `media_transport_create`
+/// creates ops with `asha: None`).
+pub async fn media_transport_set_asha(
+    transport: &Arc<Mutex<MediaTransport>>,
+    asha: BtAsha,
+) {
+    let g = transport.lock().await;
+    g.ops.set_asha_engine(asha);
 }
 
 // ===================================================================

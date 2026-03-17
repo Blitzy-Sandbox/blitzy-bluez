@@ -6,6 +6,7 @@
 //! will be added by their respective implementation agents.
 
 pub mod a2dp;
+pub mod asha;
 pub mod avctp;
 pub mod avdtp;
 pub mod avrcp;

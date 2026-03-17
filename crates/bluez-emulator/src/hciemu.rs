@@ -8,7 +8,7 @@
 // The emulator crate is a designated FFI/testing boundary module per
 // AAP Section 0.7.4 — unsafe code is permitted for socketpair I/O,
 // fd duplication, and ioctl queries.
-#![allow(unsafe_code)]
+
 //
 //! HCI emulator harness.
 //!
@@ -48,8 +48,10 @@
 //! is `Arc<HciEmulator>` for shared ownership via [`Arc`].
 
 use std::io::IoSlice;
-use std::os::fd::{AsRawFd, BorrowedFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd, RawFd};
 use std::sync::{Arc, Mutex};
+
+use bluez_shared::sys::ffi_helpers as ffi;
 
 use nix::sys::socket::{AddressFamily, SockFlag, SockType, socketpair};
 use tokio::io::unix::AsyncFd;
@@ -205,15 +207,11 @@ impl EmulatorClient {
     fn is_pending(&self) -> bool {
         for &fd in &self.sock {
             let mut used: libc::c_int = 0;
-            // SAFETY: ioctl with TIOCOUTQ/TIOCINQ reads an int-sized
-            // output from a valid fd; we only read, never write.
-            // This is confined to the emulator crate which is a
-            // designated FFI boundary per AAP Section 0.7.4.
-            let outq = unsafe { libc::ioctl(fd, libc::TIOCOUTQ, &mut used) };
+            let outq = ffi::raw_ioctl_with_mut(fd, libc::TIOCOUTQ as _, &mut used);
             if outq == 0 && used > 0 {
                 return true;
             }
-            let inq = unsafe { libc::ioctl(fd, libc::TIOCINQ, &mut used) };
+            let inq = ffi::raw_ioctl_with_mut(fd, libc::TIOCINQ as _, &mut used);
             if inq == 0 && used > 0 {
                 return true;
             }
@@ -393,9 +391,7 @@ impl HciEmulator {
         let write_fd0_clone = Arc::clone(&write_fd0);
         dev.set_send_handler(Some(Box::new(move |iov: &[IoSlice<'_>]| {
             let guard = write_fd0_clone.lock().unwrap_or_else(|e| e.into_inner());
-            // SAFETY: The OwnedFd in the guard keeps the fd alive for the
-            // duration of the borrow — the BorrowedFd does not outlive it.
-            let borrowed = unsafe { BorrowedFd::borrow_raw(guard.as_raw_fd()) };
+            let borrowed = guard.as_fd();
             writev_with_eagain(borrowed, iov);
         })));
 
@@ -404,9 +400,7 @@ impl HciEmulator {
         let write_fd1_clone = Arc::clone(&write_fd1);
         host.set_send_handler(move |iov: &[IoSlice<'_>]| {
             let guard = write_fd1_clone.lock().unwrap_or_else(|e| e.into_inner());
-            // SAFETY: Same as above — BorrowedFd is valid for the
-            // guard's scope.
-            let borrowed = unsafe { BorrowedFd::borrow_raw(guard.as_raw_fd()) };
+            let borrowed = guard.as_fd();
             writev_with_eagain(borrowed, iov);
         });
 
@@ -850,30 +844,12 @@ fn writev_with_eagain(fd: BorrowedFd<'_>, iov: &[IoSlice<'_>]) {
             // sent is larger than the current buffer size. This is needed
             // for btdev which doesn't flush the socket buffer until all
             // data has been sent.
-            // SAFETY: getsockopt/setsockopt on a valid fd with SOL_SOCKET
-            // and SO_SNDBUF. These are safe POSIX operations.
             let mut size: libc::c_int = 0;
             let mut len: libc::socklen_t = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
-            let ret = unsafe {
-                libc::getsockopt(
-                    fd.as_raw_fd(),
-                    libc::SOL_SOCKET,
-                    libc::SO_SNDBUF,
-                    (&raw mut size).cast::<libc::c_void>(),
-                    &raw mut len,
-                )
-            };
+            let ret = ffi::raw_getsockopt(fd.as_raw_fd(), libc::SOL_SOCKET, libc::SO_SNDBUF, &mut size, &mut len);
             if ret == 0 {
                 size += data_len as libc::c_int;
-                unsafe {
-                    libc::setsockopt(
-                        fd.as_raw_fd(),
-                        libc::SOL_SOCKET,
-                        libc::SO_SNDBUF,
-                        (&raw const size).cast::<libc::c_void>(),
-                        std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-                    );
-                }
+                ffi::raw_setsockopt(fd.as_raw_fd(), libc::SOL_SOCKET, libc::SO_SNDBUF, &size);
             }
 
             // Retry the write after buffer adjustment.
@@ -891,15 +867,11 @@ fn writev_with_eagain(fd: BorrowedFd<'_>, iov: &[IoSlice<'_>]) {
 
 /// Duplicate a raw file descriptor into an `OwnedFd`.
 fn dup_fd(fd: RawFd) -> Result<OwnedFd, HciEmuError> {
-    // SAFETY: `libc::dup` is a POSIX system call that duplicates a valid
-    // file descriptor.  The returned fd is valid if non-negative.
-    let new_fd = unsafe { libc::dup(fd) };
+    let new_fd = ffi::raw_dup(fd);
     if new_fd < 0 {
         return Err(HciEmuError::Io(std::io::Error::last_os_error()));
     }
-    // SAFETY: `dup` succeeded — `new_fd` is a valid, open file descriptor
-    // that we now own exclusively.
-    Ok(unsafe { OwnedFd::from_raw_fd(new_fd) })
+    Ok(ffi::raw_owned_fd(new_fd))
 }
 
 // ---------------------------------------------------------------------------

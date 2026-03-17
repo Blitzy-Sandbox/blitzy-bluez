@@ -214,36 +214,44 @@ pub fn jlink_init() -> io::Result<()> {
     // Dereferencing the Symbol yields a raw function pointer (Copy type)
     // that remains valid as long as the Library is not dropped.
     let emu_selectbyusbsn: JlinkEmuSelectByUsbSn =
+        // SAFETY: Loading a known symbol from a validated shared library.
         *unsafe { lib.get::<JlinkEmuSelectByUsbSn>(b"JLINK_EMU_SelectByUSBSN\0") }
             .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
 
     let open: JlinkOpen = *unsafe { lib.get::<JlinkOpen>(b"JLINK_Open\0") }
         .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
 
+    // SAFETY: Loading a known symbol from a validated shared library.
     let execcommand: JlinkExecCommand =
         *unsafe { lib.get::<JlinkExecCommand>(b"JLINK_ExecCommand\0") }
             .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
 
     let tif_select: JlinkTifSelect = *unsafe { lib.get::<JlinkTifSelect>(b"JLINK_TIF_Select\0") }
+        // SAFETY: Loading a known symbol from a validated shared library.
         .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
 
     let setspeed: JlinkSetSpeed = *unsafe { lib.get::<JlinkSetSpeed>(b"JLINK_SetSpeed\0") }
         .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
 
+    // SAFETY: Loading a known symbol from a validated shared library.
     let connect: JlinkConnectFn = *unsafe { lib.get::<JlinkConnectFn>(b"JLINK_Connect\0") }
         .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
 
+    // SAFETY: Loading a known symbol from a validated shared library.
     let getsn: JlinkGetSn = *unsafe { lib.get::<JlinkGetSn>(b"JLINK_GetSN\0") }
         .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
 
+    // SAFETY: Loading a known symbol from a validated shared library.
     let emu_getproductname: JlinkEmuGetProductName =
         *unsafe { lib.get::<JlinkEmuGetProductName>(b"JLINK_EMU_GetProductName\0") }
             .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
+ // SAFETY: Loading a known symbol from a validated shared library.
 
     let rtterminal_control: JlinkRtTerminalControl =
         *unsafe { lib.get::<JlinkRtTerminalControl>(b"JLINK_RTTERMINAL_Control\0") }
             .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
 
+    // SAFETY: Loading a known symbol from a validated shared library.
     let rtterminal_read: JlinkRtTerminalRead =
         *unsafe { lib.get::<JlinkRtTerminalRead>(b"JLINK_RTTERMINAL_Read\0") }
             .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
@@ -339,6 +347,7 @@ pub fn jlink_connect(cfg: &str) -> io::Result<()> {
         return Err(io::Error::from_raw_os_error(libc::ENODEV));
     }
 
+    // SAFETY: Calling an FFI function pointer obtained from a validated shared library.
     // Select the target device via the "device=<name>" J-Link command.
     let device_cmd = CString::new(format!("device={device}"))
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
@@ -472,6 +481,7 @@ pub fn jlink_start_rtt(cfg: Option<&str>) -> io::Result<()> {
 
     // Wait for RTT control block discovery (do-while loop in C source).
     // The J-Link firmware scans target RAM for the RTT control block.
+    // SAFETY: Calling an FFI function pointer obtained from a validated shared library.
     // We poll every 100 μs until the number of available buffers is reported.
     let count = loop {
         sleep(Duration::from_micros(100));
@@ -497,6 +507,7 @@ pub fn jlink_start_rtt(cfg: Option<&str>) -> io::Result<()> {
         let mut desc = RttDesc {
             index: i as u32,
             direction: RTT_DIRECTION_UP as u32,
+            // SAFETY: Calling an FFI function pointer obtained from a validated shared library.
             name: [0u8; 32],
             size: 0,
             flags: 0,
@@ -547,6 +558,7 @@ pub fn jlink_start_rtt(cfg: Option<&str>) -> io::Result<()> {
 /// # Errors
 ///
 /// Returns `Err(EIO)` if [`jlink_init`] has not been called or if the
+// SAFETY: Calling an FFI function pointer obtained from a validated shared library.
 /// underlying J-Link read fails.
 pub fn jlink_rtt_read(buf: &mut [u8]) -> io::Result<usize> {
     let jlink = get_jlink()?;

@@ -8,6 +8,5 @@
 //!
 //! - `terminal.rs` — Terminal I/O (ioctl TIOCGWINSZ, dup2/close for pager
 //!   management). Category: `kernel_ioctl` + `process_control`.
-#![allow(unsafe_code)]
 
 pub mod terminal;

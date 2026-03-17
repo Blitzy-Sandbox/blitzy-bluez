@@ -484,6 +484,7 @@ fn add_external_plugin(
         btd_error(0, err_msg);
         return false;
     } else {
+        // SAFETY: desc.name is a valid C string pointer from a loaded shared library.
         match unsafe { std::ffi::CStr::from_ptr(desc.name) }.to_str() {
             Ok(s) => s,
             Err(_) => {
@@ -505,6 +506,7 @@ fn add_external_plugin(
         tracing::error!("{}", err_msg);
         btd_error(0, &err_msg);
         return false;
+    // SAFETY: desc.version is a valid C string pointer from a loaded shared library.
     } else {
         match unsafe { std::ffi::CStr::from_ptr(desc.version) }.to_str() {
             Ok(s) => s,
@@ -563,6 +565,7 @@ fn add_external_plugin(
                 // handle is stored in the same `LoadedPlugin` struct and is
                 // not dropped until `plugin_cleanup()` processes this entry,
                 // guaranteeing the function code remains mapped for the
+                // SAFETY: Calling the exit function pointer from a validated plugin descriptor.
                 // entire lifetime of this closure.
                 #[allow(unsafe_code)]
                 unsafe {
@@ -671,6 +674,7 @@ fn external_plugin_init(
         // loaded library's data section. The library was loaded successfully
         // with RTLD_NOW, so all referenced symbols are resolved. The nul
         // byte in the symbol name is required by `Library::get()`.
+        // SAFETY: Resolving a known symbol from a validated shared library.
         let desc_ptr: libloading::Symbol<'_, *const ExternalPluginDesc> =
             match unsafe { library.get(b"bluetooth_plugin_desc\0") } {
                 Ok(sym) => sym,

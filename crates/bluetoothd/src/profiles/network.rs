@@ -19,10 +19,9 @@
 // BNEP ioctls (BNEPCONNADD, BNEPCONNDEL, BNEPGETSUPPFEAT) and network interface
 // ioctls (SIOCSIFFLAGS, SIOCBRADDIF, SIOCBRDELIF). All unsafe blocks are
 // individually documented with // SAFETY: comments explaining invariants.
-#![allow(unsafe_code)]
+// All FFI operations delegated to safe wrappers in bluez_shared::sys::ffi_helpers.
 
-use std::mem;
-use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
 use std::sync::Arc;
 
 use tokio::sync::oneshot;
@@ -51,6 +50,7 @@ use bluez_shared::sys::bnep::{
     bnep_connadd_req, bnep_conndel_req,
 };
 use bluez_shared::util::uuid::BtUuid;
+use bluez_shared::sys::ffi_helpers as ffi;
 
 // ===========================================================================
 // D-Bus Interface Names
@@ -225,7 +225,7 @@ impl BnepSession {
         let req = self.build_setup_req();
         // SAFETY: Writing to a valid socket fd with a properly-formed buffer.
         let written =
-            unsafe { libc::write(raw_fd, req.as_ptr() as *const libc::c_void, req.len()) };
+            ffi::raw_write(raw_fd, &req);
         if written < 0 {
             let err = std::io::Error::last_os_error();
             btd_error(0xFFFF, &format!("BNEP setup write failed: {}", err));
@@ -397,7 +397,7 @@ impl BnepSession {
             loop {
                 // SAFETY: Reading from a valid socket fd into a stack buffer.
                 let n =
-                    unsafe { libc::read(raw_fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
+                    ffi::raw_read(raw_fd, &mut buf);
                 if n <= 0 {
                     let err = std::io::Error::last_os_error();
                     return Err(BtdError::failed(&format!("BNEP read failed: {}", err)));
@@ -436,7 +436,7 @@ impl BnepSession {
         ];
         // SAFETY: Writing to a valid socket fd with a properly-formed buffer.
         let written =
-            unsafe { libc::write(raw_fd, buf.as_ptr() as *const libc::c_void, buf.len()) };
+            ffi::raw_write(raw_fd, &buf);
         if written < 0 {
             let err = std::io::Error::last_os_error();
             return Err(BtdError::failed(&format!("BNEP send response failed: {}", err)));
@@ -462,7 +462,7 @@ impl BnepSession {
 
         let sock_fd = self.fd.as_ref().unwrap().as_raw_fd();
 
-        let mut req: bnep_connadd_req = unsafe { mem::zeroed() };
+        let mut req: bnep_connadd_req = ffi::raw_zeroed();
         req.sock = sock_fd;
         req.role = self.dst_role;
         req.flags = 0;
@@ -475,7 +475,7 @@ impl BnepSession {
         // SAFETY: BNEPCONNADD ioctl on a valid BNEP control socket with a
         // properly-initialized bnep_connadd_req struct. The sock field contains
         // a valid L2CAP socket fd, and the device field is null-terminated.
-        let ret = unsafe { libc::ioctl(ctl_fd, BNEPCONNADD as libc::c_ulong, &req) };
+        let ret = ffi::raw_ioctl_with_ref(ctl_fd, BNEPCONNADD as libc::c_ulong, &req);
         if ret < 0 {
             let err = std::io::Error::last_os_error();
             btd_error(0xFFFF, &format!("BNEPCONNADD ioctl failed: {}", err));
@@ -511,7 +511,7 @@ impl BnepSession {
             }
         };
 
-        let mut req: bnep_conndel_req = unsafe { mem::zeroed() };
+        let mut req: bnep_conndel_req = ffi::raw_zeroed();
         req.flags = 0;
         let dst_bytes = self.dst.b;
         req.dst[..6].copy_from_slice(&dst_bytes[..6]);
@@ -519,7 +519,7 @@ impl BnepSession {
         // SAFETY: BNEPCONNDEL ioctl on a valid BNEP control socket with a
         // properly-initialized bnep_conndel_req struct containing the
         // destination BD_ADDR of the connection to delete.
-        let ret = unsafe { libc::ioctl(ctl_fd, BNEPCONNDEL as libc::c_ulong, &req) };
+        let ret = ffi::raw_ioctl_with_ref(ctl_fd, BNEPCONNDEL as libc::c_ulong, &req);
         if ret < 0 {
             let err = std::io::Error::last_os_error();
             return Err(BtdError::failed(&format!("BNEPCONNDEL: {}", err)));
@@ -557,49 +557,37 @@ impl Drop for BnepSession {
 fn set_if_flags(iface_name: &str, up: bool) -> Result<(), BtdError> {
     // Create a temporary socket for the ioctl.
     // SAFETY: Creating an AF_INET DGRAM socket for ioctl use only.
-    let sock = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0) };
+    let sock = ffi::raw_socket(libc::AF_INET, libc::SOCK_DGRAM, 0);
     if sock < 0 {
         let err = std::io::Error::last_os_error();
         return Err(BtdError::failed(&format!("socket for ioctl: {}", err)));
     }
 
     // Build ifreq.
-    let mut ifr: libc::ifreq = unsafe { mem::zeroed() };
-    let name_bytes = iface_name.as_bytes();
-    let copy_len = std::cmp::min(name_bytes.len(), libc::IFNAMSIZ - 1);
-    // SAFETY: Copying interface name bytes into ifreq.ifr_name field.
-    unsafe {
-        std::ptr::copy_nonoverlapping(
-            name_bytes.as_ptr(),
-            ifr.ifr_name.as_mut_ptr() as *mut u8,
-            copy_len,
-        );
-    }
+    let mut ifr: libc::ifreq = ffi::raw_zeroed();
+    ffi::raw_set_ifreq_name(&mut ifr, iface_name);
 
     // Get current flags.
-    // SAFETY: SIOCGIFFLAGS ioctl on a valid socket with properly-initialized ifreq.
-    let ret = unsafe { libc::ioctl(sock, libc::SIOCGIFFLAGS as libc::c_ulong, &mut ifr) };
+    let ret = ffi::raw_ioctl_with_mut(sock, libc::SIOCGIFFLAGS as libc::c_ulong, &mut ifr);
     if ret < 0 {
         let err = std::io::Error::last_os_error();
-        unsafe { libc::close(sock) };
+        ffi::raw_close(sock);
         return Err(BtdError::failed(&format!("SIOCGIFFLAGS: {}", err)));
     }
 
     // Modify flags.
-    // SAFETY: Accessing the ifr_ifru.ifru_flags union field.
-    unsafe {
-        let flags = ifr.ifr_ifru.ifru_flags;
+    {
+        let flags = ffi::raw_read_ifreq_flags(&ifr);
         if up {
-            ifr.ifr_ifru.ifru_flags = flags | libc::IFF_UP as libc::c_short;
+            ffi::raw_write_ifreq_flags(&mut ifr, flags | libc::IFF_UP as libc::c_short);
         } else {
-            ifr.ifr_ifru.ifru_flags = flags & !(libc::IFF_UP as libc::c_short);
+            ffi::raw_write_ifreq_flags(&mut ifr, flags & !(libc::IFF_UP as libc::c_short));
         }
     }
 
     // Set new flags.
-    // SAFETY: SIOCSIFFLAGS ioctl with properly-set flags field.
-    let ret = unsafe { libc::ioctl(sock, libc::SIOCSIFFLAGS as libc::c_ulong, &ifr) };
-    unsafe { libc::close(sock) };
+    let ret = ffi::raw_ioctl_with_ref(sock, libc::SIOCSIFFLAGS as libc::c_ulong, &ifr);
+    ffi::raw_close(sock);
 
     if ret < 0 {
         let err = std::io::Error::last_os_error();
@@ -625,26 +613,17 @@ fn del_from_bridge(bridge: &str, iface: &str) -> Result<(), BtdError> {
 /// Get the interface index for a named network interface.
 fn get_if_index(iface: &str) -> Result<i32, BtdError> {
     // SAFETY: Creating an AF_INET DGRAM socket for ioctl use only.
-    let sock = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0) };
+    let sock = ffi::raw_socket(libc::AF_INET, libc::SOCK_DGRAM, 0);
     if sock < 0 {
         let err = std::io::Error::last_os_error();
         return Err(BtdError::failed(&format!("socket for ifindex: {}", err)));
     }
 
-    let mut ifr: libc::ifreq = unsafe { mem::zeroed() };
-    let name_bytes = iface.as_bytes();
-    let copy_len = std::cmp::min(name_bytes.len(), libc::IFNAMSIZ - 1);
-    unsafe {
-        std::ptr::copy_nonoverlapping(
-            name_bytes.as_ptr(),
-            ifr.ifr_name.as_mut_ptr() as *mut u8,
-            copy_len,
-        );
-    }
+    let mut ifr: libc::ifreq = ffi::raw_zeroed();
+    ffi::raw_set_ifreq_name(&mut ifr, iface);
 
-    // SAFETY: SIOCGIFINDEX ioctl on a valid socket with properly-initialized ifreq.
-    let ret = unsafe { libc::ioctl(sock, libc::SIOCGIFINDEX as libc::c_ulong, &mut ifr) };
-    unsafe { libc::close(sock) };
+    let ret = ffi::raw_ioctl_with_mut(sock, libc::SIOCGIFINDEX as libc::c_ulong, &mut ifr);
+    ffi::raw_close(sock);
 
     if ret < 0 {
         let err = std::io::Error::last_os_error();
@@ -652,39 +631,29 @@ fn get_if_index(iface: &str) -> Result<i32, BtdError> {
     }
 
     // SAFETY: Accessing ifr_ifru.ifru_ifindex union field after successful ioctl.
-    let ifindex = unsafe { ifr.ifr_ifru.ifru_ifindex };
+    let ifindex = ffi::raw_read_ifreq_ifindex(&ifr);
     Ok(ifindex)
 }
 
 /// Perform bridge add/remove ioctl.
 fn bridge_ioctl(bridge: &str, ifindex: i32, add: bool) -> Result<(), BtdError> {
     // SAFETY: Creating an AF_INET DGRAM socket for ioctl use only.
-    let sock = unsafe { libc::socket(libc::AF_INET, libc::SOCK_DGRAM, 0) };
+    let sock = ffi::raw_socket(libc::AF_INET, libc::SOCK_DGRAM, 0);
     if sock < 0 {
         let err = std::io::Error::last_os_error();
         return Err(BtdError::failed(&format!("socket for bridge ioctl: {}", err)));
     }
 
-    let mut ifr: libc::ifreq = unsafe { mem::zeroed() };
-    let name_bytes = bridge.as_bytes();
-    let copy_len = std::cmp::min(name_bytes.len(), libc::IFNAMSIZ - 1);
-    unsafe {
-        std::ptr::copy_nonoverlapping(
-            name_bytes.as_ptr(),
-            ifr.ifr_name.as_mut_ptr() as *mut u8,
-            copy_len,
-        );
-    }
+    let mut ifr: libc::ifreq = ffi::raw_zeroed();
+    ffi::raw_set_ifreq_name(&mut ifr, bridge);
 
-    // Set the interface index to add/remove (writing union field is safe in Rust).
-    ifr.ifr_ifru.ifru_ifindex = ifindex;
+    // Set the interface index to add/remove.
+    ffi::raw_write_ifreq_ifindex(&mut ifr, ifindex);
 
     let ioctl_cmd = if add { SIOCBRADDIF } else { SIOCBRDELIF };
 
-    // SAFETY: SIOCBRADDIF/SIOCBRDELIF ioctl on a valid socket with the
-    // bridge name in ifr_name and the interface index in ifr_ifru.ifru_ifindex.
-    let ret = unsafe { libc::ioctl(sock, ioctl_cmd, &ifr) };
-    unsafe { libc::close(sock) };
+    let ret = ffi::raw_ioctl_with_ref(sock, ioctl_cmd, &ifr);
+    ffi::raw_close(sock);
 
     if ret < 0 {
         let err = std::io::Error::last_os_error();
@@ -719,7 +688,7 @@ fn bnep_get_supp_feat() -> u32 {
     let mut supp_feat: u32 = 0;
     // SAFETY: BNEPGETSUPPFEAT ioctl on a valid BNEP control socket,
     // writing the feature bitmask to a stack u32.
-    let ret = unsafe { libc::ioctl(ctl_fd, BNEPGETSUPPFEAT as libc::c_ulong, &mut supp_feat) };
+    let ret = ffi::raw_ioctl_with_mut(ctl_fd, BNEPGETSUPPFEAT as libc::c_ulong, &mut supp_feat);
     if ret < 0 {
         return 0;
     }
@@ -731,9 +700,7 @@ fn bnep_init() -> Result<(), BtdError> {
     // SAFETY: Creating a PF_BLUETOOTH/SOCK_RAW/BTPROTO_BNEP socket for
     // BNEP kernel interface management. This is a privileged operation
     // requiring CAP_NET_ADMIN.
-    let fd = unsafe {
-        libc::socket(PF_BLUETOOTH as libc::c_int, libc::SOCK_RAW, BTPROTO_BNEP as libc::c_int)
-    };
+    let fd = ffi::raw_socket(PF_BLUETOOTH as libc::c_int, libc::SOCK_RAW, BTPROTO_BNEP as libc::c_int);
     if fd < 0 {
         let err = std::io::Error::last_os_error();
         btd_error(0xFFFF, &format!("Failed to open BNEP control socket: {}", err));
@@ -741,7 +708,7 @@ fn bnep_init() -> Result<(), BtdError> {
     }
 
     // SAFETY: fd is a valid file descriptor from a successful socket() call.
-    let owned_fd = unsafe { OwnedFd::from_raw_fd(fd) };
+    let owned_fd = ffi::raw_owned_fd(fd);
 
     // Store in global.
     let mut guard = BNEP_CTL_SOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -1055,9 +1022,7 @@ impl NetworkInterface {
 
         // Create L2CAP connection to BNEP PSM.
         // SAFETY: Creating an L2CAP socket for BNEP connection.
-        let sock_fd = unsafe {
-            libc::socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_L2CAP as libc::c_int)
-        };
+        let sock_fd = ffi::raw_socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_L2CAP as libc::c_int);
         if sock_fd < 0 {
             let mut peer = self.peer.lock().await;
             if let Some(c) = peer.connections.iter_mut().find(|c| c.id == svc_id) {
@@ -1072,7 +1037,7 @@ impl NetworkInterface {
 
         // Bind to local address.
         if let Err(e) = bind_l2cap_socket(sock_fd, &src_addr, 0) {
-            unsafe { libc::close(sock_fd) };
+            ffi::raw_close(sock_fd);
             let mut peer = self.peer.lock().await;
             if let Some(c) = peer.connections.iter_mut().find(|c| c.id == svc_id) {
                 c.state = ConnState::Disconnected;
@@ -1083,7 +1048,7 @@ impl NetworkInterface {
         // Connect to remote BNEP PSM.
         let connect_result = connect_l2cap_socket(sock_fd, &dst_addr, BNEP_PSM);
         if let Err(e) = connect_result {
-            unsafe { libc::close(sock_fd) };
+            ffi::raw_close(sock_fd);
             let mut peer = self.peer.lock().await;
             if let Some(c) = peer.connections.iter_mut().find(|c| c.id == svc_id) {
                 c.state = ConnState::Disconnected;
@@ -1092,7 +1057,7 @@ impl NetworkInterface {
         }
 
         // SAFETY: sock_fd is a valid file descriptor from successful socket+connect.
-        let owned_fd = unsafe { OwnedFd::from_raw_fd(sock_fd) };
+        let owned_fd = ffi::raw_owned_fd(sock_fd);
 
         match session.connect(owned_fd).await {
             Ok(iface_name) => {
@@ -1187,6 +1152,7 @@ impl NetworkInterface {
 // ===========================================================================
 
 /// L2CAP socket address structure for Bluetooth connections.
+#[derive(Clone, Copy)]
 #[repr(C)]
 struct SockaddrL2 {
     l2_family: u16,
@@ -1203,26 +1169,12 @@ fn set_l2cap_bnep_options(fd: RawFd) {
     // BT_RCVMTU = 13, BT_SNDMTU = 14 on SOL_BLUETOOTH = 274
     let sol_bt: libc::c_int = 274;
 
-    // SAFETY: setsockopt on a valid L2CAP socket with properly-sized value buffer.
-    unsafe {
-        libc::setsockopt(
-            fd,
-            sol_bt,
-            13, // BT_RCVMTU
-            &mtu as *const u32 as *const libc::c_void,
-            std::mem::size_of::<u32>() as libc::socklen_t,
-        );
-        libc::setsockopt(
-            fd,
-            sol_bt,
-            14, // BT_SNDMTU
-            &mtu as *const u32 as *const libc::c_void,
-            std::mem::size_of::<u32>() as libc::socklen_t,
-        );
-    }
+    ffi::raw_setsockopt(fd, sol_bt, 13 /* BT_RCVMTU */, &mtu);
+    ffi::raw_setsockopt(fd, sol_bt, 14 /* BT_SNDMTU */, &mtu);
 
     // Set security level to medium if security is enabled.
     if CONF_SECURITY.load(std::sync::atomic::Ordering::Relaxed) {
+        #[derive(Clone, Copy)]
         #[repr(C)]
         struct BtSecurity {
             level: u8,
@@ -1232,34 +1184,18 @@ fn set_l2cap_bnep_options(fd: RawFd) {
             level: 2, // BT_SECURITY_MEDIUM
             key_size: 0,
         };
-        // SAFETY: setsockopt with bt_security struct on valid L2CAP socket.
-        unsafe {
-            libc::setsockopt(
-                fd,
-                sol_bt,
-                4, // BT_SECURITY
-                &sec as *const BtSecurity as *const libc::c_void,
-                std::mem::size_of::<BtSecurity>() as libc::socklen_t,
-            );
-        }
+        ffi::raw_setsockopt(fd, sol_bt, 4 /* BT_SECURITY */, &sec);
     }
 }
 
 /// Bind an L2CAP socket to a local Bluetooth address and PSM.
 fn bind_l2cap_socket(fd: RawFd, addr: &BdAddr, psm: u16) -> Result<(), BtdError> {
-    let mut sa: SockaddrL2 = unsafe { mem::zeroed() };
+    let mut sa: SockaddrL2 = ffi::raw_zeroed();
     sa.l2_family = libc::AF_BLUETOOTH as u16;
     sa.l2_psm = psm.to_le();
     sa.l2_bdaddr = addr.b;
 
-    // SAFETY: bind() on a valid socket with properly-initialized sockaddr_l2.
-    let ret = unsafe {
-        libc::bind(
-            fd,
-            &sa as *const SockaddrL2 as *const libc::sockaddr,
-            std::mem::size_of::<SockaddrL2>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_bind(fd, &sa);
     if ret < 0 {
         let err = std::io::Error::last_os_error();
         return Err(BtdError::failed(&format!("L2CAP bind: {}", err)));
@@ -1269,19 +1205,12 @@ fn bind_l2cap_socket(fd: RawFd, addr: &BdAddr, psm: u16) -> Result<(), BtdError>
 
 /// Connect an L2CAP socket to a remote Bluetooth address on BNEP PSM.
 fn connect_l2cap_socket(fd: RawFd, addr: &BdAddr, psm: u16) -> Result<(), BtdError> {
-    let mut sa: SockaddrL2 = unsafe { mem::zeroed() };
+    let mut sa: SockaddrL2 = ffi::raw_zeroed();
     sa.l2_family = libc::AF_BLUETOOTH as u16;
     sa.l2_psm = psm.to_le();
     sa.l2_bdaddr = addr.b;
 
-    // SAFETY: connect() on a valid L2CAP socket with properly-initialized sockaddr_l2.
-    let ret = unsafe {
-        libc::connect(
-            fd,
-            &sa as *const SockaddrL2 as *const libc::sockaddr,
-            std::mem::size_of::<SockaddrL2>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_connect(fd, &sa);
     if ret < 0 {
         let err = std::io::Error::last_os_error();
         return Err(BtdError::failed(&format!("L2CAP connect: {}", err)));
@@ -1570,13 +1499,9 @@ impl NetworkServerInterface {
 /// Create a listening L2CAP socket for BNEP PSM.
 fn create_listener_socket(src_addr: &BdAddr) -> Result<OwnedFd, BtdError> {
     // SAFETY: Creating an L2CAP SEQPACKET socket for BNEP listening.
-    let fd = unsafe {
-        libc::socket(
-            PF_BLUETOOTH as libc::c_int,
-            libc::SOCK_SEQPACKET,
-            BTPROTO_L2CAP as libc::c_int,
-        )
-    };
+    let fd = ffi::raw_socket(
+            PF_BLUETOOTH as libc::c_int, libc::SOCK_SEQPACKET, BTPROTO_L2CAP as libc::c_int,
+        );
     if fd < 0 {
         let err = std::io::Error::last_os_error();
         return Err(BtdError::failed(&format!("L2CAP listen socket: {}", err)));
@@ -1590,16 +1515,16 @@ fn create_listener_socket(src_addr: &BdAddr) -> Result<OwnedFd, BtdError> {
 
     // Listen for incoming connections.
     // SAFETY: listen() on a valid bound socket.
-    let ret = unsafe { libc::listen(fd, 5) };
+    let ret = ffi::raw_listen(fd, 5);
     if ret < 0 {
         let err = std::io::Error::last_os_error();
         // SAFETY: close a valid fd we just created.
-        unsafe { libc::close(fd) };
+        ffi::raw_close(fd);
         return Err(BtdError::failed(&format!("L2CAP listen: {}", err)));
     }
 
     // SAFETY: fd is a valid file descriptor from successful socket+bind+listen.
-    let owned = unsafe { OwnedFd::from_raw_fd(fd) };
+    let owned = ffi::raw_owned_fd(fd);
     Ok(owned)
 }
 

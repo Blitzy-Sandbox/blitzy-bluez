@@ -418,6 +418,7 @@ impl UhidEvent {
         // via a packed pointer context. On x86_64 unaligned u64 reads are
         // handled by the CPU. For full portability, consider using read_unaligned.
         // The size (8) fits within 4376.
+        // SAFETY: Accessing the UhidStartReq variant of a union that was initialized as UHID_START.
         unsafe { &*(self.u.as_ptr().cast::<UhidStartReq>()) }
     }
 
@@ -781,6 +782,7 @@ impl BtUhid {
         // kernel UHID driver does not handle partial writes, so we verify the
         // full struct was written.
         let iov =
+            // SAFETY: writev with a valid fd and properly initialized iovec.
             libc::iovec { iov_base: bytes.as_ptr() as *mut libc::c_void, iov_len: bytes.len() };
         let len = unsafe { libc::writev(self.fd.as_raw_fd(), &iov, 1) };
         if len < 0 {

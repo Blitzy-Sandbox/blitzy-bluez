@@ -81,16 +81,8 @@ type SharedTestData = Mutex<TestData>;
 /// reference.
 ///
 /// Returns `None` if the buffer is shorter than the expected wire-format size.
-#[allow(unsafe_code)]
-fn parse_read_info_rp(data: &[u8]) -> Option<&mgmt_rp_read_info> {
-    if data.len() < std::mem::size_of::<mgmt_rp_read_info>() {
-        return None;
-    }
-    // SAFETY: `mgmt_rp_read_info` is `#[repr(C, packed)]` and matches the
-    // kernel MGMT wire format exactly.  We verified that `data` is long
-    // enough.  The returned reference borrows from `data` with the correct
-    // lifetime.
-    Some(unsafe { &*(data.as_ptr() as *const mgmt_rp_read_info) })
+fn parse_read_info_rp(data: &[u8]) -> Option<mgmt_rp_read_info> {
+    bluez_shared::sys::ffi_helpers::read_unaligned_at(data, 0)
 }
 
 // ---------------------------------------------------------------------------
@@ -341,29 +333,22 @@ fn setup_powered_client(_data: &dyn Any) {
 /// verify that the kernel BNEP module is available, then closes it.
 ///
 /// Replaces C `test_basic` (bnep-tester.c lines 260–275).
-#[allow(unsafe_code)]
 fn test_basic(_data: &dyn Any) {
+    use bluez_shared::sys::ffi_helpers;
+
     // Log BNEP protocol constants for verification.
     tester_print(&format!("BNEP PSM: 0x{:04x}, MTU: {}", BNEP_PSM, BNEP_MTU));
 
-    // SAFETY: Creating a PF_BLUETOOTH / SOCK_RAW / BTPROTO_BNEP socket via
-    // libc.  This is a standard syscall that returns a file descriptor (≥ 0)
-    // on success or -1 on error with errno set.  No invariants are violated.
-    let sk = unsafe { libc::socket(PF_BLUETOOTH, libc::SOCK_RAW, BTPROTO_BNEP) };
-    if sk < 0 {
-        let err = nix::errno::Errno::last();
-        tester_warn(&format!("Can't create socket: {err} ({})", err as i32));
-        tester_test_failed();
-        return;
+    match ffi_helpers::bt_raw_socket(PF_BLUETOOTH, libc::SOCK_RAW, BTPROTO_BNEP) {
+        Ok(_sock) => {
+            // OwnedFd automatically closes on drop.
+            tester_test_passed();
+        }
+        Err(err) => {
+            tester_warn(&format!("Can't create socket: {err}"));
+            tester_test_failed();
+        }
     }
-
-    // SAFETY: Closing the valid file descriptor obtained from socket() above.
-    // After this call `sk` is no longer valid and must not be reused.
-    unsafe {
-        libc::close(sk);
-    }
-
-    tester_test_passed();
 }
 
 // ---------------------------------------------------------------------------

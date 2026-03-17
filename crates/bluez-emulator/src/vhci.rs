@@ -189,6 +189,7 @@ impl Vhci {
         // virtual HCI controllers. The fd is valid after a successful open()
         // and we take ownership via OwnedFd below. O_NONBLOCK is required for
         // later use with tokio AsyncFd.
+        // SAFETY: Opening /dev/vhci device with O_RDWR | O_NONBLOCK. Device path is a compile-time constant.
         let raw_fd = unsafe { libc::open(c"/dev/vhci".as_ptr(), libc::O_RDWR | libc::O_NONBLOCK) };
         if raw_fd < 0 {
             return Err(VhciError::Open(std::io::Error::last_os_error()));

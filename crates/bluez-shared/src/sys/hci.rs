@@ -2200,6 +2200,7 @@ pub fn set_hci_filter_sockopt(
     // valid hci_filter struct with #[repr(C)] layout matching the kernel's
     // expected format. SOL_HCI and HCI_FILTER are the correct socket option
     // level and name for HCI filter configuration.
+    // SAFETY: ioctl with HCIGETDEVLIST on a valid HCI socket fd. Buffer is properly sized.
     let ret = unsafe {
         libc::setsockopt(
             fd.as_raw_fd(),

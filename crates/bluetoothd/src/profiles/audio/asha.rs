@@ -23,7 +23,7 @@
 //! sends ASHA Start command) and [`AshaDevice::stop`].
 
 use std::collections::HashMap;
-use std::os::unix::io::{FromRawFd, OwnedFd, RawFd};
+use std::os::unix::io::{OwnedFd, RawFd};
 use std::pin::Pin;
 use std::sync::Arc;
 
@@ -379,21 +379,9 @@ impl AshaDevice {
 ///
 /// This is a designated FFI boundary site — the only `unsafe` in this module,
 /// consistent with `sdp/server.rs` and `plugin.rs` patterns in this crate.
-#[allow(unsafe_code)]
 fn dup_raw_fd(raw: RawFd) -> Result<OwnedFd, BtdError> {
-    // SAFETY: `raw` is a valid open file descriptor obtained from
-    // `BluetoothSocket::as_raw_fd()`. `libc::dup` returns a new valid fd
-    // on success or −1 on error. The returned fd is owned exclusively by
-    // the caller and immediately wrapped in `OwnedFd` for RAII.
-    let new_fd = unsafe { libc::dup(raw) };
-    if new_fd < 0 {
-        let err = std::io::Error::last_os_error();
-        return Err(BtdError::failed(&format!("dup fd {raw}: {err}")));
-    }
-    // SAFETY: `new_fd` is a non-negative fd returned by `libc::dup` that
-    // we own exclusively. Wrapping in `OwnedFd` transfers ownership for
-    // automatic close-on-drop.
-    Ok(unsafe { OwnedFd::from_raw_fd(new_fd) })
+    bluez_shared::sys::ffi_helpers::bt_dup_fd(raw)
+        .map_err(|e| BtdError::failed(&format!("dup fd {raw}: {e}")))
 }
 
 // ---------------------------------------------------------------------------

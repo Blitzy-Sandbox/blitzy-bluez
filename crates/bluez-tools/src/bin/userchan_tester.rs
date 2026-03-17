@@ -107,12 +107,7 @@ fn parse_read_info(data: &[u8]) -> Option<mgmt_rp_read_info> {
     let mut buf = [0u8; READ_INFO_SIZE];
     buf.copy_from_slice(&data[..READ_INFO_SIZE]);
 
-    // SAFETY: mgmt_rp_read_info is Copy, repr(C,packed), and derives
-    // FromBytes — every bit pattern is valid. read_unaligned handles
-    // the packed layout correctly.
-    #[allow(unsafe_code)]
-    let rp: mgmt_rp_read_info =
-        unsafe { std::ptr::read_unaligned(buf.as_ptr().cast::<mgmt_rp_read_info>()) };
+    let rp: mgmt_rp_read_info = bluez_shared::sys::ffi_helpers::read_unaligned_at(&buf, 0)?;
     Some(rp)
 }
 

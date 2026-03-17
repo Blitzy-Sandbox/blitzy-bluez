@@ -1690,13 +1690,9 @@ async fn direct_connect(
 ///
 /// Uses `BorrowedFd::borrow_raw()` (the sole unsafe site) followed by
 /// the safe `try_clone_to_owned()` to dup the descriptor.
-#[allow(unsafe_code)]
 fn dup_socket_fd(socket: &BluetoothSocket) -> Result<OwnedFd, SessionError> {
     let raw = std::os::unix::io::AsRawFd::as_raw_fd(socket);
-    // SAFETY: `raw` is a valid open file descriptor obtained from a
-    // live `BluetoothSocket`. The borrow lives only within this function
-    // scope and the socket is not closed or moved while borrowed.
-    let borrowed = unsafe { BorrowedFd::borrow_raw(raw) };
+    let borrowed = bluez_shared::sys::ffi_helpers::bt_borrow_fd(raw);
     borrowed.try_clone_to_owned().map_err(SessionError::Io)
 }
 

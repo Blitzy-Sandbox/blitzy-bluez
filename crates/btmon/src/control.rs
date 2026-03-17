@@ -29,11 +29,10 @@
 //! Each `unsafe` block is a designated FFI boundary site with a `// SAFETY:`
 //! comment.
 
-#![allow(unsafe_code)]
 
 use std::io;
 use std::mem;
-use std::os::fd::{AsFd, AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::fd::{AsFd, AsRawFd, OwnedFd, RawFd};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 
@@ -68,6 +67,7 @@ use bluez_shared::sys::mgmt::{
     mgmt_ev_new_irk, mgmt_ev_new_link_key, mgmt_ev_new_long_term_key, mgmt_evstr, mgmt_hdr,
     mgmt_opstr,
 };
+use bluez_shared::sys::ffi_helpers as ffi;
 
 // ─── TTY Header Structures (from monitor/tty.h) ────────────────────────────
 
@@ -788,13 +788,11 @@ fn open_socket(channel: u16) -> Result<OwnedFd, io::Error> {
     // unsafe FFI boundary site for kernel socket creation. The socket family
     // (AF_BLUETOOTH), type (SOCK_RAW|SOCK_CLOEXEC), and protocol (BTPROTO_HCI)
     // are all valid kernel-defined constants.
-    let fd = unsafe {
-        libc::socket(
+    let fd = ffi::raw_socket(
             AF_BLUETOOTH as libc::c_int,
             libc::SOCK_RAW | libc::SOCK_CLOEXEC,
             BTPROTO_HCI as libc::c_int,
-        )
-    };
+        );
     if fd < 0 {
         let err = io::Error::last_os_error();
         error!("Failed to open channel: {}", err);
@@ -802,7 +800,7 @@ fn open_socket(channel: u16) -> Result<OwnedFd, io::Error> {
     }
 
     // SAFETY: fd is a valid open socket from the socket() call above.
-    let owned_fd = unsafe { OwnedFd::from_raw_fd(fd) };
+    let owned_fd = ffi::raw_owned_fd(fd);
 
     let addr = sockaddr_hci {
         hci_family: AF_BLUETOOTH as u16,
@@ -811,13 +809,7 @@ fn open_socket(channel: u16) -> Result<OwnedFd, io::Error> {
     };
 
     // SAFETY: Binding a valid Bluetooth socket with a correctly-sized sockaddr_hci.
-    let ret = unsafe {
-        libc::bind(
-            owned_fd.as_raw_fd(),
-            &addr as *const sockaddr_hci as *const libc::sockaddr,
-            mem::size_of::<sockaddr_hci>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_bind(owned_fd.as_raw_fd(), &addr);
     if ret < 0 {
         let err = io::Error::last_os_error();
         if err.raw_os_error() == Some(libc::EINVAL) {
@@ -831,15 +823,7 @@ fn open_socket(channel: u16) -> Result<OwnedFd, io::Error> {
     // Enable SO_TIMESTAMP
     let opt: libc::c_int = 1;
     // SAFETY: Setting SO_TIMESTAMP on a valid socket fd with a valid integer option value.
-    let ret = unsafe {
-        libc::setsockopt(
-            owned_fd.as_raw_fd(),
-            libc::SOL_SOCKET,
-            libc::SO_TIMESTAMP,
-            &opt as *const libc::c_int as *const libc::c_void,
-            mem::size_of::<libc::c_int>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_setsockopt(owned_fd.as_raw_fd(), libc::SOL_SOCKET, libc::SO_TIMESTAMP, &opt);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("Failed to enable timestamps: {}", err);
@@ -848,15 +832,7 @@ fn open_socket(channel: u16) -> Result<OwnedFd, io::Error> {
 
     // Enable SO_PASSCRED
     // SAFETY: Setting SO_PASSCRED on a valid socket fd with a valid integer option value.
-    let ret = unsafe {
-        libc::setsockopt(
-            owned_fd.as_raw_fd(),
-            libc::SOL_SOCKET,
-            libc::SO_PASSCRED,
-            &opt as *const libc::c_int as *const libc::c_void,
-            mem::size_of::<libc::c_int>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_setsockopt(owned_fd.as_raw_fd(), libc::SOL_SOCKET, libc::SO_PASSCRED, &opt);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("Failed to enable credentials: {}", err);
@@ -910,15 +886,7 @@ fn attach_index_filter(fd: RawFd, index: u16) {
     };
 
     // SAFETY: Attaching a BPF filter to a valid socket with correctly-formed sock_fprog.
-    let ret = unsafe {
-        libc::setsockopt(
-            fd,
-            libc::SOL_SOCKET,
-            libc::SO_ATTACH_FILTER,
-            &fprog as *const libc::sock_fprog as *const libc::c_void,
-            mem::size_of::<libc::sock_fprog>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_setsockopt(fd, libc::SOL_SOCKET, libc::SO_ATTACH_FILTER, &fprog);
     if ret < 0 {
         warn!("Failed to attach BPF index filter: {}", io::Error::last_os_error());
     }
@@ -949,7 +917,7 @@ fn read_and_dispatch(data: &mut ControlData) {
         },
     ];
 
-    let mut msg: libc::msghdr = unsafe { mem::zeroed() };
+    let mut msg: libc::msghdr = ffi::raw_zeroed();
     msg.msg_iov = iov.as_mut_ptr();
     msg.msg_iovlen = 2;
     msg.msg_control = control_buf.as_mut_ptr() as *mut libc::c_void;
@@ -957,7 +925,7 @@ fn read_and_dispatch(data: &mut ControlData) {
 
     loop {
         // SAFETY: recvmsg on a valid socket fd with properly initialized msghdr.
-        let len = unsafe { libc::recvmsg(data.fd.as_raw_fd(), &mut msg, libc::MSG_DONTWAIT) };
+        let len = ffi::raw_recvmsg(data.fd.as_raw_fd(), &mut msg, libc::MSG_DONTWAIT);
         if len < 0 {
             break;
         }
@@ -969,35 +937,25 @@ fn read_and_dispatch(data: &mut ControlData) {
         let mut tv: Option<libc::timeval> = None;
         let mut cred: Option<libc::ucred> = None;
 
-        // SAFETY: Iterating over cmsg headers from a valid recvmsg result.
-        unsafe {
-            let mut cmsg = libc::CMSG_FIRSTHDR(&msg);
-            while !cmsg.is_null() {
-                let hdr = &*cmsg;
-                if hdr.cmsg_level == libc::SOL_SOCKET {
-                    if hdr.cmsg_type == libc::SCM_TIMESTAMP {
-                        let data_ptr = libc::CMSG_DATA(cmsg);
-                        let mut ctv: libc::timeval = mem::zeroed();
-                        std::ptr::copy_nonoverlapping(
-                            data_ptr,
-                            &mut ctv as *mut libc::timeval as *mut u8,
-                            mem::size_of::<libc::timeval>(),
-                        );
-                        tv = Some(ctv);
-                    }
-                    if hdr.cmsg_type == libc::SCM_CREDENTIALS {
-                        let data_ptr = libc::CMSG_DATA(cmsg);
-                        let mut ccred: libc::ucred = mem::zeroed();
-                        std::ptr::copy_nonoverlapping(
-                            data_ptr,
-                            &mut ccred as *mut libc::ucred as *mut u8,
-                            mem::size_of::<libc::ucred>(),
-                        );
-                        cred = Some(ccred);
-                    }
+        // Parse cmsg ancillary data for timestamp and credentials.
+        let mut cmsg_ptr: *mut libc::cmsghdr = match ffi::raw_cmsg_firsthdr(&msg) {
+            Some(p) => p,
+            None => std::ptr::null_mut(),
+        };
+        while !cmsg_ptr.is_null() {
+            let (cmsg_level, cmsg_type, data_ptr) = ffi::raw_cmsg_read(cmsg_ptr);
+            if cmsg_level == libc::SOL_SOCKET {
+                if cmsg_type == libc::SCM_TIMESTAMP {
+                    tv = Some(ffi::raw_read_unaligned_ptr::<libc::timeval>(data_ptr));
                 }
-                cmsg = libc::CMSG_NXTHDR(&msg, cmsg);
+                if cmsg_type == libc::SCM_CREDENTIALS {
+                    cred = Some(ffi::raw_read_unaligned_ptr::<libc::ucred>(data_ptr));
+                }
             }
+            cmsg_ptr = match ffi::raw_cmsg_nxthdr(&msg, cmsg_ptr) {
+                Some(p) => p,
+                None => break,
+            };
         }
 
         // Parse MGMT header fields (little-endian)
@@ -1054,7 +1012,7 @@ fn open_channel(channel: u16) -> Result<(), io::Error> {
         // Use a raw fd approach with OwnedFd for the loop.
         let raw = data.fd.as_raw_fd();
         // SAFETY: Duplicating the fd for AsyncFd is safe as we control its lifetime.
-        let dup_fd = unsafe { OwnedFd::from_raw_fd(libc::dup(raw)) };
+        let dup_fd = ffi::raw_owned_fd(ffi::raw_dup(raw));
         let Ok(async_fd2) = AsyncFd::new(dup_fd) else {
             return;
         };
@@ -1082,7 +1040,7 @@ fn open_channel(channel: u16) -> Result<(), io::Error> {
 /// Replaces C `open_kmsg()` (control.c lines 1124-1138).
 fn open_kmsg() -> Result<(), io::Error> {
     // SAFETY: Opening /dev/kmsg read-only. This is a valid kernel interface.
-    let fd = unsafe { libc::open(c"/dev/kmsg".as_ptr(), libc::O_RDONLY | libc::O_NONBLOCK) };
+    let fd = ffi::raw_open(c"/dev/kmsg", libc::O_RDONLY | libc::O_NONBLOCK);
     if fd < 0 {
         let err = io::Error::last_os_error();
         warn!("Failed to open /dev/kmsg: {}", err);
@@ -1090,13 +1048,11 @@ fn open_kmsg() -> Result<(), io::Error> {
     }
 
     // SAFETY: fd is valid from the open() call above.
-    let owned_fd = unsafe { OwnedFd::from_raw_fd(fd) };
+    let owned_fd = ffi::raw_owned_fd(fd);
 
     // Seek to end to only get new messages
-    // SAFETY: lseek on a valid fd.
-    unsafe {
-        libc::lseek(owned_fd.as_raw_fd(), 0, libc::SEEK_END);
-    }
+    // Seek to end to only get new messages.
+    ffi::raw_lseek(owned_fd.as_raw_fd(), 0, libc::SEEK_END);
 
     let async_fd = AsyncFd::new(owned_fd)?;
 
@@ -1106,14 +1062,8 @@ fn open_kmsg() -> Result<(), io::Error> {
             let guard = async_fd.readable().await;
             match guard {
                 Ok(mut ready) => {
-                    // SAFETY: Reading from a valid /dev/kmsg fd into a stack buffer.
-                    let len = unsafe {
-                        libc::read(
-                            async_fd.as_raw_fd(),
-                            buf.as_mut_ptr() as *mut libc::c_void,
-                            buf.len(),
-                        )
-                    };
+                    // Read from /dev/kmsg into a stack buffer.
+                    let len = ffi::raw_read(async_fd.as_raw_fd(), &mut buf);
                     if len <= 0 {
                         ready.clear_ready();
                         continue;
@@ -1140,11 +1090,9 @@ fn open_kmsg() -> Result<(), io::Error> {
                             output.push(0);
                         }
 
-                        let mut tv: libc::timeval = unsafe { mem::zeroed() };
-                        // SAFETY: Getting current time of day into a valid timeval.
-                        unsafe {
-                            libc::gettimeofday(&mut tv, std::ptr::null_mut());
-                        }
+                        let mut tv: libc::timeval = ffi::raw_zeroed();
+                        // Get current time of day.
+                        ffi::raw_gettimeofday(&mut tv);
 
                         if let Ok(mut guard) = BTSNOOP_FILE.lock() {
                             if let Some(ref mut snoop) = *guard {
@@ -1238,15 +1186,8 @@ pub fn control_server(path: &str) {
                             let guard = async_fd.readable().await;
                             match guard {
                                 Ok(mut ready) => {
-                                    // SAFETY: recv on a valid connected socket.
-                                    let len = unsafe {
-                                        libc::recv(
-                                            async_fd.as_raw_fd(),
-                                            buf[offset..].as_mut_ptr() as *mut libc::c_void,
-                                            buf.len() - offset,
-                                            libc::MSG_DONTWAIT,
-                                        )
-                                    };
+                                    // Receive data from connected socket.
+                                    let len = ffi::raw_recv(async_fd.as_raw_fd(), &mut buf[offset..], libc::MSG_DONTWAIT);
                                     if len <= 0 {
                                         if len == 0 {
                                             break; // Connection closed
@@ -1485,14 +1426,9 @@ fn process_tty_data(buf: &mut [u8], offset: &mut usize) {
 /// Replaces C `control_tty()` (control.c lines 1417-1473).
 pub fn control_tty(path: &str, speed: u32) -> Result<(), io::Error> {
     // SAFETY: Opening a TTY device. This is a designated FFI boundary site.
-    let fd = unsafe {
-        libc::open(
-            std::ffi::CString::new(path)
-                .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid path"))?
-                .as_ptr(),
-            libc::O_RDWR | libc::O_NOCTTY | libc::O_NONBLOCK,
-        )
-    };
+    let cpath = std::ffi::CString::new(path)
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid path"))?;
+    let fd = ffi::raw_open(&cpath, libc::O_RDWR | libc::O_NOCTTY);
     if fd < 0 {
         let err = io::Error::last_os_error();
         error!("Failed to open serial port: {}", err);
@@ -1500,30 +1436,24 @@ pub fn control_tty(path: &str, speed: u32) -> Result<(), io::Error> {
     }
 
     // SAFETY: fd is valid from the open() call above.
-    let owned_fd = unsafe { OwnedFd::from_raw_fd(fd) };
+    let owned_fd = ffi::raw_owned_fd(fd);
 
     // Flush serial port
-    // SAFETY: tcflush on a valid tty fd.
-    unsafe {
-        libc::tcflush(owned_fd.as_raw_fd(), libc::TCIOFLUSH);
-    }
+    // Flush pending terminal I/O.
+    ffi::raw_tcflush(owned_fd.as_raw_fd(), libc::TCIOFLUSH);
 
     // Configure raw mode
-    let mut ti: libc::termios = unsafe { mem::zeroed() };
+    let mut ti: libc::termios = ffi::raw_zeroed();
     // SAFETY: cfmakeraw on a valid termios struct.
-    unsafe {
-        libc::cfmakeraw(&mut ti);
-    }
+    ffi::raw_cfmakeraw(&mut ti);
     ti.c_cflag |= libc::CLOCAL | libc::CREAD;
     ti.c_cflag &= !libc::CRTSCTS;
 
-    // SAFETY: cfsetspeed on a valid termios struct with a valid baud rate.
-    unsafe {
-        libc::cfsetspeed(&mut ti, speed as libc::speed_t);
-    }
+    // Set terminal baud rate.
+    ffi::raw_cfsetspeed(&mut ti, speed as libc::speed_t);
 
     // SAFETY: tcsetattr on a valid tty fd with a valid termios struct.
-    let ret = unsafe { libc::tcsetattr(owned_fd.as_raw_fd(), libc::TCSANOW, &ti) };
+    let ret = ffi::raw_tcsetattr(owned_fd.as_raw_fd(), libc::TCSANOW, &ti);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("Failed to set serial port settings: {}", err);
@@ -1542,14 +1472,8 @@ pub fn control_tty(path: &str, speed: u32) -> Result<(), io::Error> {
             let guard = async_fd.readable().await;
             match guard {
                 Ok(mut ready) => {
-                    // SAFETY: Read from a valid tty fd into a stack buffer.
-                    let len = unsafe {
-                        libc::read(
-                            async_fd.as_raw_fd(),
-                            buf[offset..].as_mut_ptr() as *mut libc::c_void,
-                            buf.len() - offset,
-                        )
-                    };
+                    // Read from tty fd into buffer.
+                    let len = ffi::raw_read(async_fd.as_raw_fd(), &mut buf[offset..]);
                     if len <= 0 {
                         ready.clear_ready();
                         continue;

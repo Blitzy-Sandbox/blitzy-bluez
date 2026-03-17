@@ -9,10 +9,7 @@
  * Ported from tools/l2cap-tester.c (3296 lines, GPL-2.0-or-later).
  */
 #![deny(warnings)]
-// L2CAP tester requires raw Bluetooth socket FFI throughout — socket(),
-// bind(), connect(), listen(), accept(), setsockopt(), getsockopt(), etc.
-// Every socket operation is documented with `// SAFETY:` comments.
-#![allow(unsafe_code)]
+// All FFI operations delegated to safe wrappers in bluez_shared::sys::ffi_helpers.
 
 // ---------------------------------------------------------------------------
 // Imports
@@ -54,6 +51,7 @@ use bluez_shared::tester::{
     tester_use_debug, tester_warn,
 };
 use bluez_shared::util::endian::IoBuf;
+use bluez_shared::sys::ffi_helpers as ffi;
 use bluez_tools::{
     SOF_TIMESTAMPING_OPT_ID, SOF_TIMESTAMPING_RX_SOFTWARE, SOF_TIMESTAMPING_SOFTWARE,
     SOF_TIMESTAMPING_TX_COMPLETION, SOF_TIMESTAMPING_TX_SOFTWARE, TxTstampData, recv_tstamp,
@@ -1138,12 +1136,12 @@ fn create_l2cap_sock(local_addr: &bdaddr_t, l2data: &L2capData, addr_type: u8) -
 
     // SAFETY: Creating a Bluetooth L2CAP socket with validated constants.
     let sk =
-        unsafe { libc::socket(PF_BLUETOOTH, sock_type_flag | libc::SOCK_NONBLOCK, BTPROTO_L2CAP) };
+        ffi::raw_socket(PF_BLUETOOTH, sock_type_flag | libc::SOCK_NONBLOCK, BTPROTO_L2CAP);
     if sk < 0 {
         return Err(errno());
     }
 
-    let mut addr: sockaddr_l2 = unsafe { std::mem::zeroed() };
+    let mut addr: sockaddr_l2 = ffi::raw_zeroed();
     addr.l2_family = AF_BLUETOOTH as u16;
     addr.l2_bdaddr = *local_addr;
     addr.l2_bdaddr_type = addr_type;
@@ -1154,16 +1152,10 @@ fn create_l2cap_sock(local_addr: &bdaddr_t, l2data: &L2capData, addr_type: u8) -
 
     if l2data.client_psm != 0 || l2data.cid != 0 {
         // SAFETY: Binding socket with a properly initialized sockaddr_l2.
-        let ret = unsafe {
-            libc::bind(
-                sk,
-                &addr as *const sockaddr_l2 as *const libc::sockaddr,
-                std::mem::size_of::<sockaddr_l2>() as libc::socklen_t,
-            )
-        };
+        let ret = ffi::raw_bind(sk, &addr);
         if ret < 0 {
             let e = errno();
-            unsafe { libc::close(sk) };
+            ffi::raw_close(sk);
             return Err(e);
         }
     }
@@ -1171,18 +1163,10 @@ fn create_l2cap_sock(local_addr: &bdaddr_t, l2data: &L2capData, addr_type: u8) -
     if l2data.sec_level != 0 {
         let sec = bt_security { level: l2data.sec_level, key_size: 0 };
         // SAFETY: Setting BT_SECURITY with correctly sized bt_security struct.
-        let ret = unsafe {
-            libc::setsockopt(
-                sk,
-                SOL_BLUETOOTH,
-                BT_SECURITY,
-                &sec as *const bt_security as *const libc::c_void,
-                std::mem::size_of::<bt_security>() as libc::socklen_t,
-            )
-        };
+        let ret = ffi::raw_setsockopt(sk, SOL_BLUETOOTH, BT_SECURITY, &sec);
         if ret < 0 {
             let e = errno();
-            unsafe { libc::close(sk) };
+            ffi::raw_close(sk);
             return Err(e);
         }
     }
@@ -1190,18 +1174,10 @@ fn create_l2cap_sock(local_addr: &bdaddr_t, l2data: &L2capData, addr_type: u8) -
     if l2data.mode != 0 {
         let mode: u8 = l2data.mode;
         // SAFETY: Setting BT_MODE with correctly sized u8.
-        let ret = unsafe {
-            libc::setsockopt(
-                sk,
-                SOL_BLUETOOTH,
-                BT_MODE,
-                &mode as *const u8 as *const libc::c_void,
-                std::mem::size_of::<u8>() as libc::socklen_t,
-            )
-        };
+        let ret = ffi::raw_setsockopt(sk, SOL_BLUETOOTH, BT_MODE, &mode);
         if ret < 0 {
             let e = errno();
-            unsafe { libc::close(sk) };
+            ffi::raw_close(sk);
             return Err(e);
         }
     }
@@ -1212,7 +1188,7 @@ fn create_l2cap_sock(local_addr: &bdaddr_t, l2data: &L2capData, addr_type: u8) -
 /// Initiate a non-blocking connect on `sk` to the remote address.
 /// Returns 0 on EINPROGRESS (expected for non-blocking), or errno on error.
 fn connect_l2cap_impl(sk: i32, remote_addr: &bdaddr_t, addr_type: u8, psm: u16, cid: u16) -> i32 {
-    let mut addr: sockaddr_l2 = unsafe { std::mem::zeroed() };
+    let mut addr: sockaddr_l2 = ffi::raw_zeroed();
     addr.l2_family = AF_BLUETOOTH as u16;
     addr.l2_bdaddr = *remote_addr;
     addr.l2_bdaddr_type = addr_type;
@@ -1224,13 +1200,7 @@ fn connect_l2cap_impl(sk: i32, remote_addr: &bdaddr_t, addr_type: u8, psm: u16, 
     }
 
     // SAFETY: Connecting socket with properly initialized sockaddr_l2.
-    let ret = unsafe {
-        libc::connect(
-            sk,
-            &addr as *const sockaddr_l2 as *const libc::sockaddr,
-            std::mem::size_of::<sockaddr_l2>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_connect(sk, &addr);
 
     if ret < 0 {
         let e = errno();
@@ -1253,15 +1223,7 @@ fn get_socket_error(sk: i32) -> i32 {
     let mut err: libc::c_int = 0;
     let mut len: libc::socklen_t = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
     // SAFETY: Properly sized buffer for SO_ERROR query.
-    let ret = unsafe {
-        libc::getsockopt(
-            sk,
-            libc::SOL_SOCKET,
-            libc::SO_ERROR,
-            &mut err as *mut libc::c_int as *mut libc::c_void,
-            &mut len,
-        )
-    };
+    let ret = ffi::raw_getsockopt(sk, libc::SOL_SOCKET, libc::SO_ERROR, &mut err, &mut len);
     if ret < 0 {
         return errno();
     }
@@ -1273,7 +1235,7 @@ fn get_socket_error(sk: i32) -> i32 {
 fn poll_socket(sk: i32, events: i16, timeout_ms: i32) -> i16 {
     let mut pfd = libc::pollfd { fd: sk, events, revents: 0 };
     // SAFETY: Polling a single fd with properly initialized pollfd.
-    let ret = unsafe { libc::poll(&mut pfd, 1, timeout_ms) };
+    let ret = { let (_pr, _rv) = ffi::raw_poll_single(pfd.fd, pfd.events, timeout_ms); pfd.revents = _rv; _pr };
     if ret < 0 {
         return -(errno() as i16);
     }
@@ -1287,7 +1249,7 @@ fn poll_socket(sk: i32, events: i16, timeout_ms: i32) -> i16 {
 fn socket_read(sk: i32, len: usize) -> Result<Vec<u8>, i32> {
     let mut buf = vec![0u8; len];
     // SAFETY: Reading into a properly allocated buffer.
-    let ret = unsafe { libc::read(sk, buf.as_mut_ptr() as *mut libc::c_void, len) };
+    let ret = ffi::raw_read(sk, &mut buf[..len]);
     if ret < 0 {
         return Err(errno());
     }
@@ -1299,7 +1261,7 @@ fn socket_read(sk: i32, len: usize) -> Result<Vec<u8>, i32> {
 #[allow(dead_code)]
 fn socket_write(sk: i32, data: &[u8]) -> Result<usize, i32> {
     // SAFETY: Writing from a properly initialized buffer.
-    let ret = unsafe { libc::write(sk, data.as_ptr() as *const libc::c_void, data.len()) };
+    let ret = ffi::raw_write(sk, data);
     if ret < 0 {
         return Err(errno());
     }
@@ -1309,7 +1271,7 @@ fn socket_write(sk: i32, data: &[u8]) -> Result<usize, i32> {
 /// Send data via send() syscall with no flags.
 fn socket_send(sk: i32, data: &[u8]) -> Result<usize, i32> {
     // SAFETY: Sending from a properly initialized buffer.
-    let ret = unsafe { libc::send(sk, data.as_ptr() as *const libc::c_void, data.len(), 0) };
+    let ret = ffi::raw_send(sk, data, 0);
     if ret < 0 {
         return Err(errno());
     }
@@ -1326,30 +1288,14 @@ fn check_mtu(sk: i32, l2data: &L2capData) -> Result<(u16, u16), i32> {
         let mut len = std::mem::size_of::<u16>() as libc::socklen_t;
 
         // SAFETY: Reading BT_RCVMTU with correctly sized buffer.
-        let ret = unsafe {
-            libc::getsockopt(
-                sk,
-                SOL_BLUETOOTH,
-                BT_RCVMTU,
-                &mut rmtu as *mut u16 as *mut libc::c_void,
-                &mut len,
-            )
-        };
+        let ret = ffi::raw_getsockopt(sk, SOL_BLUETOOTH, BT_RCVMTU, &mut rmtu, &mut len);
         if ret < 0 {
             return Err(errno());
         }
 
         len = std::mem::size_of::<u16>() as libc::socklen_t;
         // SAFETY: Reading BT_SNDMTU with correctly sized buffer.
-        let ret = unsafe {
-            libc::getsockopt(
-                sk,
-                SOL_BLUETOOTH,
-                BT_SNDMTU,
-                &mut smtu as *mut u16 as *mut libc::c_void,
-                &mut len,
-            )
-        };
+        let ret = ffi::raw_getsockopt(sk, SOL_BLUETOOTH, BT_SNDMTU, &mut smtu, &mut len);
         if ret < 0 {
             return Err(errno());
         }
@@ -1359,15 +1305,7 @@ fn check_mtu(sk: i32, l2data: &L2capData) -> Result<(u16, u16), i32> {
         let mut opts = l2cap_options::default();
         let mut len = std::mem::size_of::<l2cap_options>() as libc::socklen_t;
         // SAFETY: Reading L2CAP_OPTIONS with correctly sized buffer.
-        let ret = unsafe {
-            libc::getsockopt(
-                sk,
-                SOL_BLUETOOTH,
-                L2CAP_OPTIONS,
-                &mut opts as *mut l2cap_options as *mut libc::c_void,
-                &mut len,
-            )
-        };
+        let ret = ffi::raw_getsockopt(sk, SOL_BLUETOOTH, L2CAP_OPTIONS, &mut opts, &mut len);
         if ret < 0 {
             return Err(errno());
         }
@@ -1380,15 +1318,7 @@ fn get_phy(sk: i32) -> Result<u32, i32> {
     let mut phys: u32 = 0;
     let mut len = std::mem::size_of::<u32>() as libc::socklen_t;
     // SAFETY: Reading BT_PHY with correctly sized buffer.
-    let ret = unsafe {
-        libc::getsockopt(
-            sk,
-            SOL_BLUETOOTH,
-            BT_PHY,
-            &mut phys as *mut u32 as *mut libc::c_void,
-            &mut len,
-        )
-    };
+    let ret = ffi::raw_getsockopt(sk, SOL_BLUETOOTH, BT_PHY, &mut phys, &mut len);
     if ret < 0 {
         return Err(errno());
     }
@@ -1398,15 +1328,7 @@ fn get_phy(sk: i32) -> Result<u32, i32> {
 /// Set the BT_PHY bitmask on a socket.
 fn set_phy(sk: i32, phy: u32) -> Result<(), i32> {
     // SAFETY: Setting BT_PHY with correctly sized u32 buffer.
-    let ret = unsafe {
-        libc::setsockopt(
-            sk,
-            SOL_BLUETOOTH,
-            BT_PHY,
-            &phy as *const u32 as *const libc::c_void,
-            std::mem::size_of::<u32>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_setsockopt(sk, SOL_BLUETOOTH, BT_PHY, &phy);
     if ret < 0 {
         return Err(errno());
     }
@@ -1416,15 +1338,7 @@ fn set_phy(sk: i32, phy: u32) -> Result<(), i32> {
 /// Set SO_TIMESTAMPING on a socket.
 fn set_so_timestamping(sk: i32, flags: u32) -> Result<(), i32> {
     // SAFETY: Setting SO_TIMESTAMPING with correctly sized u32.
-    let ret = unsafe {
-        libc::setsockopt(
-            sk,
-            libc::SOL_SOCKET,
-            libc::SO_TIMESTAMPING,
-            &flags as *const u32 as *const libc::c_void,
-            std::mem::size_of::<u32>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_setsockopt(sk, libc::SOL_SOCKET, libc::SO_TIMESTAMPING, &flags);
     if ret < 0 {
         return Err(errno());
     }
@@ -1435,15 +1349,7 @@ fn set_so_timestamping(sk: i32, flags: u32) -> Result<(), i32> {
 fn set_defer_setup(sk: i32, enable: bool) -> Result<(), i32> {
     let val: i32 = if enable { 1 } else { 0 };
     // SAFETY: Setting BT_DEFER_SETUP with correctly sized i32.
-    let ret = unsafe {
-        libc::setsockopt(
-            sk,
-            SOL_BLUETOOTH,
-            BT_DEFER_SETUP,
-            &val as *const i32 as *const libc::c_void,
-            std::mem::size_of::<i32>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_setsockopt(sk, SOL_BLUETOOTH, BT_DEFER_SETUP, &val);
     if ret < 0 {
         return Err(errno());
     }
@@ -1453,15 +1359,7 @@ fn set_defer_setup(sk: i32, enable: bool) -> Result<(), i32> {
 /// Increase SO_SNDBUF to at least `size`.
 fn increase_sndbuf(sk: i32, size: i32) -> Result<(), i32> {
     // SAFETY: Setting SO_SNDBUF with correctly sized i32.
-    let ret = unsafe {
-        libc::setsockopt(
-            sk,
-            libc::SOL_SOCKET,
-            libc::SO_SNDBUF,
-            &size as *const i32 as *const libc::c_void,
-            std::mem::size_of::<i32>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_setsockopt(sk, libc::SOL_SOCKET, libc::SO_SNDBUF, &size);
     if ret < 0 {
         return Err(errno());
     }
@@ -1616,12 +1514,12 @@ fn test_post_teardown(data: &dyn Any) {
         // Close sockets.
         if u.sk >= 0 {
             // SAFETY: sk is a valid fd opened by libc::socket.
-            unsafe { libc::close(u.sk) };
+            ffi::raw_close(u.sk);
             u.sk = -1;
         }
         if u.sk2 >= 0 {
             // SAFETY: sk2 is a valid fd opened by libc::socket.
-            unsafe { libc::close(u.sk2) };
+            ffi::raw_close(u.sk2);
             u.sk2 = -1;
         }
 
@@ -1857,37 +1755,35 @@ async fn setup_powered_server_async(state: SharedState) -> Result<(), String> {
 /// Simple test: create a socket and close it immediately.
 fn test_basic(_data: &dyn Any) {
     // SAFETY: Creating and immediately closing a Bluetooth socket.
-    let sk = unsafe { libc::socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_L2CAP) };
+    let sk = ffi::raw_socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_L2CAP);
     if sk < 0 {
         tester_warn(&format!("Failed to create socket: {}", errno()));
         tester_test_failed();
         return;
     }
     // SAFETY: Closing a valid fd obtained from socket().
-    unsafe { libc::close(sk) };
+    ffi::raw_close(sk);
     tester_test_passed();
 }
 
 /// Test getpeername on a non-connected socket → expect ENOTCONN.
 fn test_getpeername_not_connected(_data: &dyn Any) {
     // SAFETY: Creating an L2CAP socket for getpeername test.
-    let sk = unsafe { libc::socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_L2CAP) };
+    let sk = ffi::raw_socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_L2CAP);
     if sk < 0 {
         tester_warn("Failed to create socket");
         tester_test_failed();
         return;
     }
 
-    let mut addr: sockaddr_l2 = unsafe { std::mem::zeroed() };
+    let mut addr: sockaddr_l2 = ffi::raw_zeroed();
     let mut len: libc::socklen_t = std::mem::size_of::<sockaddr_l2>() as libc::socklen_t;
 
     // SAFETY: getpeername on non-connected socket with properly sized buffer.
-    let ret = unsafe {
-        libc::getpeername(sk, &mut addr as *mut sockaddr_l2 as *mut libc::sockaddr, &mut len)
-    };
+    let ret = ffi::raw_getpeername(sk, &mut addr, &mut len);
 
     // SAFETY: Closing the test socket.
-    unsafe { libc::close(sk) };
+    ffi::raw_close(sk);
 
     if ret < 0 && errno() == libc::ENOTCONN {
         tester_test_passed();
@@ -2282,7 +2178,7 @@ fn test_connect(data: &dyn Any) {
     } else if l2data.shut_sock_wr {
         // shutdown(SHUT_WR) test
         // SAFETY: Shutting down write side of connected socket.
-        let ret = unsafe { libc::shutdown(sk, libc::SHUT_WR) };
+        let ret = ffi::raw_shutdown(sk, libc::SHUT_WR);
         if ret < 0 {
             tester_warn(&format!("shutdown(SHUT_WR) failed: errno={}", errno()));
             tester_test_failed();
@@ -2349,8 +2245,8 @@ fn test_connect_close(data: &dyn Any) {
 
     // Immediately shutdown and close
     // SAFETY: Shutting down a connected socket.
-    unsafe { libc::shutdown(sk, libc::SHUT_RDWR) };
-    unsafe { libc::close(sk) };
+    ffi::raw_shutdown(sk, libc::SHUT_RDWR);
+    ffi::raw_close(sk);
     user.lock().unwrap().sk = -1;
 
     tester_test_passed();
@@ -2395,15 +2291,7 @@ fn test_connect_timeout(data: &dyn Any) {
     // Set send timeout
     let tv = libc::timeval { tv_sec: 1, tv_usec: 0 };
     // SAFETY: Setting SO_SNDTIMEO with properly initialized timeval.
-    unsafe {
-        libc::setsockopt(
-            sk,
-            libc::SOL_SOCKET,
-            libc::SO_SNDTIMEO,
-            &tv as *const libc::timeval as *const libc::c_void,
-            std::mem::size_of::<libc::timeval>() as libc::socklen_t,
-        );
-    }
+    ffi::raw_setsockopt(sk, libc::SOL_SOCKET, libc::SO_SNDTIMEO, &tv);
 
     let remote_addr = get_connect_addr(&emu, l2data);
     let ret = connect_l2cap_impl(sk, &remote_addr, addr_type, l2data.client_psm, l2data.cid);
@@ -2569,7 +2457,7 @@ fn test_connect_2(data: &dyn Any) {
     // If close_1, close first socket before second connect
     if l2data.close_1 {
         // SAFETY: Closing first socket.
-        unsafe { libc::close(sk1) };
+        ffi::raw_close(sk1);
         user.lock().unwrap().sk = -1;
     }
 
@@ -2678,7 +2566,7 @@ fn test_close_socket(data: &dyn Any) {
     }
 
     // Close socket
-    unsafe { libc::close(sk) };
+    ffi::raw_close(sk);
     user.lock().unwrap().sk = -1;
 
     // Small delay for cleanup
@@ -2734,23 +2622,17 @@ fn test_server(data: &dyn Any) {
 
     // Bind with server PSM if needed (already done in create_l2cap_sock if client_psm set)
     if l2data.server_psm != 0 && l2data.client_psm == 0 {
-        let mut addr: sockaddr_l2 = unsafe { std::mem::zeroed() };
+        let mut addr: sockaddr_l2 = ffi::raw_zeroed();
         addr.l2_family = AF_BLUETOOTH as u16;
         addr.l2_bdaddr = local_addr;
         addr.l2_bdaddr_type = addr_type;
         addr.l2_psm = htobs(l2data.server_psm);
 
         // SAFETY: Binding with properly initialized sockaddr_l2.
-        let ret = unsafe {
-            libc::bind(
-                sk,
-                &addr as *const sockaddr_l2 as *const libc::sockaddr,
-                std::mem::size_of::<sockaddr_l2>() as libc::socklen_t,
-            )
-        };
+        let ret = ffi::raw_bind(sk, &addr);
         if ret < 0 {
             tester_warn(&format!("Server bind failed: errno={}", errno()));
-            unsafe { libc::close(sk) };
+            ffi::raw_close(sk);
             tester_test_failed();
             return;
         }
@@ -2760,17 +2642,17 @@ fn test_server(data: &dyn Any) {
     if l2data.defer {
         if let Err(e) = set_defer_setup(sk, true) {
             tester_warn(&format!("defer_setup failed: errno={e}"));
-            unsafe { libc::close(sk) };
+            ffi::raw_close(sk);
             tester_test_failed();
             return;
         }
     }
 
     // SAFETY: Listen on properly bound socket.
-    let ret = unsafe { libc::listen(sk, 5) };
+    let ret = ffi::raw_listen(sk, 5);
     if ret < 0 {
         tester_warn(&format!("listen failed: errno={}", errno()));
-        unsafe { libc::close(sk) };
+        ffi::raw_close(sk);
         tester_test_failed();
         return;
     }
@@ -2829,13 +2711,11 @@ fn test_server(data: &dyn Any) {
     }
 
     // Accept the connection
-    let mut peer_addr: sockaddr_l2 = unsafe { std::mem::zeroed() };
+    let mut peer_addr: sockaddr_l2 = ffi::raw_zeroed();
     let mut peer_len: libc::socklen_t = std::mem::size_of::<sockaddr_l2>() as libc::socklen_t;
 
     // SAFETY: Accepting with properly sized sockaddr_l2 buffer.
-    let new_sk = unsafe {
-        libc::accept(sk, &mut peer_addr as *mut sockaddr_l2 as *mut libc::sockaddr, &mut peer_len)
-    };
+    let new_sk = ffi::raw_accept(sk, &mut peer_addr, &mut peer_len);
     if new_sk < 0 {
         if l2data.expect_err != 0 {
             tester_test_passed();
@@ -2854,7 +2734,7 @@ fn test_server(data: &dyn Any) {
         let rev = poll_socket(new_sk, libc::POLLOUT, 5000);
         if rev <= 0 {
             tester_warn("Deferred setup timeout");
-            unsafe { libc::close(new_sk) };
+            ffi::raw_close(new_sk);
             tester_test_failed();
             return;
         }
@@ -2862,10 +2742,10 @@ fn test_server(data: &dyn Any) {
         // Read 1 byte to complete deferred setup
         let mut buf = [0u8; 1];
         // SAFETY: Reading 1 byte from deferred socket.
-        let ret = unsafe { libc::read(new_sk, buf.as_mut_ptr() as *mut libc::c_void, 1) };
+        let ret = ffi::raw_read(new_sk, &mut buf[..1]);
         if ret < 0 && errno() != libc::EAGAIN {
             tester_warn(&format!("Deferred read failed: errno={}", errno()));
-            unsafe { libc::close(new_sk) };
+            ffi::raw_close(new_sk);
             tester_test_failed();
             return;
         }
@@ -2876,7 +2756,7 @@ fn test_server(data: &dyn Any) {
         Ok(m) => m,
         Err(e) => {
             tester_warn(&format!("Server check_mtu failed: errno={e}"));
-            unsafe { libc::close(new_sk) };
+            ffi::raw_close(new_sk);
             tester_test_failed();
             return;
         }
@@ -2892,14 +2772,14 @@ fn test_server(data: &dyn Any) {
                         "Server PHY mismatch: got {phys:#x}, expected {:#x}",
                         l2data.phys
                     ));
-                    unsafe { libc::close(new_sk) };
+                    ffi::raw_close(new_sk);
                     tester_test_failed();
                     return;
                 }
                 if l2data.phy != 0 {
                     if let Err(e) = set_phy(new_sk, l2data.phy) {
                         tester_warn(&format!("Server set_phy failed: errno={e}"));
-                        unsafe { libc::close(new_sk) };
+                        ffi::raw_close(new_sk);
                         tester_test_failed();
                         return;
                     }
@@ -2910,14 +2790,14 @@ fn test_server(data: &dyn Any) {
                                 tester_warn(&format!(
                                     "Server set PHY verify failed: got {new_phys:#x}"
                                 ));
-                                unsafe { libc::close(new_sk) };
+                                ffi::raw_close(new_sk);
                                 tester_test_failed();
                                 return;
                             }
                         }
                         Err(e) => {
                             tester_warn(&format!("Server get_phy after set: errno={e}"));
-                            unsafe { libc::close(new_sk) };
+                            ffi::raw_close(new_sk);
                             tester_test_failed();
                             return;
                         }
@@ -2926,7 +2806,7 @@ fn test_server(data: &dyn Any) {
             }
             Err(e) => {
                 tester_warn(&format!("Server get_phy failed: errno={e}"));
-                unsafe { libc::close(new_sk) };
+                ffi::raw_close(new_sk);
                 tester_test_failed();
                 return;
             }
@@ -2952,7 +2832,7 @@ fn test_server(data: &dyn Any) {
                 Err(_) => break,
             }
         }
-        unsafe { libc::close(new_sk) };
+        ffi::raw_close(new_sk);
         if received == expected_data {
             tester_test_passed();
         } else {
@@ -2964,14 +2844,14 @@ fn test_server(data: &dyn Any) {
         let chunk_size = if omtu > 0 { omtu as usize } else { send_data.len() };
         if let Err(e) = l2cap_send(new_sk, &send_data, chunk_size) {
             tester_warn(&format!("Server write failed: errno={e}"));
-            unsafe { libc::close(new_sk) };
+            ffi::raw_close(new_sk);
             tester_test_failed();
             return;
         }
-        unsafe { libc::close(new_sk) };
+        ffi::raw_close(new_sk);
         tester_test_passed();
     } else {
-        unsafe { libc::close(new_sk) };
+        ffi::raw_close(new_sk);
         tester_test_passed();
     }
 }

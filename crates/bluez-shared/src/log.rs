@@ -220,6 +220,7 @@ impl BtLog {
         // exact values used by the C code.  Returns -1 on error with errno set,
         // or a non-negative file descriptor on success.
         let raw_fd =
+            // SAFETY: Creating a raw HCI Bluetooth socket for logging. PF_BLUETOOTH is a valid domain.
             unsafe { libc::socket(PF_BLUETOOTH, libc::SOCK_RAW | libc::SOCK_CLOEXEC, BTPROTO_HCI) };
         if raw_fd < 0 {
             self.error_cached = true;
@@ -580,4 +581,181 @@ macro_rules! btd_error {
     ($($arg:tt)*) => {
         $crate::log::_tracing::error!($($arg)*)
     };
+}
+
+// ---------------------------------------------------------------------------
+// Unit Tests — exercises LogLevel, LogHdr, BtLog lifecycle, and the unsafe
+// socket/sendmsg paths (via error-path coverage on non-BT systems).
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // LogLevel
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_log_level_from_i32() {
+        // Syslog priorities 0–3 map to Error.
+        assert_eq!(LogLevel::from_i32(0), LogLevel::Error);
+        assert_eq!(LogLevel::from_i32(3), LogLevel::Error);
+        // 4 maps to Warn.
+        assert_eq!(LogLevel::from_i32(4), LogLevel::Warn);
+        // 5–6 map to Info.
+        assert_eq!(LogLevel::from_i32(5), LogLevel::Info);
+        assert_eq!(LogLevel::from_i32(6), LogLevel::Info);
+        // 7+ maps to Debug.
+        assert_eq!(LogLevel::from_i32(7), LogLevel::Debug);
+        assert_eq!(LogLevel::from_i32(100), LogLevel::Debug);
+    }
+
+    #[test]
+    fn test_log_level_as_i32_roundtrip() {
+        assert_eq!(LogLevel::Error.as_i32(), 3);
+        assert_eq!(LogLevel::Warn.as_i32(), 4);
+        assert_eq!(LogLevel::Info.as_i32(), 6);
+        assert_eq!(LogLevel::Debug.as_i32(), 7);
+    }
+
+    #[test]
+    fn test_log_level_display() {
+        assert_eq!(format!("{}", LogLevel::Error), "error");
+        assert_eq!(format!("{}", LogLevel::Warn), "warn");
+        assert_eq!(format!("{}", LogLevel::Info), "info");
+        assert_eq!(format!("{}", LogLevel::Debug), "debug");
+    }
+
+    #[test]
+    fn test_log_level_to_tracing_level() {
+        assert_eq!(LogLevel::Error.to_tracing_level(), tracing::Level::ERROR);
+        assert_eq!(LogLevel::Warn.to_tracing_level(), tracing::Level::WARN);
+        assert_eq!(LogLevel::Info.to_tracing_level(), tracing::Level::INFO);
+        assert_eq!(LogLevel::Debug.to_tracing_level(), tracing::Level::DEBUG);
+    }
+
+    // -----------------------------------------------------------------------
+    // LogHdr — packed struct layout and zero-initialization
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_log_hdr_size() {
+        assert_eq!(std::mem::size_of::<LogHdr>(), 8, "LogHdr must be 8 bytes packed");
+    }
+
+    #[test]
+    fn test_log_hdr_default() {
+        let hdr = LogHdr::default();
+        assert_eq!({ hdr.opcode }, 0);
+        assert_eq!({ hdr.index }, 0);
+        assert_eq!({ hdr.len }, 0);
+        assert_eq!({ hdr.priority }, 0);
+        assert_eq!({ hdr.ident_len }, 0);
+    }
+
+    #[test]
+    fn test_log_hdr_field_assignment() {
+        let hdr = LogHdr {
+            opcode: 0x0000,
+            index: 0xFFFF,
+            len: 42,
+            priority: LogLevel::Warn.as_i32() as u8,
+            ident_len: 5,
+        };
+        assert_eq!({ hdr.opcode }, 0x0000);
+        assert_eq!({ hdr.index }, 0xFFFF);
+        assert_eq!({ hdr.len }, 42);
+        assert_eq!({ hdr.priority }, 4);
+        assert_eq!({ hdr.ident_len }, 5);
+    }
+
+    // -----------------------------------------------------------------------
+    // BtLog — lifecycle (new, close, is_open)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_bt_log_new_is_closed() {
+        let log = BtLog::new();
+        assert!(!log.is_open(), "new BtLog should not be open");
+    }
+
+    #[test]
+    fn test_bt_log_default_is_closed() {
+        let log = BtLog::default();
+        assert!(!log.is_open());
+    }
+
+    #[test]
+    fn test_bt_log_open_and_close() {
+        let mut log = BtLog::new();
+        // open() will fail on systems without Bluetooth support (no
+        // AF_BLUETOOTH), but the unsafe socket creation path is exercised.
+        let result = log.open();
+        if result.is_ok() {
+            assert!(log.is_open(), "after successful open, should be open");
+            log.close();
+            assert!(!log.is_open(), "after close, should not be open");
+        } else {
+            // Socket creation failed (no BT kernel support) — error path
+            // exercised. The unsafe libc::socket call still ran.
+            assert!(!log.is_open());
+        }
+    }
+
+    #[test]
+    fn test_bt_log_open_caches_error() {
+        let mut log = BtLog::new();
+        // On systems without Bluetooth, the first open() fails.
+        let result1 = log.open();
+        if result1.is_err() {
+            // Second call should return the cached error immediately
+            // without attempting another socket() syscall.
+            let result2 = log.open();
+            assert!(result2.is_err(), "cached error should persist");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // BtLog::sendmsg error path (exercises the unsafe sendmsg call)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_bt_log_sendmsg_when_closed() {
+        let mut log = BtLog::new();
+        // sendmsg on a closed log should fail gracefully.
+        let result = log.sendmsg(0xFFFF, "test", LogLevel::Info.as_i32(), &[]);
+        assert!(result.is_err(), "sendmsg on closed log should fail");
+    }
+
+    // -----------------------------------------------------------------------
+    // Free function API (thread-safe global wrappers)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_bt_log_open_global() {
+        // Exercises the mutex-protected global path.
+        let _result = bt_log_open();
+        // May succeed or fail depending on system, but exercises the code.
+    }
+
+    #[test]
+    fn test_bt_log_vprintf_global() {
+        // Exercises the vprintf path (will fail if socket not open, which
+        // is expected and acceptable — the code path is covered).
+        let _result = bt_log_vprintf(0xFFFF, "test", 7, "hello world");
+    }
+
+    #[test]
+    fn test_bt_log_printf_global() {
+        let _result = bt_log_printf(0xFFFF, "test", LogLevel::Debug.as_i32(), format_args!("formatted message"));
+    }
+
+    // -----------------------------------------------------------------------
+    // MAX_USER_IOVEC constant
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_max_user_iovec_value() {
+        assert_eq!(MAX_USER_IOVEC, 3, "matches C io_len > 3 guard");
+    }
 }

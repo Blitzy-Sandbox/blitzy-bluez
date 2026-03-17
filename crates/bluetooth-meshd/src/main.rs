@@ -319,15 +319,8 @@ async fn create_dbus_connection(use_session_bus: bool) -> Result<zbus::Connectio
 /// Calls `prctl(PR_SET_PDEATHSIG, SIGSEGV)` so that this process is
 /// killed with `SIGSEGV` if its parent exits unexpectedly.  This prevents
 /// orphaned test processes and matches the C daemon's behaviour.
-#[allow(unsafe_code)]
 fn set_parent_death_signal() {
-    // SAFETY: `prctl(PR_SET_PDEATHSIG, sig)` is a standard Linux syscall
-    // that configures the kernel to deliver `sig` to this process when its
-    // parent terminates.  No memory-safety invariants are involved; the
-    // only effect is a future signal delivery.
-    unsafe {
-        libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGSEGV);
-    }
+    let _ = bluez_shared::sys::ffi_helpers::bt_prctl_set_pdeathsig(libc::SIGSEGV);
 }
 
 // ── Async entry point ───────────────────────────────────────────────────

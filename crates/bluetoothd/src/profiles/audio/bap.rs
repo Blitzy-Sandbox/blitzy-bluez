@@ -14,7 +14,6 @@
 
 use std::cell::Cell;
 use std::collections::HashMap;
-use std::os::fd::FromRawFd;
 use std::sync::{
     Arc, LazyLock, Mutex as StdMutex, Weak as StdWeak,
     atomic::{AtomicU32, Ordering},
@@ -70,19 +69,9 @@ const BCAST_UUID: &str = "00001852-0000-1000-8000-00805f9b34fb";
 const BAP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Duplicate the underlying file descriptor of a `BluetoothSocket`, returning
-/// an `OwnedFd`.  This is an FFI boundary helper — the two `unsafe` calls are
-/// the standard `libc::dup` + `OwnedFd::from_raw_fd` idiom.
-#[allow(unsafe_code)]
+/// an `OwnedFd`.  Uses the safe FFI wrapper from `bluez_shared::sys::ffi_helpers`.
 fn dup_socket_fd(socket: &BluetoothSocket) -> Option<std::os::fd::OwnedFd> {
-    let raw_fd = socket.as_raw_fd();
-    // SAFETY: `raw_fd` is a valid open file descriptor from the socket.
-    let dup_fd = unsafe { libc::dup(raw_fd) };
-    if dup_fd >= 0 {
-        // SAFETY: `dup_fd` is a valid open fd returned by `libc::dup`.
-        Some(unsafe { std::os::fd::OwnedFd::from_raw_fd(dup_fd) })
-    } else {
-        None
-    }
+    bluez_shared::sys::ffi_helpers::bt_dup_fd(socket.as_raw_fd()).ok()
 }
 
 /// Endpoint counter for unique D-Bus path generation.

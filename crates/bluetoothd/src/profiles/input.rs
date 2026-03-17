@@ -18,8 +18,6 @@
 // - `suspend.h` / `suspend-none.c` — Suspend integration
 // - `input.conf` — Configuration template
 
-#![allow(unsafe_code)]
-
 use std::collections::HashMap;
 use std::os::unix::io::{AsRawFd, OwnedFd};
 use std::pin::Pin;
@@ -557,10 +555,9 @@ impl InputDevice {
             name: name_buf,
         };
 
-        // SAFETY: ctrl_fd and intr_fd are valid, connected L2CAP socket fds.
-        // req is fully initialized with valid rd_data pointing into
-        // self.descriptor (or null).  HIDPCONNADD is the correct ioctl number.
-        let ret = unsafe { libc::ioctl(ctrl_fd.as_raw_fd(), HIDPCONNADD as libc::c_ulong, &req) };
+        let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_ref(
+            ctrl_fd.as_raw_fd(), HIDPCONNADD as libc::c_ulong, &req,
+        ).unwrap_or(-1);
 
         if ret < 0 {
             let err = std::io::Error::last_os_error();
@@ -584,9 +581,9 @@ impl InputDevice {
 
         let req = hidp_conndel_req::new(self.dst, flags);
 
-        // SAFETY: ctrl_fd is a valid L2CAP socket fd.  req is properly
-        // initialized with a valid BD_ADDR.  HIDPCONNDEL is correct ioctl.
-        let ret = unsafe { libc::ioctl(ctrl_fd.as_raw_fd(), HIDPCONNDEL as libc::c_ulong, &req) };
+        let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_ref(
+            ctrl_fd.as_raw_fd(), HIDPCONNDEL as libc::c_ulong, &req,
+        ).unwrap_or(-1);
 
         if ret < 0 {
             let err = std::io::Error::last_os_error();

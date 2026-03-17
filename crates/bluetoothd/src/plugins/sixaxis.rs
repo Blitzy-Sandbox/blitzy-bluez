@@ -24,10 +24,8 @@
 //
 // Plugin priority: LOW (-100).
 
-// FFI boundary module — unsafe blocks are required for HID ioctl calls
-// and udev raw-pointer interop.  Per AAP Section 0.7.4, each unsafe site
-// is documented with a `// SAFETY:` comment and has corresponding tests.
-#![allow(unsafe_code)]
+// All FFI operations (HID ioctl, poll) are delegated to safe wrappers in
+// bluez_shared::sys::ffi_helpers — no direct unsafe blocks in this module.
 
 use std::collections::HashMap;
 use std::fs::OpenOptions;
@@ -207,12 +205,9 @@ fn sixaxis_get_device_bdaddr(fd: RawFd) -> io::Result<BdAddr> {
     let mut buf = [0u8; 18];
     buf[0] = 0xF2;
 
-    // SAFETY: fd is a valid open hidraw file descriptor obtained from
-    // `OpenOptions::new().read(true).write(true).open(devnode)`.
-    // buf is a stack-allocated 18-byte array whose lifetime extends past
-    // the ioctl call.  HIDIOCGFEATURE(18) is the correct ioctl for
-    // reading a HID feature report of 18 bytes from a hidraw device.
-    let ret = unsafe { libc::ioctl(fd, hidiocgfeature(18), buf.as_mut_ptr()) };
+    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf(
+        fd, hidiocgfeature(18), &mut buf,
+    ).unwrap_or(-1);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("sixaxis: failed to read device address ({})", err);
@@ -232,10 +227,9 @@ fn ds4_get_device_bdaddr(fd: RawFd) -> io::Result<BdAddr> {
     let mut buf = [0u8; 7];
     buf[0] = 0x81;
 
-    // SAFETY: fd is a valid open hidraw file descriptor.  buf is a
-    // stack-allocated 7-byte array.  HIDIOCGFEATURE(7) is the correct
-    // ioctl for reading a HID feature report of 7 bytes.
-    let ret = unsafe { libc::ioctl(fd, hidiocgfeature(7), buf.as_mut_ptr()) };
+    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf(
+        fd, hidiocgfeature(7), &mut buf,
+    ).unwrap_or(-1);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("sixaxis: failed to read DS4 device address ({})", err);
@@ -265,9 +259,9 @@ fn sixaxis_get_central_bdaddr(fd: RawFd) -> io::Result<BdAddr> {
     let mut buf = [0u8; 8];
     buf[0] = 0xF5;
 
-    // SAFETY: fd is a valid hidraw fd; buf is an 8-byte stack buffer.
-    // HIDIOCGFEATURE(8) reads an 8-byte HID feature report.
-    let ret = unsafe { libc::ioctl(fd, hidiocgfeature(8), buf.as_mut_ptr()) };
+    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf(
+        fd, hidiocgfeature(8), &mut buf,
+    ).unwrap_or(-1);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("sixaxis: failed to read central address ({})", err);
@@ -285,9 +279,9 @@ fn ds4_get_central_bdaddr(fd: RawFd) -> io::Result<BdAddr> {
     let mut buf = [0u8; 16];
     buf[0] = 0x12;
 
-    // SAFETY: fd is a valid hidraw fd; buf is a 16-byte stack buffer.
-    // HIDIOCGFEATURE(16) reads a 16-byte HID feature report.
-    let ret = unsafe { libc::ioctl(fd, hidiocgfeature(16), buf.as_mut_ptr()) };
+    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf(
+        fd, hidiocgfeature(16), &mut buf,
+    ).unwrap_or(-1);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("sixaxis: failed to read DS4 central address ({})", err);
@@ -316,10 +310,9 @@ fn sixaxis_set_central_bdaddr(fd: RawFd, bdaddr: &BdAddr) -> io::Result<()> {
     let swapped = bdaddr.baswap();
     buf[2..8].copy_from_slice(&swapped.b);
 
-    // SAFETY: fd is a valid hidraw fd; buf is an 8-byte stack buffer
-    // written in full before the ioctl call.  HIDIOCSFEATURE(8) writes
-    // an 8-byte HID feature report to the device.
-    let ret = unsafe { libc::ioctl(fd, hidiocsfeature(8), buf.as_ptr()) };
+    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf_const(
+        fd, hidiocsfeature(8), &buf,
+    ).unwrap_or(-1);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("sixaxis: failed to write central address ({})", err);
@@ -337,10 +330,9 @@ fn ds4_set_central_bdaddr(fd: RawFd, bdaddr: &BdAddr) -> io::Result<()> {
     buf[1..7].copy_from_slice(&bdaddr.b);
     // Bytes 7..23 are zeroed (link key placeholder — cannot force re-load).
 
-    // SAFETY: fd is a valid hidraw fd; buf is a 23-byte stack buffer
-    // fully initialised before the ioctl call.  HIDIOCSFEATURE(23)
-    // writes a 23-byte HID feature report to the device.
-    let ret = unsafe { libc::ioctl(fd, hidiocsfeature(23), buf.as_ptr()) };
+    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf_const(
+        fd, hidiocsfeature(23), &buf,
+    ).unwrap_or(-1);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("sixaxis: failed to write DS4 central address ({})", err);
@@ -725,16 +717,10 @@ fn udev_monitor_thread(
 
         // Use poll(2) with a 500ms timeout so we can check the shutdown
         // signal periodically without busy-waiting.
-        let mut pfd = libc::pollfd { fd: raw_fd, events: libc::POLLIN, revents: 0 };
-
-        // SAFETY: pfd is a valid stack-allocated pollfd structure with
-        // a valid fd obtained from the udev monitor socket.  We pass a
-        // pointer to exactly 1 pollfd and a 500ms timeout.
-        let poll_ret = unsafe { libc::poll(&mut pfd as *mut _, 1, 500) };
-
-        if poll_ret <= 0 {
-            // Timeout or error — loop back and check shutdown.
-            continue;
+        // Poll the udev monitor fd with a 500ms timeout via safe wrapper.
+        match bluez_shared::sys::ffi_helpers::bt_poll_fd(raw_fd, libc::POLLIN, 500) {
+            Ok(revents) if revents != 0 => { /* fd is ready, proceed */ }
+            _ => continue, // Timeout (revents == 0), or error — loop back and check shutdown.
         }
 
         // Receive the udev device (blocking but fd is ready).

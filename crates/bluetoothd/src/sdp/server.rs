@@ -28,9 +28,8 @@
 // bind, listen, accept, getsockopt/setsockopt, getpeername/getsockname,
 // and send/recv on AF_BLUETOOTH sockets.  Every `unsafe` block contains
 // a `// SAFETY:` comment documenting the invariant.
-#![allow(unsafe_code)]
 
-use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::os::unix::io::{AsRawFd, OwnedFd, RawFd};
 
 use tokio::io::unix::AsyncFd;
 use tokio::net::UnixListener;
@@ -39,6 +38,7 @@ use tokio::task::{JoinHandle, spawn};
 
 use tracing::{debug, error, info};
 
+use bluez_shared::sys::ffi_helpers as ffi;
 use bluez_shared::sys::bluetooth::{
     AF_BLUETOOTH, BDADDR_ANY, BDADDR_LOCAL, BTPROTO_L2CAP, BdAddr, SOL_L2CAP, htobs,
 };
@@ -1568,15 +1568,7 @@ fn is_bluetooth_socket(sock: RawFd) -> bool {
     // Use getsockopt SO_DOMAIN to determine the address family.
     let mut domain: libc::c_int = 0;
     let mut len = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
-    let ret = unsafe {
-        libc::getsockopt(
-            sock,
-            libc::SOL_SOCKET,
-            libc::SO_DOMAIN,
-            &mut domain as *mut libc::c_int as *mut libc::c_void,
-            &mut len,
-        )
-    };
+    let ret = ffi::raw_getsockopt(sock, libc::SOL_SOCKET, libc::SO_DOMAIN, &mut domain, &mut len);
     if ret < 0 {
         return false;
     }
@@ -1587,9 +1579,7 @@ fn is_bluetooth_socket(sock: RawFd) -> bool {
 fn get_l2cap_peer_addr(sock: RawFd) -> BdAddr {
     let mut sa = sockaddr_l2::default();
     let mut len = std::mem::size_of::<sockaddr_l2>() as libc::socklen_t;
-    let ret = unsafe {
-        libc::getpeername(sock, &mut sa as *mut sockaddr_l2 as *mut libc::sockaddr, &mut len)
-    };
+    let ret = ffi::raw_getpeername(sock, &mut sa, &mut len);
     if ret < 0 {
         error!("getpeername: {}", std::io::Error::last_os_error());
         btd_error(0, "sdp: getpeername failed");
@@ -1602,9 +1592,7 @@ fn get_l2cap_peer_addr(sock: RawFd) -> BdAddr {
 fn get_l2cap_local_addr(sock: RawFd) -> BdAddr {
     let mut sa = sockaddr_l2::default();
     let mut len = std::mem::size_of::<sockaddr_l2>() as libc::socklen_t;
-    let ret = unsafe {
-        libc::getsockname(sock, &mut sa as *mut sockaddr_l2 as *mut libc::sockaddr, &mut len)
-    };
+    let ret = ffi::raw_getsockname(sock, &mut sa, &mut len);
     if ret < 0 {
         error!("getsockname: {}", std::io::Error::last_os_error());
         btd_error(0, "sdp: getsockname failed");
@@ -1617,15 +1605,7 @@ fn get_l2cap_local_addr(sock: RawFd) -> BdAddr {
 fn get_l2cap_mtu(sock: RawFd) -> u16 {
     let mut opts = l2cap_options::default();
     let mut len = std::mem::size_of::<l2cap_options>() as libc::socklen_t;
-    let ret = unsafe {
-        libc::getsockopt(
-            sock,
-            SOL_L2CAP,
-            L2CAP_OPTIONS,
-            &mut opts as *mut l2cap_options as *mut libc::c_void,
-            &mut len,
-        )
-    };
+    let ret = ffi::raw_getsockopt(sock, SOL_L2CAP, L2CAP_OPTIONS, &mut opts, &mut len);
     if ret < 0 {
         error!("getsockopt L2CAP_OPTIONS: {}", std::io::Error::last_os_error());
         btd_error(0, "sdp: getsockopt L2CAP_OPTIONS failed");
@@ -1721,7 +1701,7 @@ pub async fn stop_sdp_server() {
 /// Create and configure the L2CAP listener socket for SDP PSM 1.
 fn create_l2cap_listener(mtu: u16, central: bool) -> Result<OwnedFd, BtdError> {
     // Create L2CAP SEQPACKET socket.
-    let sock = unsafe { libc::socket(AF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_L2CAP) };
+    let sock = ffi::raw_socket(AF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_L2CAP);
     if sock < 0 {
         let e = std::io::Error::last_os_error();
         error!("opening L2CAP socket: {}", e);
@@ -1730,7 +1710,7 @@ fn create_l2cap_listener(mtu: u16, central: bool) -> Result<OwnedFd, BtdError> {
     }
 
     // SAFETY: We just created a valid fd.
-    let fd = unsafe { OwnedFd::from_raw_fd(sock) };
+    let fd = ffi::raw_owned_fd(sock);
 
     // Bind to BDADDR_ANY, SDP PSM.
     let mut addr = sockaddr_l2::default();
@@ -1738,13 +1718,7 @@ fn create_l2cap_listener(mtu: u16, central: bool) -> Result<OwnedFd, BtdError> {
     addr.l2_psm = htobs(SDP_PSM);
     addr.l2_bdaddr = BDADDR_ANY;
 
-    let ret = unsafe {
-        libc::bind(
-            fd.as_raw_fd(),
-            &addr as *const sockaddr_l2 as *const libc::sockaddr,
-            std::mem::size_of::<sockaddr_l2>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_bind(fd.as_raw_fd(), &addr);
     if ret < 0 {
         let e = std::io::Error::last_os_error();
         error!("binding L2CAP socket: {}", e);
@@ -1755,15 +1729,7 @@ fn create_l2cap_listener(mtu: u16, central: bool) -> Result<OwnedFd, BtdError> {
     // Set central (master) mode if requested.
     if central {
         let opt: libc::c_int = L2CAP_LM_MASTER as libc::c_int;
-        let ret = unsafe {
-            libc::setsockopt(
-                fd.as_raw_fd(),
-                SOL_L2CAP,
-                L2CAP_LM,
-                &opt as *const libc::c_int as *const libc::c_void,
-                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-            )
-        };
+        let ret = ffi::raw_setsockopt(fd.as_raw_fd(), SOL_L2CAP, L2CAP_LM, &opt);
         if ret < 0 {
             let e = std::io::Error::last_os_error();
             error!("setsockopt L2CAP_LM_MASTER: {}", e);
@@ -1777,15 +1743,7 @@ fn create_l2cap_listener(mtu: u16, central: bool) -> Result<OwnedFd, BtdError> {
         let mut opts = l2cap_options::default();
         let mut optlen = std::mem::size_of::<l2cap_options>() as libc::socklen_t;
 
-        let ret = unsafe {
-            libc::getsockopt(
-                fd.as_raw_fd(),
-                SOL_L2CAP,
-                L2CAP_OPTIONS,
-                &mut opts as *mut l2cap_options as *mut libc::c_void,
-                &mut optlen,
-            )
-        };
+        let ret = ffi::raw_getsockopt(fd.as_raw_fd(), SOL_L2CAP, L2CAP_OPTIONS, &mut opts, &mut optlen);
         if ret < 0 {
             let e = std::io::Error::last_os_error();
             error!("getsockopt L2CAP_OPTIONS: {}", e);
@@ -1796,15 +1754,7 @@ fn create_l2cap_listener(mtu: u16, central: bool) -> Result<OwnedFd, BtdError> {
         opts.omtu = mtu;
         opts.imtu = mtu;
 
-        let ret = unsafe {
-            libc::setsockopt(
-                fd.as_raw_fd(),
-                SOL_L2CAP,
-                L2CAP_OPTIONS,
-                &opts as *const l2cap_options as *const libc::c_void,
-                std::mem::size_of::<l2cap_options>() as libc::socklen_t,
-            )
-        };
+        let ret = ffi::raw_setsockopt(fd.as_raw_fd(), SOL_L2CAP, L2CAP_OPTIONS, &opts);
         if ret < 0 {
             let e = std::io::Error::last_os_error();
             error!("setsockopt L2CAP_OPTIONS: {}", e);
@@ -1814,7 +1764,7 @@ fn create_l2cap_listener(mtu: u16, central: bool) -> Result<OwnedFd, BtdError> {
     }
 
     // Listen with backlog 5.
-    let ret = unsafe { libc::listen(fd.as_raw_fd(), 5) };
+    let ret = ffi::raw_listen(fd.as_raw_fd(), 5);
     if ret < 0 {
         let e = std::io::Error::last_os_error();
         error!("listen L2CAP: {}", e);
@@ -1870,10 +1820,8 @@ fn create_unix_listener() -> Result<UnixListener, BtdError> {
 async fn l2cap_accept_loop(listener_fd: OwnedFd) {
     // Set non-blocking for AsyncFd.
     let raw = listener_fd.as_raw_fd();
-    unsafe {
-        let flags = libc::fcntl(raw, libc::F_GETFL);
-        libc::fcntl(raw, libc::F_SETFL, flags | libc::O_NONBLOCK);
-    }
+    let flags = ffi::raw_fcntl_getfl(raw);
+    ffi::raw_fcntl_setfl(raw, flags | libc::O_NONBLOCK);
 
     let async_fd = match AsyncFd::new(listener_fd) {
         Ok(fd) => fd,
@@ -1897,16 +1845,7 @@ async fn l2cap_accept_loop(listener_fd: OwnedFd) {
         // Accept connection.
         let mut peer_addr = sockaddr_l2::default();
         let mut addrlen = std::mem::size_of::<sockaddr_l2>() as libc::socklen_t;
-        // SAFETY: `async_fd.as_raw_fd()` is a valid, open listener socket fd.
-        // `peer_addr` is a properly-sized sockaddr_l2 buffer.  The kernel writes
-        // the peer address into `peer_addr` and updates `addrlen`.
-        let nsk = unsafe {
-            libc::accept(
-                async_fd.as_raw_fd(),
-                &mut peer_addr as *mut sockaddr_l2 as *mut libc::sockaddr,
-                &mut addrlen,
-            )
-        };
+        let nsk = ffi::raw_accept(async_fd.as_raw_fd(), &mut peer_addr, &mut addrlen);
 
         if nsk < 0 {
             let err = std::io::Error::last_os_error();
@@ -1957,12 +1896,10 @@ async fn unix_accept_loop(listener: UnixListener) {
 /// Handle a single L2CAP session: read PDUs and dispatch requests.
 async fn handle_l2cap_session(sock: RawFd) {
     // Set non-blocking.
-    unsafe {
-        let flags = libc::fcntl(sock, libc::F_GETFL);
-        libc::fcntl(sock, libc::F_SETFL, flags | libc::O_NONBLOCK);
-    }
+    let flags = ffi::raw_fcntl_getfl(sock);
+    ffi::raw_fcntl_setfl(sock, flags | libc::O_NONBLOCK);
 
-    let owned_fd = unsafe { OwnedFd::from_raw_fd(sock) };
+    let owned_fd = ffi::raw_owned_fd(sock);
     let async_fd = match AsyncFd::new(owned_fd) {
         Ok(fd) => fd,
         Err(e) => {
@@ -1982,14 +1919,7 @@ async fn handle_l2cap_session(sock: RawFd) {
         // SAFETY: `async_fd.as_raw_fd()` is a valid open socket fd.
         // `buf` is a properly-sized mutable buffer.  `MSG_PEEK` does
         // not consume data so we can read the header first.
-        let peek_len = unsafe {
-            libc::recv(
-                async_fd.as_raw_fd(),
-                buf.as_mut_ptr() as *mut libc::c_void,
-                SDP_PDU_HDR_SIZE,
-                libc::MSG_PEEK,
-            )
-        };
+        let peek_len = ffi::raw_recv(async_fd.as_raw_fd(), &mut buf[..SDP_PDU_HDR_SIZE], libc::MSG_PEEK,) as isize;
 
         if peek_len <= 0 {
             if peek_len == 0 {
@@ -2020,9 +1950,7 @@ async fn handle_l2cap_session(sock: RawFd) {
         // SAFETY: `async_fd.as_raw_fd()` is a valid open socket.
         // `buf` has capacity >= `full_size`.  `full_size` was validated
         // against `SDP_MAX_PDU_SIZE`.
-        let read_len = unsafe {
-            libc::recv(async_fd.as_raw_fd(), buf.as_mut_ptr() as *mut libc::c_void, full_size, 0)
-        };
+        let read_len = ffi::raw_recv(async_fd.as_raw_fd(), &mut buf[..full_size], 0) as isize;
 
         guard.clear_ready();
 
@@ -2069,7 +1997,7 @@ async fn handle_unix_session(stream: tokio::net::UnixStream) {
         // SAFETY: `sock` is a valid open file descriptor obtained from the
         // `UnixStream`.  `buf` is a properly-sized mutable buffer.
         let read_len =
-            unsafe { libc::recv(sock, buf.as_mut_ptr() as *mut libc::c_void, SDP_MAX_PDU_SIZE, 0) };
+            ffi::raw_recv(sock, &mut buf[..SDP_MAX_PDU_SIZE], 0);
 
         if read_len <= 0 {
             if read_len < 0 {

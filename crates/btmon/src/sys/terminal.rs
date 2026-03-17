@@ -29,11 +29,8 @@ use std::os::unix::io::RawFd;
 /// The `winsize` struct is fully initialised before the call, and
 /// `STDOUT_FILENO` is a well-known file descriptor guaranteed to exist.
 pub fn get_terminal_width() -> Option<u16> {
-    let mut ws = libc::winsize { ws_row: 0, ws_col: 0, ws_xpixel: 0, ws_ypixel: 0 };
-    // SAFETY: ioctl with TIOCGWINSZ reads terminal dimensions into a valid,
-    // fully-initialised winsize struct.  STDOUT_FILENO is a well-known fd.
-    let ret = unsafe { libc::ioctl(libc::STDOUT_FILENO, libc::TIOCGWINSZ, &mut ws) };
-    if ret < 0 || ws.ws_col == 0 { None } else { Some(ws.ws_col) }
+    let ws = bluez_shared::sys::ffi_helpers::bt_get_winsize(libc::STDOUT_FILENO).ok()?;
+    if ws.ws_col == 0 { None } else { Some(ws.ws_col) }
 }
 
 /// Duplicate `source_fd` onto `STDOUT_FILENO` via `dup2()`, then close the
@@ -48,24 +45,12 @@ pub fn get_terminal_width() -> Option<u16> {
 /// `libc::close(source_fd)`.  The caller must guarantee `source_fd` is a
 /// valid, open file descriptor.
 pub fn redirect_stdout(source_fd: RawFd) -> bool {
-    // SAFETY: dup2 is a well-defined POSIX syscall; source_fd is required by
-    // the caller's contract to be a valid open fd, and STDOUT_FILENO (1) is a
-    // well-known fd number.
-    let dup_result = unsafe { libc::dup2(source_fd, libc::STDOUT_FILENO) };
-    if dup_result < 0 {
-        // dup2 failed — close source_fd to avoid leaking
-        // SAFETY: source_fd is a valid open fd per caller contract.
-        unsafe {
-            libc::close(source_fd);
-        }
+    use bluez_shared::sys::ffi_helpers;
+    if ffi_helpers::bt_dup2(source_fd, libc::STDOUT_FILENO).is_err() {
+        let _ = ffi_helpers::bt_close_fd(source_fd);
         return false;
     }
-
-    // Close the original source_fd — stdout now owns the pipe end.
-    // SAFETY: source_fd is a valid open fd that has been successfully dup'd.
-    unsafe {
-        libc::close(source_fd);
-    }
+    let _ = ffi_helpers::bt_close_fd(source_fd);
     true
 }
 
@@ -80,11 +65,7 @@ pub fn redirect_stdout(source_fd: RawFd) -> bool {
 /// that stdout has been previously redirected to a pipe (via `redirect_stdout`)
 /// so that closing it produces the desired EOF signal.
 pub fn close_stdout() {
-    // SAFETY: STDOUT_FILENO (1) is a well-known fd that we previously dup2'd
-    // to the pager pipe.  Closing it signals EOF to the pager's stdin.
-    unsafe {
-        libc::close(libc::STDOUT_FILENO);
-    }
+    let _ = bluez_shared::sys::ffi_helpers::bt_close_fd(libc::STDOUT_FILENO);
 }
 
 #[cfg(test)]

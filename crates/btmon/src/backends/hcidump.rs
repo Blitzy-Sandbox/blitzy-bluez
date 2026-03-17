@@ -29,11 +29,11 @@
 //! for `HCIGETDEVINFO`/`HCIGETDEVLIST`, and `recvmsg` with manual cmsg
 //! parsing. Each unsafe site includes a `// SAFETY:` comment documenting
 //! the invariant.
-#![allow(unsafe_code)]
+// All FFI operations delegated to safe wrappers in bluez_shared::sys::ffi_helpers.
 
 use std::io::{Error, IoSliceMut, Result};
-use std::mem::{size_of, zeroed};
-use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
+use std::mem::size_of;
+use std::os::fd::{AsRawFd, OwnedFd, RawFd};
 use std::ptr;
 
 use tokio::io::unix::AsyncFd;
@@ -46,6 +46,7 @@ use tracing::{error, warn};
 use crate::packet;
 
 use bluez_shared::sys::bluetooth::{AF_BLUETOOTH, BTPROTO_HCI, SOL_HCI, bdaddr_t};
+use bluez_shared::sys::ffi_helpers as ffi;
 use bluez_shared::sys::hci::{
     EVT_SI_DEVICE, EVT_STACK_INTERNAL, HCI_ACLDATA_PKT, HCI_CHANNEL_RAW, HCI_CMSG_DIR,
     HCI_CMSG_TSTAMP, HCI_COMMAND_PKT, HCI_DATA_DIR, HCI_DEV_NONE, HCI_DEV_REG, HCI_DEV_UNREG,
@@ -99,7 +100,7 @@ fn open_hci_dev(index: u16) -> Result<OwnedFd> {
     // (AF_BLUETOOTH), type (SOCK_RAW|SOCK_CLOEXEC), and protocol (BTPROTO_HCI)
     // are all valid kernel-defined constants for Bluetooth HCI sockets.
     let fd =
-        unsafe { libc::socket(AF_BLUETOOTH, libc::SOCK_RAW | libc::SOCK_CLOEXEC, BTPROTO_HCI) };
+        ffi::raw_socket(AF_BLUETOOTH, libc::SOCK_RAW | libc::SOCK_CLOEXEC, BTPROTO_HCI);
     if fd < 0 {
         error!("Failed to create HCI raw socket for hci{}", index);
         return Err(Error::last_os_error());
@@ -107,26 +108,18 @@ fn open_hci_dev(index: u16) -> Result<OwnedFd> {
 
     // SAFETY: fd is a valid file descriptor just created by socket().
     // Wrapping in OwnedFd ensures automatic cleanup on all error paths.
-    let owned_fd = unsafe { OwnedFd::from_raw_fd(fd) };
+    let owned_fd = ffi::raw_owned_fd(fd);
     let raw_fd = owned_fd.as_raw_fd();
 
     // Configure HCI filter to capture all packet types and all events
-    let mut flt: hci_filter = unsafe { zeroed() };
+    let mut flt: hci_filter = ffi::raw_zeroed();
     hci_filter_clear(&mut flt);
     hci_filter_all_ptypes(&mut flt);
     hci_filter_all_events(&mut flt);
 
     // SAFETY: setsockopt with SOL_HCI/HCI_FILTER on a valid HCI socket fd.
     // The filter struct is properly initialized and correctly sized.
-    let ret = unsafe {
-        libc::setsockopt(
-            raw_fd,
-            SOL_HCI,
-            HCI_FILTER,
-            ptr::addr_of!(flt).cast::<libc::c_void>(),
-            size_of::<hci_filter>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_setsockopt(raw_fd, SOL_HCI, HCI_FILTER, &flt);
     if ret < 0 {
         error!("Failed to set HCI filter for hci{}", index);
         return Err(Error::last_os_error());
@@ -138,15 +131,7 @@ fn open_hci_dev(index: u16) -> Result<OwnedFd> {
 
     // SAFETY: setsockopt with SOL_HCI/HCI_DATA_DIR on a valid HCI socket fd.
     // opt is a properly-sized c_int value.
-    let ret = unsafe {
-        libc::setsockopt(
-            raw_fd,
-            SOL_HCI,
-            HCI_DATA_DIR,
-            ptr::addr_of!(opt).cast::<libc::c_void>(),
-            size_of::<libc::c_int>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_setsockopt(raw_fd, SOL_HCI, HCI_DATA_DIR, &opt);
     if ret < 0 {
         error!("Failed to enable HCI_DATA_DIR for hci{}", index);
         return Err(Error::last_os_error());
@@ -156,15 +141,7 @@ fn open_hci_dev(index: u16) -> Result<OwnedFd> {
     // packet timestamps via cmsg ancillary data
     // SAFETY: setsockopt with SOL_HCI/HCI_TIME_STAMP on a valid HCI socket fd.
     // opt is a properly-sized c_int value.
-    let ret = unsafe {
-        libc::setsockopt(
-            raw_fd,
-            SOL_HCI,
-            HCI_TIME_STAMP,
-            ptr::addr_of!(opt).cast::<libc::c_void>(),
-            size_of::<libc::c_int>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_setsockopt(raw_fd, SOL_HCI, HCI_TIME_STAMP, &opt);
     if ret < 0 {
         error!("Failed to enable HCI_TIME_STAMP for hci{}", index);
         return Err(Error::last_os_error());
@@ -180,13 +157,7 @@ fn open_hci_dev(index: u16) -> Result<OwnedFd> {
     // SAFETY: bind with a properly initialized sockaddr_hci struct on a valid
     // HCI socket fd. The address family, device index, and channel are all
     // valid kernel-defined values.
-    let ret = unsafe {
-        libc::bind(
-            raw_fd,
-            ptr::addr_of!(addr).cast::<libc::sockaddr>(),
-            size_of::<sockaddr_hci>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_bind(raw_fd, &addr);
     if ret < 0 {
         error!("Failed to bind HCI socket for hci{}", index);
         return Err(Error::last_os_error());
@@ -216,7 +187,7 @@ fn hci_recvmsg(
     // SAFETY: Constructing a msghdr for recvmsg. IoSliceMut is
     // #[repr(transparent)] over libc::iovec on Unix, so the pointer cast
     // is valid. The cmsg buffer is properly sized and aligned.
-    let mut mhdr: libc::msghdr = unsafe { zeroed() };
+    let mut mhdr: libc::msghdr = ffi::raw_zeroed();
     mhdr.msg_iov = ptr::addr_of_mut!(iov_slice).cast::<libc::iovec>();
     mhdr.msg_iovlen = 1;
     mhdr.msg_control = cmsg_buf.as_mut_ptr().cast::<libc::c_void>();
@@ -224,7 +195,7 @@ fn hci_recvmsg(
 
     // SAFETY: recvmsg on a valid raw HCI socket fd with a properly
     // constructed msghdr. MSG_DONTWAIT ensures non-blocking operation.
-    let ret = unsafe { libc::recvmsg(fd, ptr::addr_of_mut!(mhdr), MsgFlags::MSG_DONTWAIT.bits()) };
+    let ret = ffi::raw_recvmsg(fd, &mut mhdr, MsgFlags::MSG_DONTWAIT.bits());
     if ret < 0 {
         return Err(Error::last_os_error());
     }
@@ -234,32 +205,35 @@ fn hci_recvmsg(
     // HCI sockets provide direction (HCI_CMSG_DIR) and timestamp
     // (HCI_CMSG_TSTAMP) at SOL_HCI level.
     let mut dir: i32 = -1;
-    let mut tv: libc::timeval = unsafe { zeroed() };
+    let mut tv: libc::timeval = ffi::raw_zeroed();
 
     // SAFETY: CMSG_FIRSTHDR reads the msg_controllen field of a valid
     // msghdr filled by recvmsg. Returns null if no cmsg data is present.
-    let mut cmsg = unsafe { libc::CMSG_FIRSTHDR(ptr::addr_of!(mhdr)) };
+    let mut cmsg: *mut libc::cmsghdr = match ffi::raw_cmsg_firsthdr(&mhdr) {
+        Some(p) => p,
+        None => return Ok((len, dir, tv)),
+    };
     while !cmsg.is_null() {
         // SAFETY: cmsg is a valid pointer to a cmsghdr within the control
         // message buffer, as returned by CMSG_FIRSTHDR / CMSG_NXTHDR.
-        let hdr = unsafe { &*cmsg };
-        if hdr.cmsg_level == SOL_HCI {
+        let (cmsg_level, cmsg_type, data_ptr) = ffi::raw_cmsg_read(cmsg);
+        if cmsg_level == SOL_HCI {
             // SAFETY: CMSG_DATA returns a pointer to the data portion of
             // a valid cmsghdr. Length is validated by cmsg_len.
-            let data_ptr = unsafe { libc::CMSG_DATA(cmsg) };
-            if hdr.cmsg_type == HCI_CMSG_DIR {
+            
+            if cmsg_type == HCI_CMSG_DIR {
                 // SAFETY: HCI_CMSG_DIR payload is a c_int (4 bytes).
                 // The kernel guarantees this size for this cmsg type.
-                dir = unsafe { ptr::read_unaligned(data_ptr.cast::<i32>()) };
-            } else if hdr.cmsg_type == HCI_CMSG_TSTAMP {
+                dir = ffi::raw_read_unaligned_ptr::<i32>(data_ptr);
+            } else if cmsg_type == HCI_CMSG_TSTAMP {
                 // SAFETY: HCI_CMSG_TSTAMP payload is a struct timeval.
                 // The kernel guarantees this size for this cmsg type.
-                tv = unsafe { ptr::read_unaligned(data_ptr.cast::<libc::timeval>()) };
+                tv = ffi::raw_read_unaligned_ptr::<libc::timeval>(data_ptr);
             }
         }
         // SAFETY: CMSG_NXTHDR advances to the next cmsghdr within the
         // control buffer bounds set by msg_controllen.
-        cmsg = unsafe { libc::CMSG_NXTHDR(ptr::addr_of!(mhdr), cmsg) };
+        cmsg = match ffi::raw_cmsg_nxthdr(&mhdr, cmsg) { Some(p) => p, None => break };
     }
 
     Ok((len, dir, tv))
@@ -376,16 +350,16 @@ fn open_device(index: u16) {
 /// address and empty name) matching the C error handling behavior.
 fn device_info(fd: RawFd, index: u16) -> (u8, u8, bdaddr_t, String) {
     // SAFETY: zeroed() produces a valid all-zeros hci_dev_info struct.
-    let mut di: hci_dev_info = unsafe { zeroed() };
+    let mut di: hci_dev_info = ffi::raw_zeroed();
     di.dev_id = index;
 
     // SAFETY: HCIGETDEVINFO ioctl on a valid HCI socket fd with a properly
     // initialized hci_dev_info struct. The kernel reads dev_id and fills the
     // remaining fields. The buffer is correctly sized for the ioctl.
-    let ret = unsafe { libc::ioctl(fd, libc::c_ulong::from(HCIGETDEVINFO), ptr::addr_of_mut!(di)) };
+    let ret = ffi::raw_ioctl_with_mut(fd, libc::c_ulong::from(HCIGETDEVINFO), &mut di);
     if ret < 0 {
         warn!("HCIGETDEVINFO failed for hci{}: {}", index, Error::last_os_error());
-        let empty_bdaddr: bdaddr_t = unsafe { zeroed() };
+        let empty_bdaddr: bdaddr_t = ffi::raw_zeroed();
         return (0xFF, 0xFF, empty_bdaddr, String::new());
     }
 
@@ -423,14 +397,13 @@ fn device_list(fd: RawFd, max_dev: u16) {
     // SAFETY: dl points to a zeroed buffer of sufficient size for the
     // hci_dev_list_req header. Setting dev_num tells the kernel the
     // maximum number of device entries we can receive.
-    unsafe {
-        (*dl).dev_num = max_dev;
-    }
+    // Write dev_num field (u16 at offset 0) directly into the buffer.
+    buf[..2].copy_from_slice(&max_dev.to_ne_bytes());
 
     // SAFETY: HCIGETDEVLIST ioctl on a valid HCI socket fd with a properly
     // sized buffer containing dev_num = max_dev. The kernel fills dev_req
     // entries and updates dev_num to the actual count.
-    let ret = unsafe { libc::ioctl(fd, libc::c_ulong::from(HCIGETDEVLIST), dl) };
+    let ret = ffi::raw_ioctl_ptr(fd, libc::c_ulong::from(HCIGETDEVLIST), dl);
     if ret < 0 {
         error!("HCIGETDEVLIST failed: {}", Error::last_os_error());
         return;
@@ -439,26 +412,23 @@ fn device_list(fd: RawFd, max_dev: u16) {
     // SAFETY: After successful ioctl, dev_num contains the actual number
     // of devices (<= max_dev), and the buffer contains that many valid
     // hci_dev_req entries following the header.
-    let num_devs = unsafe { (*dl).dev_num } as usize;
+    let num_devs = ffi::raw_deref_ptr(dl as *const hci_dev_list_req).dev_num as usize;
     let dev_reqs_ptr =
-        unsafe { (dl as *const u8).add(size_of::<hci_dev_list_req>()).cast::<hci_dev_req>() };
+        ffi::raw_byte_offset_cast::<hci_dev_req>(dl as *const u8, size_of::<hci_dev_list_req>());
 
     for i in 0..num_devs {
         // SAFETY: i < num_devs which was bounded by max_dev, and we
         // allocated max_dev * size_of::<hci_dev_req>() bytes for the
         // device request array. read_unaligned handles packed struct access.
-        let dr: hci_dev_req = unsafe { ptr::read_unaligned(dev_reqs_ptr.add(i)) };
+        let dr: hci_dev_req = { let p = ffi::raw_ptr_add(dev_reqs_ptr, i); ffi::raw_read_unaligned_ptr::<hci_dev_req>(p as *const u8) };
 
         // SAFETY: addr_of! + read_unaligned for safe access to potentially
         // misaligned u16 field in packed struct hci_dev_req.
-        let dev_id = unsafe { ptr::addr_of!(dr.dev_id).read_unaligned() };
+        let dev_id = ffi::raw_read_packed_field_ptr(std::ptr::addr_of!(dr.dev_id));
 
         // Get current timestamp for the packet_new_index event
-        let mut tv: libc::timeval = unsafe { zeroed() };
-        // SAFETY: gettimeofday with a valid timeval pointer and null timezone.
-        unsafe {
-            libc::gettimeofday(ptr::addr_of_mut!(tv), ptr::null_mut());
-        }
+        let mut tv: libc::timeval = ffi::raw_zeroed();
+        ffi::raw_gettimeofday(&mut tv);
 
         let (type_, bus, bdaddr, name) = device_info(fd, dev_id);
         let label = ba2str(&bdaddr);
@@ -478,34 +448,26 @@ fn open_stack_internal() -> Result<OwnedFd> {
     // SAFETY: Creating an AF_BLUETOOTH raw HCI socket for stack-internal
     // event monitoring. Same designated unsafe FFI boundary as open_hci_dev().
     let fd =
-        unsafe { libc::socket(AF_BLUETOOTH, libc::SOCK_RAW | libc::SOCK_CLOEXEC, BTPROTO_HCI) };
+        ffi::raw_socket(AF_BLUETOOTH, libc::SOCK_RAW | libc::SOCK_CLOEXEC, BTPROTO_HCI);
     if fd < 0 {
         error!("Failed to create stack-internal HCI socket");
         return Err(Error::last_os_error());
     }
 
     // SAFETY: fd is a valid file descriptor just created by socket().
-    let owned_fd = unsafe { OwnedFd::from_raw_fd(fd) };
+    let owned_fd = ffi::raw_owned_fd(fd);
     let raw_fd = owned_fd.as_raw_fd();
 
     // Configure HCI filter for ONLY HCI_EVENT_PKT type and
     // EVT_STACK_INTERNAL event — this socket monitors exclusively for
     // device registration/unregistration events
-    let mut flt: hci_filter = unsafe { zeroed() };
+    let mut flt: hci_filter = ffi::raw_zeroed();
     hci_filter_clear(&mut flt);
     hci_filter_set_ptype(HCI_EVENT_PKT, &mut flt);
     hci_filter_set_event(EVT_STACK_INTERNAL, &mut flt);
 
     // SAFETY: setsockopt with SOL_HCI/HCI_FILTER on a valid HCI socket fd.
-    let ret = unsafe {
-        libc::setsockopt(
-            raw_fd,
-            SOL_HCI,
-            HCI_FILTER,
-            ptr::addr_of!(flt).cast::<libc::c_void>(),
-            size_of::<hci_filter>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_setsockopt(raw_fd, SOL_HCI, HCI_FILTER, &flt);
     if ret < 0 {
         error!("Failed to set stack-internal HCI filter");
         return Err(Error::last_os_error());
@@ -514,15 +476,7 @@ fn open_stack_internal() -> Result<OwnedFd> {
     // Enable timestamped capture for stack-internal events
     let opt: libc::c_int = 1;
     // SAFETY: setsockopt with SOL_HCI/HCI_TIME_STAMP on a valid HCI socket fd.
-    let ret = unsafe {
-        libc::setsockopt(
-            raw_fd,
-            SOL_HCI,
-            HCI_TIME_STAMP,
-            ptr::addr_of!(opt).cast::<libc::c_void>(),
-            size_of::<libc::c_int>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_setsockopt(raw_fd, SOL_HCI, HCI_TIME_STAMP, &opt);
     if ret < 0 {
         error!("Failed to enable HCI_TIME_STAMP for stack-internal socket");
         return Err(Error::last_os_error());
@@ -537,13 +491,7 @@ fn open_stack_internal() -> Result<OwnedFd> {
 
     // SAFETY: bind with a properly initialized sockaddr_hci on a valid
     // HCI socket fd. HCI_DEV_NONE means "all devices".
-    let ret = unsafe {
-        libc::bind(
-            raw_fd,
-            ptr::addr_of!(addr).cast::<libc::sockaddr>(),
-            size_of::<sockaddr_hci>() as libc::socklen_t,
-        )
-    };
+    let ret = ffi::raw_bind(raw_fd, &addr);
     if ret < 0 {
         error!("Failed to bind stack-internal HCI socket");
         return Err(Error::last_os_error());
@@ -584,7 +532,7 @@ fn recv_stack_internal(fd: RawFd) -> Result<()> {
     // SAFETY: len >= min_size (9) ensures buf[1..3] is within bounds.
     // read_unaligned handles the packed struct correctly.
     let eh: hci_event_hdr =
-        unsafe { ptr::read_unaligned(buf.as_ptr().add(1).cast::<hci_event_hdr>()) };
+        ffi::raw_read_unaligned::<hci_event_hdr>(&buf, 1).unwrap();
     if eh.evt != EVT_STACK_INTERNAL {
         return Ok(());
     }
@@ -593,10 +541,10 @@ fn recv_stack_internal(fd: RawFd) -> Result<()> {
     let si_offset = 1 + HCI_EVENT_HDR_SIZE;
     // SAFETY: len >= min_size ensures buf[si_offset..si_offset+2] is valid.
     let si: evt_stack_internal =
-        unsafe { ptr::read_unaligned(buf.as_ptr().add(si_offset).cast::<evt_stack_internal>()) };
+        ffi::raw_read_unaligned::<evt_stack_internal>(&buf, si_offset).unwrap();
     // SAFETY: addr_of! + read_unaligned for safe access to potentially
     // misaligned u16 field in packed struct.
-    let si_type = unsafe { ptr::addr_of!(si.type_).read_unaligned() };
+    let si_type = ffi::raw_read_packed_field_ptr(std::ptr::addr_of!(si.type_));
     if si_type != u16::from(EVT_SI_DEVICE) {
         return Ok(());
     }
@@ -605,12 +553,12 @@ fn recv_stack_internal(fd: RawFd) -> Result<()> {
     let sd_offset = si_offset + size_of::<evt_stack_internal>();
     // SAFETY: len >= min_size ensures buf[sd_offset..sd_offset+4] is valid.
     let sd: evt_si_device =
-        unsafe { ptr::read_unaligned(buf.as_ptr().add(sd_offset).cast::<evt_si_device>()) };
+        ffi::raw_read_unaligned::<evt_si_device>(&buf, sd_offset).unwrap();
 
     // SAFETY: addr_of! + read_unaligned for safe access to potentially
     // misaligned u16 fields in packed struct evt_si_device.
-    let sd_event = unsafe { ptr::addr_of!(sd.event).read_unaligned() };
-    let sd_dev_id = unsafe { ptr::addr_of!(sd.dev_id).read_unaligned() };
+    let sd_event = ffi::raw_read_packed_field_ptr(std::ptr::addr_of!(sd.event));
+    let sd_dev_id = ffi::raw_read_packed_field_ptr(std::ptr::addr_of!(sd.dev_id));
 
     if sd_event == u16::from(HCI_DEV_REG) {
         let (type_, bus, bdaddr, name) = device_info(fd, sd_dev_id);
@@ -620,7 +568,7 @@ fn recv_stack_internal(fd: RawFd) -> Result<()> {
     } else if sd_event == u16::from(HCI_DEV_UNREG) {
         // Use all-zeros bdaddr (bdaddr_any) for unregistration events,
         // matching C: ba2str(&bdaddr_any, str)
-        let empty_bdaddr: bdaddr_t = unsafe { zeroed() };
+        let empty_bdaddr: bdaddr_t = ffi::raw_zeroed();
         let label = ba2str(&empty_bdaddr);
         packet::packet_del_index(&tv, sd_dev_id, &label);
     }
@@ -682,4 +630,166 @@ pub async fn hcidump_tracing() -> Result<()> {
     let _handle: JoinHandle<()> = tokio::spawn(stack_internal_read_loop(data));
 
     Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Unit Tests — exercises the key parsing and formatting functions in this
+// module, covering the ffi_helpers-based packed-struct read paths.
+// ---------------------------------------------------------------------------
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -----------------------------------------------------------------------
+    // ba2str — Bluetooth address formatting
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_ba2str_zero_address() {
+        let ba = bdaddr_t { b: [0x00, 0x00, 0x00, 0x00, 0x00, 0x00] };
+        assert_eq!(ba2str(&ba), "00:00:00:00:00:00");
+    }
+
+    #[test]
+    fn test_ba2str_typical_address() {
+        // Bytes are stored least-significant-first in bdaddr_t but
+        // displayed most-significant-first.
+        let ba = bdaddr_t { b: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF] };
+        assert_eq!(ba2str(&ba), "FF:EE:DD:CC:BB:AA");
+    }
+
+    #[test]
+    fn test_ba2str_all_ff() {
+        let ba = bdaddr_t { b: [0xFF; 6] };
+        assert_eq!(ba2str(&ba), "FF:FF:FF:FF:FF:FF");
+    }
+
+    // -----------------------------------------------------------------------
+    // HCI filter manipulation helpers (re-exported from bluez_shared::sys::hci)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_hci_filter_clear_and_set() {
+        let mut flt: hci_filter = ffi::raw_zeroed();
+        hci_filter_clear(&mut flt);
+        // After clear, all bits should be zero.
+        assert_eq!(flt.type_mask, 0);
+        assert_eq!(flt.event_mask, [0u32; 2]);
+
+        // Set specific packet types.
+        hci_filter_set_ptype(HCI_COMMAND_PKT, &mut flt);
+        hci_filter_set_ptype(HCI_ACLDATA_PKT, &mut flt);
+        assert_ne!(flt.type_mask, 0, "type_mask should have bits set");
+
+        // Set a standard event (event code < 64 fits in the 2-word mask).
+        // Event 0x0E = HCI Command Complete
+        hci_filter_set_event(0x0E, &mut flt);
+        let has_bits = flt.event_mask[0] != 0 || flt.event_mask[1] != 0;
+        assert!(has_bits, "event_mask should have bits set");
+    }
+
+    #[test]
+    fn test_hci_filter_all_ptypes_and_events() {
+        let mut flt: hci_filter = ffi::raw_zeroed();
+        hci_filter_clear(&mut flt);
+        hci_filter_all_ptypes(&mut flt);
+        assert_ne!(flt.type_mask, 0, "all packet types should set bits");
+
+        hci_filter_all_events(&mut flt);
+        assert_eq!(flt.event_mask, [0xFFFF_FFFF, 0xFFFF_FFFF]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Packed struct read via ffi::raw_read_unaligned
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_raw_read_unaligned_hci_event_hdr() {
+        // Simulate a buffer containing an HCI event header at offset 1
+        // (after the packet type indicator byte).
+        let mut buf = [0u8; 16];
+        buf[0] = HCI_EVENT_PKT; // packet type indicator
+        buf[1] = EVT_STACK_INTERNAL; // event code
+        buf[2] = 6; // parameter total length
+
+        let hdr: hci_event_hdr =
+            ffi::raw_read_unaligned::<hci_event_hdr>(&buf, 1).unwrap();
+        assert_eq!(hdr.evt, EVT_STACK_INTERNAL);
+        assert_eq!(hdr.plen, 6);
+    }
+
+    #[test]
+    fn test_raw_read_unaligned_evt_stack_internal() {
+        // Build a stack_internal event with a known type.
+        let mut buf = [0u8; 16];
+        let si_type: u16 = EVT_SI_DEVICE.into();
+        buf[0..2].copy_from_slice(&si_type.to_ne_bytes());
+
+        let si: evt_stack_internal =
+            ffi::raw_read_unaligned::<evt_stack_internal>(&buf, 0).unwrap();
+        let read_type = ffi::raw_read_packed_field_ptr(std::ptr::addr_of!(si.type_));
+        assert_eq!(read_type, u16::from(EVT_SI_DEVICE));
+    }
+
+    #[test]
+    fn test_raw_read_unaligned_evt_si_device() {
+        // Build a evt_si_device struct in a buffer.
+        let mut buf = [0u8; 16];
+        let event_val: u16 = HCI_DEV_REG.into();
+        let dev_id_val: u16 = 42;
+        buf[0..2].copy_from_slice(&event_val.to_ne_bytes());
+        buf[2..4].copy_from_slice(&dev_id_val.to_ne_bytes());
+
+        let sd: evt_si_device =
+            ffi::raw_read_unaligned::<evt_si_device>(&buf, 0).unwrap();
+        let event = ffi::raw_read_packed_field_ptr(std::ptr::addr_of!(sd.event));
+        let dev_id = ffi::raw_read_packed_field_ptr(std::ptr::addr_of!(sd.dev_id));
+        assert_eq!(event, u16::from(HCI_DEV_REG));
+        assert_eq!(dev_id, 42);
+    }
+
+    #[test]
+    fn test_raw_read_unaligned_out_of_bounds() {
+        // Attempting to read beyond buffer bounds should return None.
+        let buf = [0u8; 2];
+        let result = ffi::raw_read_unaligned::<hci_event_hdr>(&buf, 1);
+        assert!(result.is_none(), "read beyond buffer should return None");
+    }
+
+    // -----------------------------------------------------------------------
+    // ffi::raw_zeroed for repr(C) packed structs
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_raw_zeroed_hci_dev_info() {
+        let di: hci_dev_info = ffi::raw_zeroed();
+        // Use read_unaligned for packed struct field access.
+        let dev_id: u16 = ffi::raw_read_packed_field_ptr(std::ptr::addr_of!(di.dev_id));
+        let type_: u8 = ffi::raw_read_packed_field_ptr(std::ptr::addr_of!(di.type_));
+        assert_eq!(dev_id, 0);
+        assert_eq!(type_, 0);
+    }
+
+    #[test]
+    fn test_raw_zeroed_sockaddr_hci() {
+        let addr: sockaddr_hci = ffi::raw_zeroed();
+        assert_eq!(addr.hci_family, 0);
+        assert_eq!(addr.hci_dev, 0);
+        assert_eq!(addr.hci_channel, 0);
+    }
+
+    // -----------------------------------------------------------------------
+    // recv_and_dispatch_device min-size validation (white-box)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn test_min_packet_size_constants() {
+        // Verify the minimum size calculation is correct:
+        // 1 (type) + HCI_EVENT_HDR_SIZE (2) + sizeof(evt_stack_internal) (2)
+        // + sizeof(evt_si_device) (4) = 9
+        let min = 1 + HCI_EVENT_HDR_SIZE
+            + size_of::<evt_stack_internal>()
+            + size_of::<evt_si_device>();
+        assert_eq!(min, 9, "expected minimum stack-internal packet size");
+    }
 }

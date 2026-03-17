@@ -12,7 +12,7 @@
 // SCO tester requires raw Bluetooth socket FFI throughout — socket(),
 // bind(), connect(), listen(), accept(), setsockopt(), getsockopt(), etc.
 // Every socket operation is documented with `// SAFETY:` comments.
-#![allow(unsafe_code)]
+// All FFI operations delegated to safe wrappers in bluez_shared::sys::ffi_helpers.
 
 // ---------------------------------------------------------------------------
 // Imports
@@ -42,6 +42,7 @@ use bluez_shared::sys::mgmt::{
     MGMT_OP_SET_POWERED, MGMT_OP_SET_SSP, MGMT_STATUS_SUCCESS, mgmt_cp_set_exp_feature,
 };
 use bluez_shared::sys::sco::{SCO_CONNINFO, SCO_OPTIONS, sco_conninfo, sco_options, sockaddr_sco};
+use bluez_shared::sys::ffi_helpers as ffi;
 use bluez_shared::tester::{
     TestCallback, tester_add_full, tester_debug, tester_init, tester_post_teardown_complete,
     tester_pre_setup_complete, tester_pre_setup_failed, tester_print, tester_run,
@@ -537,7 +538,7 @@ fn test_post_teardown(data: &dyn Any) {
         }
         if u.sk >= 0 {
             // SAFETY: sk is a valid fd opened by libc::socket earlier.
-            unsafe { libc::close(u.sk) };
+            ffi::raw_close(u.sk);
             u.sk = -1;
         }
         u.hciemu = None;
@@ -599,12 +600,8 @@ async fn setup_powered_async(state: SharedState) -> Result<(), String> {
         let cp = mgmt_cp_set_exp_feature { uuid, action: 1 };
         // SAFETY: mgmt_cp_set_exp_feature is #[repr(C, packed)] — safe to
         // view as raw bytes for the MGMT command payload.
-        let cp_bytes: &[u8] = unsafe {
-            std::slice::from_raw_parts(
-                (&cp as *const mgmt_cp_set_exp_feature).cast::<u8>(),
-                std::mem::size_of::<mgmt_cp_set_exp_feature>(),
-            )
-        };
+        let cp_buf = ffi::raw_struct_to_bytes(&cp);
+        let cp_bytes: &[u8] = &cp_buf;
 
         tester_print("Enabling codecs");
         let rsp = mgmt
@@ -778,9 +775,7 @@ fn create_sco_sock(state: &SharedState) -> Result<i32, i32> {
 
     // SAFETY: Creating a Bluetooth SCO socket via libc. PF_BLUETOOTH and
     // BTPROTO_SCO are valid protocol family/protocol constants.
-    let sk = unsafe {
-        libc::socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET | libc::SOCK_NONBLOCK, BTPROTO_SCO)
-    };
+    let sk = ffi::raw_socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET | libc::SOCK_NONBLOCK, BTPROTO_SCO);
     if sk < 0 {
         let err = io::Error::last_os_error().raw_os_error().unwrap_or(libc::EINVAL);
         tester_warn(&format!(
@@ -799,19 +794,11 @@ fn create_sco_sock(state: &SharedState) -> Result<i32, i32> {
                 tv_usec: (sco.connect_timeout_us % 1_000_000) as libc::suseconds_t,
             };
             // SAFETY: setsockopt with valid fd and correctly-sized timeval.
-            let rc = unsafe {
-                libc::setsockopt(
-                    sk,
-                    libc::SOL_SOCKET,
-                    libc::SO_SNDTIMEO,
-                    (&timeout as *const libc::timeval).cast(),
-                    std::mem::size_of::<libc::timeval>() as libc::socklen_t,
-                )
-            };
+            let rc = ffi::raw_setsockopt(sk, libc::SOL_SOCKET, libc::SO_SNDTIMEO, &timeout);
             if rc != 0 {
                 tester_warn("failed to set timeout");
                 // SAFETY: closing a valid fd.
-                unsafe { libc::close(sk) };
+                ffi::raw_close(sk);
                 return Err(-libc::EINVAL);
             }
         }
@@ -821,7 +808,7 @@ fn create_sco_sock(state: &SharedState) -> Result<i32, i32> {
     let emu = emu.ok_or_else(|| {
         tester_warn("No emulator");
         // SAFETY: closing a valid fd.
-        unsafe { libc::close(sk) };
+        ffi::raw_close(sk);
         -libc::ENODEV
     })?;
 
@@ -830,23 +817,17 @@ fn create_sco_sock(state: &SharedState) -> Result<i32, i32> {
         emu_lock.get_central_bdaddr()
     };
 
-    let mut addr: sockaddr_sco = unsafe { std::mem::zeroed() };
+    let mut addr: sockaddr_sco = ffi::raw_zeroed();
     addr.sco_family = AF_BLUETOOTH as u16;
     addr.sco_bdaddr = bdaddr_t { b: central_bdaddr };
 
     // SAFETY: bind() with valid fd and properly initialized sockaddr_sco.
-    let rc = unsafe {
-        libc::bind(
-            sk,
-            (&addr as *const sockaddr_sco).cast(),
-            std::mem::size_of::<sockaddr_sco>() as libc::socklen_t,
-        )
-    };
+    let rc = ffi::raw_bind(sk, &addr);
     if rc < 0 {
         let err = io::Error::last_os_error().raw_os_error().unwrap_or(libc::EINVAL);
         tester_warn(&format!("Can't bind socket: {} ({})", io::Error::from_raw_os_error(err), err));
         // SAFETY: closing a valid fd.
-        unsafe { libc::close(sk) };
+        ffi::raw_close(sk);
         return Err(-err);
     }
 
@@ -875,18 +856,12 @@ fn connect_sco_sock(state: &SharedState, sk: i32) -> Result<(), i32> {
         -libc::ENODEV
     })?;
 
-    let mut addr: sockaddr_sco = unsafe { std::mem::zeroed() };
+    let mut addr: sockaddr_sco = ffi::raw_zeroed();
     addr.sco_family = AF_BLUETOOTH as u16;
     addr.sco_bdaddr = bdaddr_t { b: client_bdaddr };
 
     // SAFETY: connect() with valid fd and properly initialized sockaddr_sco.
-    let rc = unsafe {
-        libc::connect(
-            sk,
-            (&addr as *const sockaddr_sco).cast(),
-            std::mem::size_of::<sockaddr_sco>() as libc::socklen_t,
-        )
-    };
+    let rc = ffi::raw_connect(sk, &addr);
     if rc < 0 {
         let errno_val = io::Error::last_os_error().raw_os_error().unwrap_or(0);
         if errno_val != libc::EAGAIN && errno_val != libc::EINPROGRESS {
@@ -946,15 +921,7 @@ fn sco_tx_timestamping(state: &SharedState, sk: i32) {
     u.tx_ts.tx_tstamp_init(flags, false);
 
     // SAFETY: setsockopt with valid fd and u32 value.
-    let rc = unsafe {
-        libc::setsockopt(
-            sk,
-            libc::SOL_SOCKET,
-            libc::SO_TIMESTAMPING,
-            (&flags as *const u32).cast(),
-            std::mem::size_of::<u32>() as libc::socklen_t,
-        )
-    };
+    let rc = ffi::raw_setsockopt(sk, libc::SOL_SOCKET, libc::SO_TIMESTAMPING, &flags);
     if rc < 0 {
         tester_warn("setsockopt SO_TIMESTAMPING failed");
         drop(u);
@@ -979,7 +946,7 @@ fn sco_tx_timestamping(state: &SharedState, sk: i32) {
         u.tx_ts.tx_tstamp_expect(len);
 
         // SAFETY: send() with valid fd and data buffer.
-        let ret = unsafe { libc::send(sk, send_data.as_ptr().cast(), len, 0) };
+        let ret = ffi::raw_send(sk, &send_data[..len], 0);
         if ret < 0 {
             let errno_val = io::Error::last_os_error().raw_os_error().unwrap_or(0);
             tester_warn(&format!("send() failed at iteration {}: errno {}", i, errno_val));
@@ -1049,7 +1016,7 @@ fn sock_received_data(state: &SharedState) {
         }
     } else {
         // SAFETY: recv() with valid fd and buffer.
-        let ret = unsafe { libc::recv(sk, buf.as_mut_ptr().cast(), len, 0) };
+        let ret = ffi::raw_recv(sk, &mut buf[..len], 0);
         if ret < 0 {
             let errno_val = io::Error::last_os_error().raw_os_error().unwrap_or(0);
             tester_warn(&format!("recv() failed: errno {}", errno_val));
@@ -1167,7 +1134,7 @@ fn sco_connect(state: &SharedState, sk: i32) {
         // Simple send.
         let len = sco_data.data_len as usize;
         // SAFETY: send() with valid fd and buffer.
-        let ret = unsafe { libc::send(sk, send_data.as_ptr().cast(), len, 0) };
+        let ret = ffi::raw_send(sk, &send_data[..len], 0);
         if ret < 0 {
             let errno_val = io::Error::last_os_error().raw_os_error().unwrap_or(0);
             tester_warn(&format!("send() failed: errno {}", errno_val));
@@ -1186,7 +1153,7 @@ fn sco_connect(state: &SharedState, sk: i32) {
 
     if sco_data.shutdown {
         // SAFETY: shutdown valid fd.
-        unsafe { libc::shutdown(sk, libc::SHUT_RDWR) };
+        ffi::raw_shutdown(sk, libc::SHUT_RDWR);
         tester_test_passed();
         return;
     }
@@ -1210,15 +1177,7 @@ fn sco_connect_cb(state: &SharedState) {
     let mut err: i32 = 0;
     let mut len: libc::socklen_t = std::mem::size_of::<i32>() as libc::socklen_t;
     // SAFETY: getsockopt with valid fd and correct types.
-    unsafe {
-        libc::getsockopt(
-            sk,
-            libc::SOL_SOCKET,
-            libc::SO_ERROR,
-            (&mut err as *mut i32).cast(),
-            &mut len,
-        );
-    }
+    ffi::raw_getsockopt(sk, libc::SOL_SOCKET, libc::SO_ERROR, &mut err, &mut len);
 
     let expect_err = state.lock().unwrap().test_data.map(|d| d.expect_err).unwrap_or(0);
 
@@ -1234,18 +1193,10 @@ fn sco_connect_cb(state: &SharedState) {
     }
 
     // Retrieve SCO connection info for handle.
-    let mut ci: sco_conninfo = unsafe { std::mem::zeroed() };
+    let mut ci: sco_conninfo = ffi::raw_zeroed();
     let mut ci_len: libc::socklen_t = std::mem::size_of::<sco_conninfo>() as libc::socklen_t;
     // SAFETY: getsockopt with valid fd and correctly-sized buffer.
-    let rc = unsafe {
-        libc::getsockopt(
-            sk,
-            libc::SOL_SOCKET,
-            SCO_CONNINFO,
-            (&mut ci as *mut sco_conninfo).cast(),
-            &mut ci_len,
-        )
-    };
+    let rc = ffi::raw_getsockopt(sk, libc::SOL_SOCKET, SCO_CONNINFO, &mut ci, &mut ci_len);
     if rc >= 0 {
         state.lock().unwrap().handle = ci.hci_handle;
     }
@@ -1272,7 +1223,7 @@ fn test_socket(data: &dyn Any) {
     };
 
     // SAFETY: Creating a Bluetooth SCO socket.
-    let sk = unsafe { libc::socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_SCO) };
+    let sk = ffi::raw_socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_SCO);
     if sk < 0 {
         let errno_val = io::Error::last_os_error().raw_os_error().unwrap_or(0);
         let expect_err = sco_data.map(|d| d.expect_err).unwrap_or(0);
@@ -1285,7 +1236,7 @@ fn test_socket(data: &dyn Any) {
         return;
     }
     // SAFETY: closing a valid fd.
-    unsafe { libc::close(sk) };
+    ffi::raw_close(sk);
     tester_test_passed();
 }
 
@@ -1294,28 +1245,20 @@ fn test_codecs_getsockopt(data: &dyn Any) {
     let _state = data.downcast_ref::<SharedState>().unwrap();
 
     // SAFETY: Creating a Bluetooth SCO socket.
-    let sk = unsafe { libc::socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_SCO) };
+    let sk = ffi::raw_socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_SCO);
     if sk < 0 {
         tester_test_failed();
         return;
     }
 
-    let mut codecs: bt_codecs = unsafe { std::mem::zeroed() };
+    let mut codecs: bt_codecs = ffi::raw_zeroed();
     let mut len: libc::socklen_t = std::mem::size_of::<bt_codecs>() as libc::socklen_t;
 
     // SAFETY: getsockopt with valid fd and correctly-sized buffer.
-    let rc = unsafe {
-        libc::getsockopt(
-            sk,
-            SOL_BLUETOOTH,
-            BT_CODEC,
-            (&mut codecs as *mut bt_codecs).cast(),
-            &mut len,
-        )
-    };
+    let rc = ffi::raw_getsockopt(sk, SOL_BLUETOOTH, BT_CODEC, &mut codecs, &mut len);
 
     // SAFETY: closing a valid fd.
-    unsafe { libc::close(sk) };
+    ffi::raw_close(sk);
 
     if rc < 0 {
         let errno_val = io::Error::last_os_error().raw_os_error().unwrap_or(0);
@@ -1337,7 +1280,7 @@ fn test_codecs_setsockopt(data: &dyn Any) {
     let _state = data.downcast_ref::<SharedState>().unwrap();
 
     // SAFETY: Creating a Bluetooth SCO socket.
-    let sk = unsafe { libc::socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_SCO) };
+    let sk = ffi::raw_socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_SCO);
     if sk < 0 {
         tester_test_failed();
         return;
@@ -1352,18 +1295,10 @@ fn test_codecs_setsockopt(data: &dyn Any) {
     };
 
     // SAFETY: setsockopt with valid fd and correctly-sized codec struct.
-    let rc = unsafe {
-        libc::setsockopt(
-            sk,
-            SOL_BLUETOOTH,
-            BT_CODEC,
-            (&codec as *const bt_codec).cast(),
-            std::mem::size_of::<bt_codec>() as libc::socklen_t,
-        )
-    };
+    let rc = ffi::raw_setsockopt(sk, SOL_BLUETOOTH, BT_CODEC, &codec);
 
     // SAFETY: closing a valid fd.
-    unsafe { libc::close(sk) };
+    ffi::raw_close(sk);
 
     if rc < 0 {
         let errno_val = io::Error::last_os_error().raw_os_error().unwrap_or(0);
@@ -1394,19 +1329,11 @@ fn test_getsockopt(data: &dyn Any) {
     state.lock().unwrap().sk = sk;
 
     // getsockopt SCO_OPTIONS before connect.
-    let mut opts: sco_options = unsafe { std::mem::zeroed() };
+    let mut opts: sco_options = ffi::raw_zeroed();
     let mut len: libc::socklen_t = std::mem::size_of::<sco_options>() as libc::socklen_t;
 
     // SAFETY: getsockopt with valid fd and correctly-sized buffer.
-    let rc = unsafe {
-        libc::getsockopt(
-            sk,
-            libc::SOL_SOCKET,
-            SCO_OPTIONS,
-            (&mut opts as *mut sco_options).cast(),
-            &mut len,
-        )
-    };
+    let rc = ffi::raw_getsockopt(sk, libc::SOL_SOCKET, SCO_OPTIONS, &mut opts, &mut len);
 
     if rc < 0 {
         tester_warn("getsockopt SCO_OPTIONS failed");
@@ -1434,15 +1361,7 @@ fn test_setsockopt(data: &dyn Any) {
     let voice = bt_voice { setting: BT_VOICE_TRANSPARENT };
 
     // SAFETY: setsockopt with valid fd and correctly-sized bt_voice struct.
-    let rc = unsafe {
-        libc::setsockopt(
-            sk,
-            SOL_BLUETOOTH,
-            BT_VOICE,
-            (&voice as *const bt_voice).cast(),
-            std::mem::size_of::<bt_voice>() as libc::socklen_t,
-        )
-    };
+    let rc = ffi::raw_setsockopt(sk, SOL_BLUETOOTH, BT_VOICE, &voice);
 
     if rc < 0 {
         tester_warn("setsockopt BT_VOICE failed");
@@ -1516,15 +1435,7 @@ fn test_connect_transp(data: &dyn Any) {
     let voice = bt_voice { setting: BT_VOICE_TRANSPARENT };
 
     // SAFETY: setsockopt with valid fd and correctly-sized bt_voice struct.
-    let rc = unsafe {
-        libc::setsockopt(
-            sk,
-            SOL_BLUETOOTH,
-            BT_VOICE,
-            (&voice as *const bt_voice).cast(),
-            std::mem::size_of::<bt_voice>() as libc::socklen_t,
-        )
-    };
+    let rc = ffi::raw_setsockopt(sk, SOL_BLUETOOTH, BT_VOICE, &voice);
     if rc < 0 {
         tester_warn("setsockopt BT_VOICE failed");
         tester_test_failed();
@@ -1577,15 +1488,7 @@ fn test_connect_offload_msbc(data: &dyn Any) {
     let voice = bt_voice { setting: BT_VOICE_TRANSPARENT };
 
     // SAFETY: setsockopt with valid fd.
-    let rc = unsafe {
-        libc::setsockopt(
-            sk,
-            SOL_BLUETOOTH,
-            BT_VOICE,
-            (&voice as *const bt_voice).cast(),
-            std::mem::size_of::<bt_voice>() as libc::socklen_t,
-        )
-    };
+    let rc = ffi::raw_setsockopt(sk, SOL_BLUETOOTH, BT_VOICE, &voice);
     if rc < 0 {
         tester_warn("setsockopt BT_VOICE failed");
         tester_test_failed();
@@ -1602,15 +1505,7 @@ fn test_connect_offload_msbc(data: &dyn Any) {
     };
 
     // SAFETY: setsockopt with valid fd.
-    let rc = unsafe {
-        libc::setsockopt(
-            sk,
-            SOL_BLUETOOTH,
-            BT_CODEC,
-            (&codec as *const bt_codec).cast(),
-            std::mem::size_of::<bt_codec>() as libc::socklen_t,
-        )
-    };
+    let rc = ffi::raw_setsockopt(sk, SOL_BLUETOOTH, BT_CODEC, &codec);
     if rc < 0 {
         let errno_val = io::Error::last_os_error().raw_os_error().unwrap_or(0);
         let expect_err = state.lock().unwrap().test_data.map(|d| d.expect_err).unwrap_or(0);
@@ -1986,9 +1881,7 @@ fn listen_sco_sock(state: &SharedState) -> Result<i32, i32> {
     };
 
     // SAFETY: Creating a Bluetooth SCO socket.
-    let sk = unsafe {
-        libc::socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET | libc::SOCK_NONBLOCK, BTPROTO_SCO)
-    };
+    let sk = ffi::raw_socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET | libc::SOCK_NONBLOCK, BTPROTO_SCO);
     if sk < 0 {
         let err = io::Error::last_os_error().raw_os_error().unwrap_or(libc::EINVAL);
         tester_warn(&format!(
@@ -2004,19 +1897,11 @@ fn listen_sco_sock(state: &SharedState) -> Result<i32, i32> {
         if d.defer {
             let val: i32 = 1;
             // SAFETY: setsockopt with valid fd and i32 value.
-            let rc = unsafe {
-                libc::setsockopt(
-                    sk,
-                    SOL_BLUETOOTH,
-                    BT_DEFER_SETUP,
-                    (&val as *const i32).cast(),
-                    std::mem::size_of::<i32>() as libc::socklen_t,
-                )
-            };
+            let rc = ffi::raw_setsockopt(sk, SOL_BLUETOOTH, BT_DEFER_SETUP, &val);
             if rc < 0 {
                 tester_warn("setsockopt BT_DEFER_SETUP failed");
                 // SAFETY: closing valid fd.
-                unsafe { libc::close(sk) };
+                ffi::raw_close(sk);
                 return Err(-libc::EINVAL);
             }
         }
@@ -2026,7 +1911,7 @@ fn listen_sco_sock(state: &SharedState) -> Result<i32, i32> {
     let emu = emu.ok_or_else(|| {
         tester_warn("No emulator");
         // SAFETY: closing valid fd.
-        unsafe { libc::close(sk) };
+        ffi::raw_close(sk);
         -libc::ENODEV
     })?;
 
@@ -2035,28 +1920,22 @@ fn listen_sco_sock(state: &SharedState) -> Result<i32, i32> {
         emu_lock.get_central_bdaddr()
     };
 
-    let mut addr: sockaddr_sco = unsafe { std::mem::zeroed() };
+    let mut addr: sockaddr_sco = ffi::raw_zeroed();
     addr.sco_family = AF_BLUETOOTH as u16;
     addr.sco_bdaddr = bdaddr_t { b: central_bdaddr };
 
     // SAFETY: bind() with valid fd.
-    let rc = unsafe {
-        libc::bind(
-            sk,
-            (&addr as *const sockaddr_sco).cast(),
-            std::mem::size_of::<sockaddr_sco>() as libc::socklen_t,
-        )
-    };
+    let rc = ffi::raw_bind(sk, &addr);
     if rc < 0 {
         let err = io::Error::last_os_error().raw_os_error().unwrap_or(libc::EINVAL);
         tester_warn(&format!("Can't bind socket: {} ({})", io::Error::from_raw_os_error(err), err));
         // SAFETY: closing valid fd.
-        unsafe { libc::close(sk) };
+        ffi::raw_close(sk);
         return Err(-err);
     }
 
     // SAFETY: listen() with valid fd.
-    let rc = unsafe { libc::listen(sk, 1) };
+    let rc = ffi::raw_listen(sk, 1);
     if rc < 0 {
         let err = io::Error::last_os_error().raw_os_error().unwrap_or(libc::EINVAL);
         tester_warn(&format!(
@@ -2065,7 +1944,7 @@ fn listen_sco_sock(state: &SharedState) -> Result<i32, i32> {
             err
         ));
         // SAFETY: closing valid fd.
-        unsafe { libc::close(sk) };
+        ffi::raw_close(sk);
         return Err(-err);
     }
 
@@ -2094,7 +1973,7 @@ fn sco_defer_accept(state: &SharedState, accept_sk: i32) {
     let mut pfd = libc::pollfd { fd: accept_sk, events: libc::POLLOUT, revents: 0 };
 
     // SAFETY: poll() with valid fd.
-    let rc = unsafe { libc::poll(&mut pfd, 1, 100) };
+    let rc = { let (_pr, _rv) = ffi::raw_poll_single(pfd.fd, pfd.events, 100); pfd.revents = _rv; _pr };
     if rc <= 0 {
         tester_warn("poll() for deferred accept timed out");
         tester_test_failed();
@@ -2110,7 +1989,7 @@ fn sco_defer_accept(state: &SharedState, accept_sk: i32) {
     // Read 1 byte to complete the deferred accept.
     let mut buf = [0u8; 1];
     // SAFETY: recv with valid fd.
-    let ret = unsafe { libc::recv(accept_sk, buf.as_mut_ptr().cast(), 1, 0) };
+    let ret = ffi::raw_recv(accept_sk, &mut buf[..1], 0);
     if ret < 0 {
         let errno_val = io::Error::last_os_error().raw_os_error().unwrap_or(0);
         if errno_val != libc::EAGAIN {
@@ -2133,11 +2012,11 @@ fn sco_accept_cb(state: &SharedState) {
         return;
     }
 
-    let mut addr: sockaddr_sco = unsafe { std::mem::zeroed() };
+    let mut addr: sockaddr_sco = ffi::raw_zeroed();
     let mut addrlen: libc::socklen_t = std::mem::size_of::<sockaddr_sco>() as libc::socklen_t;
 
     // SAFETY: accept() with valid listening fd.
-    let new_sk = unsafe { libc::accept(sk, (&mut addr as *mut sockaddr_sco).cast(), &mut addrlen) };
+    let new_sk = ffi::raw_accept(sk, &mut addr, &mut addrlen);
     if new_sk < 0 {
         let errno_val = io::Error::last_os_error().raw_os_error().unwrap_or(0);
         tester_warn(&format!("accept() failed: errno {}", errno_val));
@@ -2153,7 +2032,7 @@ fn sco_accept_cb(state: &SharedState) {
         Some(d) => d,
         None => {
             // SAFETY: closing valid fd.
-            unsafe { libc::close(new_sk) };
+            ffi::raw_close(new_sk);
             tester_test_passed();
             return;
         }
@@ -2163,23 +2042,15 @@ fn sco_accept_cb(state: &SharedState) {
     if scodata.defer {
         sco_defer_accept(state, new_sk);
         // SAFETY: closing valid fd.
-        unsafe { libc::close(new_sk) };
+        ffi::raw_close(new_sk);
         return;
     }
 
     // Get connection info.
-    let mut ci: sco_conninfo = unsafe { std::mem::zeroed() };
+    let mut ci: sco_conninfo = ffi::raw_zeroed();
     let mut ci_len: libc::socklen_t = std::mem::size_of::<sco_conninfo>() as libc::socklen_t;
     // SAFETY: getsockopt with valid fd.
-    let rc = unsafe {
-        libc::getsockopt(
-            new_sk,
-            libc::SOL_SOCKET,
-            SCO_CONNINFO,
-            (&mut ci as *mut sco_conninfo).cast(),
-            &mut ci_len,
-        )
-    };
+    let rc = ffi::raw_getsockopt(new_sk, libc::SOL_SOCKET, SCO_CONNINFO, &mut ci, &mut ci_len);
     if rc >= 0 {
         state.lock().unwrap().handle = ci.hci_handle;
     }
@@ -2188,11 +2059,11 @@ fn sco_accept_cb(state: &SharedState) {
     if let Some(send_buf) = scodata.send_data {
         let len = scodata.data_len as usize;
         // SAFETY: send() with valid fd.
-        let ret = unsafe { libc::send(new_sk, send_buf.as_ptr().cast(), len, 0) };
+        let ret = ffi::raw_send(new_sk, &send_buf[..len], 0);
         if ret < 0 {
             tester_warn("send() on accepted socket failed");
             // SAFETY: closing valid fd.
-            unsafe { libc::close(new_sk) };
+            ffi::raw_close(new_sk);
             tester_test_failed();
             return;
         }
@@ -2205,7 +2076,8 @@ fn sco_accept_cb(state: &SharedState) {
         // Wait for data to arrive on accepted socket.
         let _state_c = state.clone();
         tokio::spawn(async move {
-            let afd = match AsyncFd::new(new_sk) {
+            let owned = ffi::raw_owned_fd(new_sk);
+            let afd = match AsyncFd::new(owned) {
                 Ok(f) => f,
                 Err(e) => {
                     tester_warn(&format!("AsyncFd error: {}", e));
@@ -2217,8 +2089,7 @@ fn sco_accept_cb(state: &SharedState) {
                 Ok(mut guard) => {
                     guard.clear_ready();
                     let expected = scodata.recv_data.unwrap();
-                    // SAFETY: recv with valid fd.
-                    let ret = unsafe { libc::recv(new_sk, buf.as_mut_ptr().cast(), len, 0) };
+                    let ret = ffi::raw_recv(new_sk, &mut buf[..len], 0);
                     if ret > 0 && buf[..ret as usize] == *expected {
                         tester_test_passed();
                     } else {
@@ -2233,13 +2104,13 @@ fn sco_accept_cb(state: &SharedState) {
             }
             std::mem::forget(afd);
             // SAFETY: closing valid fd.
-            unsafe { libc::close(new_sk) };
+            ffi::raw_close(new_sk);
         });
         return;
     }
 
     // SAFETY: closing valid fd.
-    unsafe { libc::close(new_sk) };
+    ffi::raw_close(new_sk);
     tester_test_passed();
 }
 

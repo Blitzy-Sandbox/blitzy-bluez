@@ -65,6 +65,12 @@ pub mod cmtp;
 /// structs for controlling the kernel Bluetooth subsystem.
 pub mod mgmt;
 
+/// Safe wrappers for common libc/POSIX FFI operations (socket, ioctl, read,
+/// write, etc.) used across the workspace.  Higher-level daemon, tool, and
+/// tester code should call these safe functions instead of writing inline
+/// `unsafe` blocks.
+pub mod ffi_helpers;
+
 // ---------------------------------------------------------------------------
 // Convenience Re-Exports — Core Address and Protocol Types
 // ---------------------------------------------------------------------------
@@ -156,6 +162,7 @@ pub fn localtime_from_unix(unix_secs: i64) -> LocalTime {
     // writes the broken-down local time into a caller-provided `libc::tm`.
     // Both `t` and `tm` are valid stack-local variables for the duration
     // of the call.  The returned pointer (ignored here) aliases `&mut tm`.
+    // SAFETY: zeroed() produces a valid all-zeros libc::tm struct.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
     unsafe {
         libc::localtime_r(&t, &mut tm);

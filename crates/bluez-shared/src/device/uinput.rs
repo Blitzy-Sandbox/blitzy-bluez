@@ -337,6 +337,7 @@ impl BtUinput {
         // points to a NUL-terminated CString. We use libc::ioctl directly
         // because the argument is a pointer (not an int).
         let ret =
+            // SAFETY: ioctl with UI_SET_PHYS on a valid uinput fd with a null-terminated C string.
             unsafe { libc::ioctl(raw_fd, UI_SET_PHYS_NUM as libc::c_ulong, addr_cstr.as_ptr()) };
         if ret < 0 {
             return Err(io::Error::last_os_error());
@@ -468,6 +469,7 @@ impl BtUinput {
                 std::mem::size_of::<InputEvent>(),
             )
         };
+ // SAFETY: write() with a valid fd and properly sized byte buffer.
 
         let written = unsafe {
             libc::write(

@@ -59,6 +59,8 @@ thiserror = "2.0"
 tokio-stream = "0.1"
 # Future combinators and stream extensions
 futures = "0.3"
+# Async udev hotplug monitoring for hidraw/HID devices (sixaxis plugin)
+tokio-udev = "0.10"
 # XML parsing — SDP record XML conversion in bluetoothd
 quick-xml = "0.37"
 # MD5 hashing — OBEX daemon transfer identification

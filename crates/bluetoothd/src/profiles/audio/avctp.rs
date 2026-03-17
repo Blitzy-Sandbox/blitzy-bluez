@@ -1921,6 +1921,35 @@ pub async fn avctp_connect_browsing(session: &Arc<Mutex<AvctpSession>>) -> Avctp
 }
 
 // ===========================================================================
+// Session Lookup API (used by AVRCP)
+// ===========================================================================
+
+/// Find an AVCTP session by device object path.
+///
+/// Scans all AVCTP servers for a session whose device's D-Bus path matches
+/// `device_path`.  Returns the session Arc if found.
+pub async fn avctp_find_session_by_path(
+    device_path: &str,
+) -> Option<Arc<Mutex<AvctpSession>>> {
+    // Collect server arcs under the std::sync::Mutex, then immediately drop
+    // the guard so that no non-Send MutexGuard is held across an await point.
+    let server_arcs: Vec<Arc<Mutex<AvctpServerInner>>> = {
+        let servers = SERVERS.lock().ok()?;
+        servers.iter().cloned().collect()
+    };
+    for server in &server_arcs {
+        let srv = server.lock().await;
+        for session_arc in &srv.sessions {
+            let sess = session_arc.lock().await;
+            if sess.device.get_path() == device_path {
+                return Some(Arc::clone(session_arc));
+            }
+        }
+    }
+    None
+}
+
+// ===========================================================================
 // Tests
 // ===========================================================================
 

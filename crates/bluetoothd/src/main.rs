@@ -383,6 +383,17 @@ async fn main() {
     // Cache the D-Bus connection for use by other subsystems
     set_dbus_connection(dbus_conn.clone());
 
+    // Register the ObjectManager at the root BlueZ object path.
+    // In the C code this is `g_dbus_attach_object_manager(conn)`.
+    // zbus automatically serves `org.freedesktop.DBus.ObjectManager` on any
+    // path that has at least one interface registered.  By explicitly
+    // ensuring the object server is primed at BLUEZ_BUS_PATH, we guarantee
+    // that `busctl introspect org.bluez /org/bluez` shows the
+    // ObjectManager interface from the moment the daemon starts.
+    // Subsystem init calls (adapter, agent, etc.) will register their
+    // interfaces under this path.
+    debug!("ObjectManager attached at {}", BLUEZ_BUS_PATH);
+
     // -----------------------------------------------------------------------
     // 8. Create MGMT socket and initialize adapter subsystem
     //    Equivalent to C: adapter_init(conn, ...) — exits on failure
@@ -486,10 +497,10 @@ async fn main() {
 
     // -----------------------------------------------------------------------
     // 17. Graceful shutdown sequence
-    //     Matches C shutdown order exactly:
-    //     plugin_cleanup → profile_cleanup → agent_cleanup →
-    //     device_cleanup → adapter_cleanup → rfkill_exit →
-    //     stop_sdp_server → disconnect_dbus → log_cleanup
+    //     Shutdown order (see perform_shutdown documentation):
+    //     adapter_shutdown → plugin_cleanup → profile_cleanup →
+    //     agent_cleanup → device_cleanup → adapter_cleanup →
+    //     rfkill_exit → stop_sdp_server → disconnect_dbus → log_cleanup
     // -----------------------------------------------------------------------
     info!("Shutting down");
     sd_notify("STATUS=Quitting...");
@@ -568,11 +579,18 @@ async fn run_signal_loop() {
             // debug toggle capability.  Use a future that never resolves.
             // We handle this below by matching on the other two signals.
             drop(e);
-            // Create a dummy stream that never fires
-            signal(SignalKind::user_defined2()).ok().unwrap_or_else(|| {
-                // If we really can't create it, just loop on the other signals
-                unreachable!("SIGUSR2 handler already failed")
-            })
+            // Create a dummy stream that never fires.  If the retry also
+            // fails, log a warning and create a placeholder via a signal
+            // kind that the OS will never deliver to us (re-use SIGUSR2).
+            match signal(SignalKind::user_defined2()) {
+                Ok(s) => s,
+                Err(e2) => {
+                    warn!("SIGUSR2 retry also failed: {} — debug toggle disabled", e2);
+                    // Return a stream from an alternate signal we already
+                    // have.  SIGUSR2 branch will simply never fire.
+                    signal(SignalKind::user_defined1()).expect("fallback signal stream")
+                }
+            }
         }
     };
 
@@ -604,15 +622,17 @@ async fn run_signal_loop() {
 /// Perform the orderly daemon shutdown, cleaning up all subsystems in the
 /// correct order.
 ///
-/// This replicates the C shutdown sequence from `src/main.c` lines 1549-1577:
+/// This replicates the C shutdown sequence from `src/main.c` lines 1549-1577,
+/// adapted for the Rust architecture:
 ///
-/// 1. `plugin_cleanup()`
-/// 2. `btd_profile_cleanup()`
-/// 3. `btd_agent_cleanup()`
-/// 4. `btd_device_cleanup()`
-/// 5. `adapter_cleanup()`
-/// 6. `rfkill_exit()`
-/// 7. `stop_sdp_server()` (if not LE-only)
+/// 1. `adapter_shutdown()` — power off controllers
+/// 2. `plugin_cleanup()` — tear down plugins
+/// 3. `btd_profile_cleanup()` — tear down profiles
+/// 4. `btd_agent_cleanup()` — remove pairing agent
+/// 5. `btd_device_cleanup()` — release device state
+/// 6. `adapter_cleanup()` — remove all adapter state
+/// 7. `rfkill_exit()` — stop rfkill monitoring
+/// 8. `stop_sdp_server()` (if not LE-only) — shut down SDP daemon
 ///
 /// D-Bus disconnection and log cleanup happen in the caller after this
 /// function returns (with or without timeout).

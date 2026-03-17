@@ -16,7 +16,6 @@
 //   4. Public API: bt_audio_vcp_get_volume / bt_audio_vcp_set_volume
 //   5. Plugin registration via inventory::submit!
 
-#![allow(dead_code)]
 
 use std::sync::{Arc, Mutex};
 
@@ -46,7 +45,7 @@ use crate::service::BtdService;
 const VCS_UUID_STR: &str = "00001844-0000-1000-8000-00805f9b34fb";
 
 /// D-Bus interface name for media endpoints (preserved from C for parity).
-const MEDIA_ENDPOINT_INTERFACE: &str = "org.bluez.MediaEndpoint1";
+pub const MEDIA_ENDPOINT_INTERFACE: &str = "org.bluez.MediaEndpoint1";
 
 // ===========================================================================
 // Session Data
@@ -54,12 +53,12 @@ const MEDIA_ENDPOINT_INTERFACE: &str = "org.bluez.MediaEndpoint1";
 
 /// Per-device VCP session data, analogous to `struct vcp_data` in the C
 /// implementation.
-struct VcpData {
+pub struct VcpData {
     /// Reference to the remote Bluetooth device.
     device: Arc<tokio::sync::Mutex<BtdDevice>>,
     /// Optional reference to the BtdService that owns this session.
     /// `None` for sessions created via remote client attach (server-side).
-    service: Option<Arc<std::sync::Mutex<BtdService>>>,
+    pub service: Option<Arc<std::sync::Mutex<BtdService>>>,
     /// The VCP protocol engine instance.
     vcp: Arc<BtVcp>,
 }
@@ -190,7 +189,7 @@ fn find_session_by_device(
 }
 
 /// Find a VCP session by BtVcp pointer.
-fn find_session_by_vcp(sessions: &[VcpData], vcp: &BtVcp) -> Option<usize> {
+pub fn find_session_by_vcp(sessions: &[VcpData], vcp: &BtVcp) -> Option<usize> {
     let target = vcp as *const BtVcp;
     sessions.iter().position(|s| Arc::as_ptr(&s.vcp) == target)
 }

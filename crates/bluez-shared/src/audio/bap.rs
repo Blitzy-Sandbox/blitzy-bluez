@@ -2559,6 +2559,12 @@ impl BtBapStream {
         false
     }
 
+    /// Check whether two `BtBapStream` handles reference the same underlying
+    /// stream (identity check via `Arc::ptr_eq`).
+    pub fn same_stream(&self, other: &BtBapStream) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
     /// Link this stream's I/O with another stream.
     pub fn io_link(&self, other: &BtBapStream) {
         if let Ok(mut inner) = self.inner.lock() {

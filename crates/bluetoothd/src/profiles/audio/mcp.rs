@@ -18,7 +18,6 @@
 //   5. uinput fallback for media key injection when no local player exists.
 //   6. Plugin registration via `inventory::submit!`.
 
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -43,7 +42,7 @@ use crate::profile::{
 use crate::profiles::audio::media::{
     LocalPlayerCallback, MediaPlayer as LocalMediaPlayer,
     local_player_get_metadata, local_player_get_player_name,
-    local_player_get_position, local_player_get_setting,
+    local_player_get_duration, local_player_get_position, local_player_get_setting,
     local_player_next, local_player_pause, local_player_play, local_player_previous,
     local_player_register_callbacks, local_player_register_watch, local_player_set_setting,
     local_player_stop, local_player_unregister_callbacks, local_player_unregister_watch,
@@ -159,13 +158,13 @@ fn get_setting_order(repeat: &str, shuffle: &str) -> u8 {
 ///
 /// Bridges remote MCS characteristic changes to a `MediaPlayer` D-Bus object
 /// and relays media transport commands back to `BtMcp`.
-struct RemotePlayer {
+pub struct RemotePlayer {
     /// The MCP client engine instance (shared with McpData).
     mcp: Arc<BtMcp>,
     /// Content Control ID for this service instance.
     ccid: u8,
     /// Whether this is a GMCS (true) or MCS (false) service.
-    gmcs: bool,
+    pub gmcs: bool,
     /// The remote MediaPlayer D-Bus object.
     player: Option<Arc<MediaPlayer>>,
     /// Current playing order byte (for repeat/shuffle setting tracking).
@@ -198,7 +197,7 @@ struct McpData {
 /// Manages the local MCS GATT service, bridges remote control-point writes
 /// to local media player commands or uinput key events, and tracks local
 /// player state changes to generate characteristic notifications.
-struct McsInstance {
+pub struct McsInstance {
     /// Reference to the adapter this instance is registered on.
     adapter: Arc<tokio::sync::Mutex<BtdAdapter>>,
     /// The MCS server engine (from bluez-shared).
@@ -210,15 +209,15 @@ struct McsInstance {
     /// Watch ID for local player add/remove events.
     player_watch_id: u32,
     /// Whether the first local player has started (at_start tracking).
-    at_start: bool,
+    pub at_start: bool,
     /// Callback registration ID for local player state changes.
     cb_id: u32,
 }
 
 /// Links a local media player to an MCS instance for state tracking.
-struct PlayerLink {
+pub struct PlayerLink {
     /// Reference back to the MCS instance index (for lookup).
-    mcs_instance_idx: usize,
+    pub mcs_instance_idx: usize,
     /// The local media player reference.
     player: Arc<tokio::sync::Mutex<LocalMediaPlayer>>,
 }
@@ -766,9 +765,9 @@ impl McsCallback for GmcsServerCallback {
                     Ok(handle) => tokio::task::block_in_place(|| {
                         handle.block_on(async {
                             let guard = p.lock().await;
-                            let pos_ms = local_player_get_position(&guard);
+                            let dur_ms = local_player_get_duration(&guard);
                             // Convert ms to centiseconds.
-                            (pos_ms / 10) as i32
+                            (dur_ms / 10) as i32
                         })
                     }),
                     // Return "unavailable" sentinel when no runtime is present.
@@ -1597,22 +1596,10 @@ mod tests {
         sessions.clear();
     }
 
-    /// Helper: clear the global MCS instances list.
-    fn clear_instances() {
-        let mut instances = MCS_INSTANCES.lock().unwrap_or_else(|e| e.into_inner());
-        instances.clear();
-    }
-
     /// Helper: get current session count.
     fn session_count() -> usize {
         let sessions = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
         sessions.len()
-    }
-
-    /// Helper: get current MCS instance count.
-    fn instance_count() -> usize {
-        let instances = MCS_INSTANCES.lock().unwrap_or_else(|e| e.into_inner());
-        instances.len()
     }
 
     #[test]

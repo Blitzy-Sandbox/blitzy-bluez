@@ -23,7 +23,6 @@
 // Functions/structs in this module are invoked at runtime through the plugin
 // framework (inventory) rather than called statically, so the compiler cannot
 // trace reachability.  This is consistent with all other profile modules.
-#![allow(dead_code)]
 
 use std::sync::{Arc, Mutex as StdMutex};
 
@@ -63,20 +62,20 @@ const HFP_HS_UUID: &str = "0000111e-0000-1000-8000-00805f9b34fb";
 const HFP_AG_UUID: &str = "0000111f-0000-1000-8000-00805f9b34fb";
 
 /// SDP attribute: Bluetooth Profile Descriptor List.
-const SDP_ATTR_PFILE_DESC_LIST: u16 = 0x0009;
+pub const SDP_ATTR_PFILE_DESC_LIST: u16 = 0x0009;
 
 /// SDP attribute: Protocol Descriptor List.
-const SDP_ATTR_PROTO_DESC_LIST: u16 = 0x0004;
+pub const SDP_ATTR_PROTO_DESC_LIST: u16 = 0x0004;
 
 /// RFCOMM UUID-16 (from the SDP protocol descriptor).
-const RFCOMM_UUID16: u16 = 0x0003;
+pub const RFCOMM_UUID16: u16 = 0x0003;
 
 /// L2CAP UUID-16 (used in SDP protocol descriptor).
 #[allow(dead_code)]
 const L2CAP_UUID16: u16 = 0x0100;
 
 /// HFP AG UUID-16 (from the profile descriptor).
-const HANDSFREE_AGW_UUID16: u16 = 0x111F;
+pub const HANDSFREE_AGW_UUID16: u16 = 0x111F;
 
 /// Default HFP version when SDP parsing fails.
 const HFP_VERSION_DEFAULT: u16 = 0x0105;
@@ -85,7 +84,7 @@ const HFP_VERSION_DEFAULT: u16 = 0x0105;
 const DBG_IDX: u16 = 0xffff;
 
 /// "tel:" URI scheme supported by HFP HF.
-const TEL_URI_SCHEME: &str = "tel";
+pub const TEL_URI_SCHEME: &str = "tel";
 
 // ---------------------------------------------------------------------------
 // HfpCall tracking wrapper
@@ -173,7 +172,7 @@ impl HfpDevice {
 
 /// Map an `HfpCallStatus` from the shared HFP engine to a telephony
 /// `CallState` for D-Bus exposure.
-fn hfp_call_status_to_call_state(status: HfpCallStatus) -> CallState {
+pub fn hfp_call_status_to_call_state(status: HfpCallStatus) -> CallState {
     match status {
         HfpCallStatus::Active => CallState::Active,
         HfpCallStatus::Held => CallState::Held,
@@ -187,7 +186,7 @@ fn hfp_call_status_to_call_state(status: HfpCallStatus) -> CallState {
 
 /// Debug callback for the HFP AT engine.  Forwards AT trace messages to the
 /// daemon's structured logging system.
-fn hfp_hf_debug(msg: &str) {
+pub fn hfp_hf_debug(msg: &str) {
     btd_debug(DBG_IDX, &format!("hfp-hf: {}", msg));
     debug!("hfp-hf: {}", msg);
 }
@@ -201,7 +200,7 @@ fn hfp_hf_debug(msg: &str) {
 ///
 /// Walks the profile descriptor list looking for the Handsfree AG UUID
 /// (0x111F) and returns the associated 16-bit version number.
-fn sdp_get_profile_version(record: &SdpRecord) -> Option<u16> {
+pub fn sdp_get_profile_version(record: &SdpRecord) -> Option<u16> {
     let attr = record.attrs.get(&SDP_ATTR_PFILE_DESC_LIST)?;
 
     // The attribute is a Sequence of (UUID, Version) pairs.
@@ -238,7 +237,7 @@ fn sdp_get_profile_version(record: &SdpRecord) -> Option<u16> {
 ///
 /// The protocol descriptor list is a sequence of protocol entries.  We look
 /// for the RFCOMM entry (UUID 0x0003) and extract its channel parameter.
-fn sdp_get_rfcomm_channel(record: &SdpRecord) -> Option<u8> {
+pub fn sdp_get_rfcomm_channel(record: &SdpRecord) -> Option<u8> {
     let attr = record.attrs.get(&SDP_ATTR_PROTO_DESC_LIST)?;
 
     if let SdpData::Sequence(protocols) = attr {
@@ -274,7 +273,7 @@ fn sdp_get_rfcomm_channel(record: &SdpRecord) -> Option<u8> {
 /// from D-Bus method handlers.  We hold a reference to the `HfpHf` engine
 /// behind an `Arc<StdMutex<..>>` so that both the callback path and the I/O
 /// path can access it.
-struct HfpTelephonyBridge {
+pub struct HfpTelephonyBridge {
     hf: Arc<StdMutex<Option<HfpHf>>>,
 }
 
@@ -462,7 +461,7 @@ impl TelephonyCallbacks for HfpTelephonyBridge {
 /// Each callback forwards indicator updates, call state changes, and operator
 /// information to the telephony module via `Arc<Mutex<Telephony>>` and the
 /// module-level call management functions.
-fn build_session_callbacks(
+pub fn build_session_callbacks(
     telephony: Arc<Mutex<Telephony>>,
     telephony_cbs: Arc<dyn TelephonyCallbacks>,
     calls: Arc<StdMutex<Vec<HfpCallEntry>>>,
@@ -681,7 +680,7 @@ fn build_session_callbacks(
 /// Probe hook: called when a device with HFP AG UUID is discovered.
 ///
 /// Creates an `HfpDevice` and attaches it to the service user-data.
-fn hfp_probe(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdError> {
+pub fn hfp_probe(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdError> {
     btd_debug(DBG_IDX, "hfp-hf: probe");
     info!("hfp-hf: probe");
 
@@ -697,7 +696,7 @@ fn hfp_probe(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdError> {
 /// Remove hook: called when the service is being removed.
 ///
 /// Disconnects the HFP engine (if connected) and frees the `HfpDevice`.
-fn hfp_remove(service: &Arc<StdMutex<BtdService>>) {
+pub fn hfp_remove(service: &Arc<StdMutex<BtdService>>) {
     btd_debug(DBG_IDX, "hfp-hf: remove");
     info!("hfp-hf: remove");
 
@@ -718,7 +717,7 @@ fn hfp_remove(service: &Arc<StdMutex<BtdService>>) {
 /// 2. Opens an RFCOMM socket using `SocketBuilder`.
 /// 3. Creates the `HfpHf` AT engine, registers session callbacks, and starts
 ///    SLC establishment.
-async fn hfp_connect(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdError> {
+pub async fn hfp_connect(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdError> {
     btd_debug(DBG_IDX, "hfp-hf: connect");
     info!("hfp-hf: connect");
 
@@ -867,7 +866,7 @@ async fn hfp_connect(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdError
 }
 
 /// Disconnect hook: tears down the HFP SLC and RFCOMM channel.
-async fn hfp_disconnect(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdError> {
+pub async fn hfp_disconnect(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdError> {
     btd_debug(DBG_IDX, "hfp-hf: disconnect");
     info!("hfp-hf: disconnect");
 
@@ -914,7 +913,7 @@ async fn hfp_disconnect(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdEr
 
 /// Small helper struct stored as `Telephony::profile_data` carrying the
 /// negotiated HFP version.
-struct HfpProfileData {
+pub struct HfpProfileData {
     #[allow(dead_code)]
     version: u16,
 }

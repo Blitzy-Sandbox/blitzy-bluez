@@ -16,7 +16,6 @@
 //   4. Ready notification handling via `BtMicp::ready_register()`
 //   5. Plugin registration via `inventory::submit!`
 
-#![allow(dead_code)]
 
 use std::any::Any;
 use std::sync::{Arc, Mutex};
@@ -54,7 +53,7 @@ const MICS_UUID_STR: &str = "00001845-0000-1000-8000-00805f9b34fb";
 ///
 /// Tracks the association between a remote Bluetooth device, the MICP
 /// protocol engine (`BtMicp`), and the ready-callback registration ID.
-struct MicpData {
+pub struct MicpData {
     /// Reference to the remote Bluetooth device.
     device: Arc<tokio::sync::Mutex<BtdDevice>>,
     /// The MICP protocol engine instance (shared via `Arc`; replaces
@@ -102,7 +101,7 @@ fn find_session_by_device(
 }
 
 /// Find a session index by `BtMicp` raw pointer comparison.
-fn find_session_by_micp(sessions: &[MicpData], micp: &BtMicp) -> Option<usize> {
+pub fn find_session_by_micp(sessions: &[MicpData], micp: &BtMicp) -> Option<usize> {
     let target = micp as *const BtMicp;
     sessions.iter().position(|s| Arc::as_ptr(&s.micp) == target)
 }

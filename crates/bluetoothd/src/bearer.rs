@@ -28,6 +28,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+// NOTE on Mutex strategy in this module:
+// - `tokio::sync::Mutex` is used for `BtdBearer` because bearer methods hold
+//   the lock across `.await` points (D-Bus registration, signal emission,
+//   disconnect timer management). `std::sync::Mutex` cannot be held across
+//   await boundaries without blocking the async runtime.
+// - `std::sync::Mutex` is used for `BtdService` references in the synchronous
+//   `bearer_disconnect_service()` / `bearer_disconnect_services()` helpers
+//   because those functions never cross an `.await` point and `BtdService` is
+//   shared across both sync and async contexts throughout the daemon.
 use tokio::sync::{Mutex, oneshot};
 use tokio::task::JoinHandle;
 use tracing::debug;

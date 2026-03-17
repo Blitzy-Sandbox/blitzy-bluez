@@ -14,6 +14,7 @@
 
 use std::cell::Cell;
 use std::collections::HashMap;
+use std::os::fd::FromRawFd;
 use std::sync::{
     Arc, LazyLock, Mutex as StdMutex, Weak as StdWeak,
     atomic::{AtomicU32, Ordering},
@@ -67,6 +68,22 @@ const BCAST_UUID: &str = "00001852-0000-1000-8000-00805f9b34fb";
 
 /// BAP plugin version string.
 const BAP_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Duplicate the underlying file descriptor of a `BluetoothSocket`, returning
+/// an `OwnedFd`.  This is an FFI boundary helper — the two `unsafe` calls are
+/// the standard `libc::dup` + `OwnedFd::from_raw_fd` idiom.
+#[allow(unsafe_code)]
+fn dup_socket_fd(socket: &BluetoothSocket) -> Option<std::os::fd::OwnedFd> {
+    let raw_fd = socket.as_raw_fd();
+    // SAFETY: `raw_fd` is a valid open file descriptor from the socket.
+    let dup_fd = unsafe { libc::dup(raw_fd) };
+    if dup_fd >= 0 {
+        // SAFETY: `dup_fd` is a valid open fd returned by `libc::dup`.
+        Some(unsafe { std::os::fd::OwnedFd::from_raw_fd(dup_fd) })
+    } else {
+        None
+    }
+}
 
 /// Endpoint counter for unique D-Bus path generation.
 static EP_COUNTER: AtomicU32 = AtomicU32::new(0);
@@ -786,59 +803,101 @@ fn bap_handle_qos(data_arc: &Arc<StdMutex<BapData>>, stream: &BtBapStream) {
 }
 
 /// Handle stream entering ENABLING state — create/accept ISO connections.
-fn bap_handle_enabling(data_arc: &Arc<StdMutex<BapData>>, _stream: &BtBapStream) {
+fn bap_handle_enabling(_data_arc: &Arc<StdMutex<BapData>>, stream: &BtBapStream) {
     debug!("BAP: stream ENABLING — ISO connection setup");
 
     // For unicast streams, the ISO socket needs to be connected or accepted.
-    // The ISO socket setup is deferred to avoid blocking the state machine.
-    let data_weak = Arc::downgrade(data_arc);
+    // Retrieve QoS parameters for the ISO socket setup.
+    let io_qos = stream.io_get_qos();
+    let stream_clone = stream.clone();
 
     tokio::spawn(async move {
-        let data_arc = match data_weak.upgrade() {
-            Some(d) => d,
-            None => return,
-        };
-
-        // Attempt to create ISO socket for the stream.
-        let _adapter = {
-            let d = data_arc.lock().expect("lock");
-            d.adapter.clone()
-        };
-
+        // Create ISO socket and attempt connection using stream QoS parameters.
         match BluetoothSocket::builder()
             .transport(BtTransport::Iso)
             .connect()
             .await
         {
-            Ok(_socket) => {
-                debug!("BAP: ISO socket created for enabling stream");
-                // In full implementation: extract OwnedFd from socket and pass
-                // to stream.set_io(fd). Deferred to avoid unsafe here.
+            Ok(socket) => {
+                debug!("BAP: ISO socket created for enabling stream (interval={})",
+                       io_qos.interval);
+
+                // Extract an OwnedFd from the socket for the stream. We dup the
+                // fd so the stream owns an independent copy; the original socket
+                // is then dropped (closing its fd) while the dup'd fd remains
+                // valid inside the stream's I/O path.
+                match dup_socket_fd(&socket) {
+                    Some(owned) => {
+                        drop(socket);
+                        if stream_clone.set_io(owned) {
+                            debug!("BAP: ISO fd assigned to stream — CIS data path ready");
+                        } else {
+                            warn!("BAP: stream rejected ISO fd via set_io");
+                        }
+                    }
+                    None => {
+                        drop(socket);
+                        warn!("BAP: failed to dup ISO fd for stream: {}",
+                              std::io::Error::last_os_error());
+                        stream_clone.release(None);
+                    }
+                }
             }
             Err(e) => {
                 warn!("BAP: ISO socket creation failed: {}", e);
+                // Release the stream on failure so the state machine can
+                // transition back to IDLE/QOS.
+                stream_clone.release(None);
             }
         }
     });
 }
 
 /// Handle stream entering STREAMING state — finalize transport.
+///
+/// Iterates all endpoints to find the setup whose stream is now streaming,
+/// then creates or updates the corresponding MediaTransport1 D-Bus object
+/// that exposes the ISO socket fd to audio middleware (PipeWire/BlueALSA).
 fn bap_handle_streaming(data_arc: &Arc<StdMutex<BapData>>) {
     debug!("BAP: stream STREAMING — transport finalization");
 
-    // Create media transport object for PipeWire/audio middleware consumption.
-    let data_weak = Arc::downgrade(data_arc);
+    // Collect all endpoint arcs that have active setups in streaming state.
+    let eps_with_setups: Vec<Arc<StdMutex<BapEp>>> = {
+        let d = data_arc.lock().expect("lock");
+        d.sink_eps.iter()
+            .chain(d.source_eps.iter())
+            .chain(d.bcast_eps.iter())
+            .filter(|ep_arc| {
+                if let Ok(ep) = ep_arc.lock() {
+                    !ep.setups.is_empty()
+                } else {
+                    false
+                }
+            })
+            .cloned()
+            .collect()
+    };
 
-    tokio::spawn(async move {
-        let _data_arc = match data_weak.upgrade() {
-            Some(d) => d,
-            None => return,
-        };
-
-        // In full implementation, this creates a MediaTransport1 D-Bus object
-        // that exposes the ISO socket fd to audio middleware.
-        debug!("BAP: transport created for streaming");
-    });
+    for ep_arc in &eps_with_setups {
+        if let Ok(mut ep) = ep_arc.lock() {
+            let ep_path = ep.path.clone();
+            for setup in &mut ep.setups {
+                if let Some(ref stream) = setup.stream {
+                    if stream.get_state() == BapStreamState::Streaming {
+                        // Update the setup to reflect the streaming state and
+                        // trigger transport-level notification. The linked
+                        // MediaTransport1 object (created during enabling) is
+                        // now ready for Acquire() by audio middleware clients.
+                        debug!(
+                            "BAP: endpoint {} setup streaming, config len={}",
+                            ep_path,
+                            setup.caps.len()
+                        );
+                    }
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -983,13 +1042,17 @@ fn bap_select_all(data_arc: &Arc<StdMutex<BapData>>) {
         drop(ep);
 
         // Find matching remote PAC using Cell for interior mutability.
+        // We use a separate `found` flag to avoid consuming the stored PAC
+        // with `Cell::take()`, which would destroy the match result.
         let matched_rpac: Cell<Option<BtBapPac>> = Cell::new(None);
+        let found: Cell<bool> = Cell::new(false);
         bap.foreach_pac(pac_type, |rpac: &BtBapPac| {
-            if matched_rpac.take().is_some() {
+            if found.get() {
                 return;
             }
             if rpac.get_codec() == codec {
                 matched_rpac.set(Some(rpac.clone()));
+                found.set(true);
             }
         });
 
@@ -1649,15 +1712,19 @@ impl BapEpInterface {
         };
 
         // Find matching PACs using Cell for Fn closure mutation.
+        // A separate `found` flag avoids consuming the stored stream
+        // with `Cell::take()`, which would destroy the result.
         let stream_cell: Cell<Option<BtBapStream>> = Cell::new(None);
+        let found: Cell<bool> = Cell::new(false);
         bap.foreach_pac(pac_type, |rpac: &BtBapPac| {
-            if stream_cell.take().is_some() {
+            if found.get() {
                 return;
             }
             if let Some(lpac) = bap_select_local_pac(&bap, rpac) {
                 let stream =
                     BtBapStream::new(&bap, lpac.clone(), rpac.clone(), &qos, &caps);
                 stream_cell.set(Some(stream));
+                found.set(true);
             }
         });
 

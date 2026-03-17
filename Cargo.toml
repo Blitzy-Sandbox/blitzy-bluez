@@ -197,6 +197,10 @@ name = "test_gatt"
 path = "tests/unit/test_gatt.rs"
 
 [[test]]
+name = "test_gattrib"
+path = "tests/unit/test_gattrib.rs"
+
+[[test]]
 name = "test_mgmt"
 path = "tests/unit/test_mgmt.rs"
 

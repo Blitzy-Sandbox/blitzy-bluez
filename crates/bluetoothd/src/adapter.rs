@@ -22,7 +22,6 @@
 // - Authorization queue for service access control
 // - Experimental and kernel feature management
 
-#![allow(dead_code)]
 
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
@@ -82,16 +81,16 @@ pub const MAX_NAME_LENGTH: usize = 248;
 pub const INVALID_PASSKEY: u32 = 0xFFFF_FFFF;
 
 /// Connectable scan timeout in seconds.
-const CONN_SCAN_TIMEOUT: u64 = 3;
+pub const CONN_SCAN_TIMEOUT: u64 = 3;
 
 /// Idle discovery restart delay in seconds.
-const IDLE_DISCOV_TIMEOUT: u64 = 5;
+pub const IDLE_DISCOV_TIMEOUT: u64 = 5;
 
 /// Temporary device timeout in seconds.
-const TEMP_DEV_TIMEOUT: u64 = 3 * 60;
+pub const TEMP_DEV_TIMEOUT: u64 = 3 * 60;
 
 /// Bonding timeout in seconds.
-const BONDING_TIMEOUT: u64 = 2 * 60;
+pub const BONDING_TIMEOUT: u64 = 2 * 60;
 
 /// BR/EDR scan type bitmask.
 const SCAN_TYPE_BREDR: u8 = 1 << BDADDR_BREDR;
@@ -100,19 +99,19 @@ const SCAN_TYPE_BREDR: u8 = 1 << BDADDR_BREDR;
 const SCAN_TYPE_LE: u8 = (1 << BDADDR_LE_PUBLIC) | (1 << BDADDR_LE_RANDOM);
 
 /// Dual-mode scan type bitmask.
-const SCAN_TYPE_DUAL: u8 = SCAN_TYPE_BREDR | SCAN_TYPE_LE;
+pub const SCAN_TYPE_DUAL: u8 = SCAN_TYPE_BREDR | SCAN_TYPE_LE;
 
 /// Invalid RSSI sentinel.
 const HCI_RSSI_INVALID: i8 = 127;
 
 /// Invalid distance sentinel.
-const DISTANCE_VAL_INVALID: i16 = 0x7FFF;
+pub const DISTANCE_VAL_INVALID: i16 = 0x7FFF;
 
 /// Maximum path loss value.
 const PATHLOSS_MAX: u16 = 137;
 
 /// LE link type constant (not in hci.rs, defined locally as in C).
-const LE_LINK: u8 = 0x80;
+pub const LE_LINK: u8 = 0x80;
 
 // ---------------------------------------------------------------------------
 // Adapter power state machine
@@ -121,7 +120,7 @@ const LE_LINK: u8 = 0x80;
 /// Adapter power state, matching C `enum` in adapter.c.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u32)]
-enum AdapterPowerState {
+pub enum AdapterPowerState {
     Off = 0,
     On = 1,
     OnDisabling = 2,
@@ -165,8 +164,8 @@ impl ExperimentalFeatures {
 }
 
 /// Experimental feature UUID definitions.
-struct ExpUuid {
-    val: [u8; 16],
+pub struct ExpUuid {
+    pub val: [u8; 16],
     str_repr: &'static str,
 }
 
@@ -252,7 +251,7 @@ impl KernelFeatures {
 // ===========================================================================
 
 /// Known compromised security keys (Google Titan Security Keys).
-static BLOCKED_KEYS: &[mgmt_blocked_key_info] = &[
+pub static BLOCKED_KEYS: &[mgmt_blocked_key_info] = &[
     mgmt_blocked_key_info {
         type_: 0x01, // HCI_BLOCKED_KEY_TYPE_LTK
         val: [
@@ -371,7 +370,7 @@ pub trait BtdAdapterDriver: Send + Sync + 'static {
 
 /// Per-D-Bus-client discovery session state.
 #[derive(Debug)]
-struct DiscoveryClient {
+pub struct DiscoveryClient {
     sender: String,
     filter: DiscoveryFilter,
 }
@@ -413,36 +412,36 @@ pub struct PinCodeResult {
 pub type PinCodeCallback =
     Box<dyn Fn(&BtdAdapter, &BtdDevice, u32) -> Option<PinCodeResult> + Send + Sync>;
 
-struct PinCbEntry {
-    cb: PinCodeCallback,
+pub struct PinCbEntry {
+    pub cb: PinCodeCallback,
     id: u64,
 }
 
 type MsdCallback = Box<dyn Fn(&BdAddr, u16, &[u8]) + Send + Sync>;
 
-struct MsdCbEntry {
-    cb: MsdCallback,
+pub struct MsdCbEntry {
+    pub cb: MsdCallback,
     id: u64,
 }
 
 type DisconnectCallback = Box<dyn Fn(&BdAddr, u8) + Send + Sync>;
 
-struct DisconnectCbEntry {
-    cb: DisconnectCallback,
+pub struct DisconnectCbEntry {
+    pub cb: DisconnectCallback,
     id: u64,
 }
 
 type ConnFailCallback = Box<dyn Fn(&BdAddr, u8) + Send + Sync>;
 
-struct ConnFailCbEntry {
-    cb: ConnFailCallback,
+pub struct ConnFailCbEntry {
+    pub cb: ConnFailCallback,
     id: u64,
 }
 
 /// Tracks an in-flight Set Experimental Feature command.
-struct ExpPending {
-    name: &'static str,
-    flag: ExperimentalFeatures,
+pub struct ExpPending {
+    pub name: &'static str,
+    pub flag: ExperimentalFeatures,
 }
 
 // ===========================================================================
@@ -457,7 +456,7 @@ pub struct BtdAdapter {
     pub address_type: u8,
     pub name: String,
     pub path: String,
-    short_name: String,
+    pub short_name: String,
 
     // ---- Power & settings ----
     pub powered: bool,
@@ -466,35 +465,35 @@ pub struct BtdAdapter {
     pub discovering: bool,
     pub current_settings: u32,
     pub supported_settings: u32,
-    pending_settings: u32,
-    power_state: AdapterPowerState,
-    stored_discoverable: bool,
+    pub pending_settings: u32,
+    pub power_state: AdapterPowerState,
+    pub stored_discoverable: bool,
 
     // ---- Timeouts ----
-    discoverable_timeout: u32,
-    pairable_timeout: u32,
+    pub discoverable_timeout: u32,
+    pub pairable_timeout: u32,
 
     // ---- Device state ----
     pub devices: HashMap<BdAddr, ()>,
     pub discovery_filters: Vec<DiscoveryFilter>,
-    discovery_clients: Vec<DiscoveryClient>,
+    pub discovery_clients: Vec<DiscoveryClient>,
 
     // ---- Discovery internals ----
-    discovery_type: u8,
-    discovery_enable: u8,
-    filtered_discovery: bool,
-    no_scan_restart_delay: bool,
-    discovery_suspended: bool,
-    discovery_discoverable: bool,
+    pub discovery_type: u8,
+    pub discovery_enable: u8,
+    pub filtered_discovery: bool,
+    pub no_scan_restart_delay: bool,
+    pub discovery_suspended: bool,
+    pub discovery_discoverable: bool,
 
     // ---- Identification ----
     pub alias: String,
-    stored_alias: String,
+    pub stored_alias: String,
     pub modalias: String,
     pub class: u32,
-    system_name: String,
-    major_class: u8,
-    minor_class: u8,
+    pub system_name: String,
+    pub major_class: u8,
+    pub minor_class: u8,
 
     // ---- Hardware info ----
     pub version: u8,
@@ -504,51 +503,51 @@ pub struct BtdAdapter {
     // ---- Feature flags ----
     pub le_enabled: bool,
     pub bredr_enabled: bool,
-    exp_features: u32,
-    kernel_features: u32,
-    uuids: HashSet<String>,
-    allowed_uuids: HashSet<String>,
+    pub exp_features: u32,
+    pub kernel_features: u32,
+    pub uuids: HashSet<String>,
+    pub allowed_uuids: HashSet<String>,
 
     // ---- Subsystems ----
-    database: Option<Arc<BtdGattDatabase>>,
+    pub database: Option<Arc<BtdGattDatabase>>,
 
     // ---- Connectivity ----
-    services: Vec<SdpRecord>,
-    connections: HashSet<BdAddr>,
-    connect_list: Vec<BdAddr>,
-    connect_le: Vec<BdAddr>,
+    pub services: Vec<SdpRecord>,
+    pub connections: HashSet<BdAddr>,
+    pub connect_list: Vec<BdAddr>,
+    pub connect_le: Vec<BdAddr>,
 
     // ---- Callback registries ----
-    pin_callbacks: Vec<PinCbEntry>,
-    msd_callbacks: Vec<MsdCbEntry>,
-    disconnect_callbacks: Vec<DisconnectCbEntry>,
-    conn_fail_callbacks: Vec<ConnFailCbEntry>,
+    pub pin_callbacks: Vec<PinCbEntry>,
+    pub msd_callbacks: Vec<MsdCbEntry>,
+    pub disconnect_callbacks: Vec<DisconnectCbEntry>,
+    pub conn_fail_callbacks: Vec<ConnFailCbEntry>,
 
     // ---- Driver management ----
-    drivers: Vec<Arc<dyn BtdAdapterDriver>>,
-    profiles: Vec<String>,
+    pub drivers: Vec<Arc<dyn BtdAdapterDriver>>,
+    pub profiles: Vec<String>,
 
     // ---- OOB ----
-    oob_handler: Option<OobHandler>,
+    pub oob_handler: Option<OobHandler>,
 
     // ---- Default ----
-    is_default: bool,
+    pub is_default: bool,
 
     // ---- Pending operations ----
-    exp_pending: Vec<ExpPending>,
-    initialized: bool,
+    pub exp_pending: Vec<ExpPending>,
+    pub initialized: bool,
 
     // ---- MGMT socket ----
-    mgmt: Option<Arc<MgmtSocket>>,
+    pub mgmt: Option<Arc<MgmtSocket>>,
 
     // ---- Task handles ----
-    event_task: Option<JoinHandle<()>>,
+    pub event_task: Option<JoinHandle<()>>,
 
     // ---- Storage ----
     pub storage_dir: String,
 
     // ---- Monotonic IDs for callbacks ----
-    next_cb_id: u64,
+    pub next_cb_id: u64,
 }
 
 impl std::fmt::Debug for BtdAdapter {
@@ -599,7 +598,7 @@ fn alloc_cb_id() -> u64 {
 
 impl BtdAdapter {
     /// Create a new adapter from MGMT Read Info response data.
-    fn new(index: u16, info: &mgmt_rp_read_info, mgmt: Arc<MgmtSocket>) -> Self {
+    pub fn new(index: u16, info: &mgmt_rp_read_info, mgmt: Arc<MgmtSocket>) -> Self {
         let addr = info.bdaddr;
         let addr_str = addr.ba2str();
         let path = format!("/org/bluez/hci{index}");
@@ -711,7 +710,7 @@ impl BtdAdapter {
     }
 
     /// Return whether the supported settings include a given flag.
-    fn supports_setting(&self, flag: u32) -> bool {
+    pub fn supports_setting(&self, flag: u32) -> bool {
         self.supported_settings & flag != 0
     }
 
@@ -1441,7 +1440,7 @@ impl Adapter1Interface {
 // ===========================================================================
 
 /// Process a MGMT event for a specific adapter.
-async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &MgmtEvent) {
+pub async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &MgmtEvent) {
     let ev_code = event.event;
     let ev_data = &event.data;
 
@@ -1945,7 +1944,7 @@ async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &MgmtEv
 }
 
 /// Helper: reconstruct a BdAddr from a 6-byte slice.
-fn bdaddr_from_bytes(bytes: &[u8]) -> BdAddr {
+pub fn bdaddr_from_bytes(bytes: &[u8]) -> BdAddr {
     let mut addr = BDADDR_ANY;
     addr.b.copy_from_slice(&bytes[..6]);
     addr
@@ -1998,6 +1997,16 @@ pub async fn adapter_cleanup() {
     let mut guard = MGMT_MAIN.lock().await;
     *guard = None;
     btd_info(HCI_DEV_NONE, "Adapter subsystem cleaned up");
+}
+
+/// Return a snapshot of all currently registered adapters.
+///
+/// Used by subsystems that need to iterate adapters without holding the
+/// `ADAPTERS` read-lock (e.g. the policy plugin looking up a device by
+/// address across all controllers).
+pub async fn adapter_get_all() -> Vec<Arc<Mutex<BtdAdapter>>> {
+    let adapters = ADAPTERS.read().await;
+    adapters.clone()
 }
 
 /// Find an adapter by HCI index.

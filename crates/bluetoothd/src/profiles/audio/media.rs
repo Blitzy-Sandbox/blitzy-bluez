@@ -13,7 +13,6 @@
 // Most of the internal helper functions, structs, and fields are part of the
 // complete media lifecycle.  The runtime callback dispatch (D-Bus methods,
 // plugin init/exit, adapter driver) invokes these at runtime.
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::fmt;
@@ -68,7 +67,7 @@ pub const MEDIA_ENDPOINT_INTERFACE: &str = "org.bluez.MediaEndpoint1";
 const MEDIA_PLAYER_INTERFACE: &str = "org.mpris.MediaPlayer2.Player";
 
 /// Timeout for D-Bus proxy calls to client endpoints (3 seconds).
-const REQUEST_TIMEOUT_MS: u64 = 3_000;
+pub const REQUEST_TIMEOUT_MS: u64 = 3_000;
 
 /// PAC Sink UUID (PACS Sink Characteristic).
 const PAC_SINK_UUID: &str = "00001850-0000-1000-8000-00805f9b34fb";
@@ -161,9 +160,9 @@ pub struct MediaEndpoint {
     /// Parsed TMAP/GMAP feature flags.
     features: EndpointFeatures,
     /// Name watch ID for disconnect cleanup.
-    watch_id: u32,
+    pub watch_id: u32,
     /// Active endpoint request (pending D-Bus call).
-    requests: Vec<EndpointRequest>,
+    pub requests: Vec<EndpointRequest>,
     /// Broadcast flag (true for BCAA/BAA UUIDs).
     broadcast: bool,
 }
@@ -275,11 +274,11 @@ impl fmt::Display for MediaEndpoint {
 // ===========================================================================
 
 /// Tracks a pending D-Bus call to a client endpoint.
-struct EndpointRequest {
+pub struct EndpointRequest {
     /// Description of the request type.
-    msg: String,
+    pub msg: String,
     /// Reply channel for async completion.
-    reply_tx: Option<tokio::sync::oneshot::Sender<Result<Vec<u8>, BtdError>>>,
+    pub reply_tx: Option<tokio::sync::oneshot::Sender<Result<Vec<u8>, BtdError>>>,
 }
 
 // ===========================================================================
@@ -302,7 +301,7 @@ pub struct MediaPlayer {
     /// Current track metadata (key→value mapping).
     track: HashMap<String, String>,
     /// Name watch ID for disconnect cleanup.
-    watch_id: u32,
+    pub watch_id: u32,
     /// Playback status string (e.g., "playing", "paused", "stopped").
     status: String,
     /// Current playback position in milliseconds.
@@ -324,7 +323,7 @@ pub struct MediaPlayer {
     /// Player identity/name.
     name: String,
     /// Registered callback list IDs.
-    cb_ids: Vec<u32>,
+    pub cb_ids: Vec<u32>,
 }
 
 impl MediaPlayer {
@@ -370,7 +369,7 @@ pub struct MediaApp {
     /// Players discovered from the application.
     players: Vec<Arc<Mutex<MediaPlayer>>>,
     /// Name watch ID for auto-cleanup on client disconnect.
-    watch_id: u32,
+    pub watch_id: u32,
 }
 
 impl MediaApp {
@@ -401,7 +400,7 @@ pub struct MediaAdapter {
     /// All registered applications.
     apps: Vec<Arc<MediaApp>>,
     /// SO_TIMESTAMPING probe result cache (-1 = unprobed).
-    so_timestamping: i32,
+    pub so_timestamping: i32,
 }
 
 impl MediaAdapter {
@@ -480,9 +479,9 @@ static LOCAL_PLAYER_WATCHES: std::sync::LazyLock<Mutex<Vec<LocalPlayerWatch>>> =
     std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// A watch entry that is notified when players are added/removed.
-struct LocalPlayerWatch {
+pub struct LocalPlayerWatch {
     id: u32,
-    adapter: Arc<Mutex<BtdAdapter>>,
+    pub adapter: Arc<Mutex<BtdAdapter>>,
     callback: Arc<dyn Fn(&MediaPlayer) + Send + Sync>,
     remove_callback: Arc<dyn Fn(&MediaPlayer) + Send + Sync>,
 }
@@ -563,7 +562,7 @@ fn experimental_endpoint_supported(_adapter: &Arc<Mutex<BtdAdapter>>) -> bool {
 /// Requires the ISO Socket experimental feature and CIS Central+Peripheral
 /// MGMT settings on the adapter.  Used by `media_endpoint_create` to gate
 /// BAP PAC / broadcast endpoint registration.
-async fn check_experimental_support(adapter: &Arc<Mutex<BtdAdapter>>) -> bool {
+pub async fn check_experimental_support(adapter: &Arc<Mutex<BtdAdapter>>) -> bool {
     let has_iso = btd_adapter_has_exp_feature(adapter, ExperimentalFeatures::ISO_SOCKET).await;
     if !has_iso {
         debug!("media: ISO socket experimental feature not enabled");
@@ -1578,7 +1577,7 @@ async fn local_player_send(player: &MediaPlayer, method: &str) -> Result<(), Btd
 /// The C version uses raw ioctl with SIOCETHTOOL/ETHTOOL_GET_TS_INFO.
 /// Since the bluetoothd crate forbids `unsafe`, we delegate the probe to
 /// the `bluez-shared` sys module or fall back to a safe heuristic.
-fn probe_tx_timestamping(adapter_index: u16) -> bool {
+pub fn probe_tx_timestamping(adapter_index: u16) -> bool {
     // The kernel HCI interface "hciN" may or may not support SO_TIMESTAMPING.
     // In the C implementation this uses an ethtool ioctl (SIOCETHTOOL + ETHTOOL_GET_TS_INFO).
     // Since unsafe is forbidden in this crate, we attempt to detect timestamping
@@ -1634,7 +1633,7 @@ fn compute_supported_uuids(adapter: &MediaAdapter) -> Vec<String> {
 /// Returns a list of feature strings. If SO_TIMESTAMPING is supported,
 /// includes "TxTimestamping".  Uses `btd_adapter_get_index` to resolve
 /// the adapter's HCI interface index for timestamping probe.
-async fn compute_supported_features(adapter: &mut MediaAdapter) -> Vec<String> {
+pub async fn compute_supported_features(adapter: &mut MediaAdapter) -> Vec<String> {
     let mut features = Vec::new();
 
     // Resolve adapter index for HCI interface name.
@@ -1656,6 +1655,140 @@ async fn compute_supported_features(adapter: &mut MediaAdapter) -> Vec<String> {
 // Media Register/Unregister
 // ===========================================================================
 
+// ===========================================================================
+// D-Bus Interface Implementation — org.bluez.Media1
+// ===========================================================================
+
+/// D-Bus object implementing the `org.bluez.Media1` interface.
+///
+/// Registered at each adapter's D-Bus path (e.g. `/org/bluez/hci0`).
+/// Methods proxy into the module-level `register_endpoint` / `register_player`
+/// / `register_application` and their unregister counterparts.
+struct Media1Interface {
+    adapter: Arc<Mutex<BtdAdapter>>,
+}
+
+#[zbus::interface(name = "org.bluez.Media1")]
+impl Media1Interface {
+    /// RegisterEndpoint(object, dict)
+    async fn register_endpoint(
+        &self,
+        #[zbus(header)] hdr: zbus::message::Header<'_>,
+        endpoint: zbus::zvariant::ObjectPath<'_>,
+        properties: HashMap<String, zbus::zvariant::OwnedValue>,
+    ) -> zbus::fdo::Result<()> {
+        let sender = hdr.sender().map(|s| s.to_string()).unwrap_or_default();
+        let props = convert_zvariant_props(&properties);
+        register_endpoint(&self.adapter, &sender, endpoint.as_str(), &props)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+    }
+
+    /// UnregisterEndpoint(object)
+    async fn unregister_endpoint(
+        &self,
+        #[zbus(header)] hdr: zbus::message::Header<'_>,
+        endpoint: zbus::zvariant::ObjectPath<'_>,
+    ) -> zbus::fdo::Result<()> {
+        let sender = hdr.sender().map(|s| s.to_string()).unwrap_or_default();
+        unregister_endpoint(&self.adapter, &sender, endpoint.as_str())
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+    }
+
+    /// RegisterPlayer(object, dict)
+    async fn register_player(
+        &self,
+        #[zbus(header)] hdr: zbus::message::Header<'_>,
+        player: zbus::zvariant::ObjectPath<'_>,
+        properties: HashMap<String, zbus::zvariant::OwnedValue>,
+    ) -> zbus::fdo::Result<()> {
+        let sender = hdr.sender().map(|s| s.to_string()).unwrap_or_default();
+        let props = convert_zvariant_props(&properties);
+        register_player(&self.adapter, &sender, player.as_str(), &props)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+    }
+
+    /// UnregisterPlayer(object)
+    async fn unregister_player(
+        &self,
+        #[zbus(header)] hdr: zbus::message::Header<'_>,
+        player: zbus::zvariant::ObjectPath<'_>,
+    ) -> zbus::fdo::Result<()> {
+        let sender = hdr.sender().map(|s| s.to_string()).unwrap_or_default();
+        unregister_player(&self.adapter, &sender, player.as_str())
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+    }
+
+    /// RegisterApplication(object, dict)
+    async fn register_application(
+        &self,
+        #[zbus(header)] hdr: zbus::message::Header<'_>,
+        application: zbus::zvariant::ObjectPath<'_>,
+        options: HashMap<String, zbus::zvariant::OwnedValue>,
+    ) -> zbus::fdo::Result<()> {
+        let sender = hdr.sender().map(|s| s.to_string()).unwrap_or_default();
+        let props = convert_zvariant_props(&options);
+        register_application(&self.adapter, &sender, application.as_str(), &props)
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+    }
+
+    /// UnregisterApplication(object)
+    async fn unregister_application(
+        &self,
+        #[zbus(header)] hdr: zbus::message::Header<'_>,
+        application: zbus::zvariant::ObjectPath<'_>,
+    ) -> zbus::fdo::Result<()> {
+        let sender = hdr.sender().map(|s| s.to_string()).unwrap_or_default();
+        unregister_application(&self.adapter, &sender, application.as_str())
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(e.to_string()))
+    }
+
+    /// SupportedUUIDs property — list of supported profile UUIDs.
+    #[zbus(property)]
+    async fn supported_uuids(&self) -> Vec<String> {
+        let adapters = ADAPTERS.lock().await;
+        let path = adapter_get_path(&self.adapter).await;
+        for ma_arc in adapters.iter() {
+            let ma = ma_arc.lock().await;
+            if ma.path == path {
+                return compute_supported_uuids(&ma);
+            }
+        }
+        Vec::new()
+    }
+}
+
+/// Convert zbus OwnedValue properties to the internal PropertyValue map.
+fn convert_zvariant_props(
+    props: &HashMap<String, zbus::zvariant::OwnedValue>,
+) -> HashMap<String, PropertyValue> {
+    let mut result = HashMap::new();
+    for (key, val) in props {
+        // Clone the OwnedValue so we can use consuming TryFrom impls.
+        // Convert common property types used by Media1 endpoints/players.
+        if let Ok(s) = String::try_from(val.clone()) {
+            result.insert(key.clone(), PropertyValue::String(s));
+        } else if let Ok(v) = u8::try_from(val.clone()) {
+            result.insert(key.clone(), PropertyValue::U8(v));
+        } else if let Ok(v) = u16::try_from(val.clone()) {
+            result.insert(key.clone(), PropertyValue::U16(v));
+        } else if let Ok(v) = u32::try_from(val.clone()) {
+            result.insert(key.clone(), PropertyValue::U32(v));
+        } else if let Ok(v) = bool::try_from(val.clone()) {
+            result.insert(key.clone(), PropertyValue::Bool(v));
+        } else if let Ok(v) = <Vec<u8>>::try_from(val.clone()) {
+            result.insert(key.clone(), PropertyValue::Bytes(v));
+        }
+        // Unrecognised types are silently skipped.
+    }
+    result
+}
+
 /// Register the Media1 D-Bus interface for the given adapter.
 ///
 /// Creates a MediaAdapter instance, stores it in the global list, and
@@ -1670,10 +1803,15 @@ pub async fn media_register(adapter: &Arc<Mutex<BtdAdapter>>) {
     let mut adapters = ADAPTERS.lock().await;
     adapters.push(ma_arc);
 
-    // In production, this also registers the D-Bus interface:
-    // conn.object_server().at(&path, Media1Interface { adapter }).await
-    // The actual registration requires the zbus Connection to be initialized.
-    debug!("media: Media1 registered at {}", path);
+    // Register the org.bluez.Media1 D-Bus interface at the adapter path.
+    let iface = Media1Interface {
+        adapter: Arc::clone(adapter),
+    };
+    let conn = btd_get_dbus_connection();
+    match conn.object_server().at(path.as_str(), iface).await {
+        Ok(_) => debug!("media: Media1 D-Bus interface registered at {}", path),
+        Err(e) => error!("media: failed to register Media1 at {}: {}", path, e),
+    }
 }
 
 /// Unregister the Media1 D-Bus interface for the given adapter.
@@ -2128,7 +2266,7 @@ pub fn update_gmap_features_with_att(
 /// Used during BAP unicast stream configuration to identify the remote peer.
 /// The BAP session owns an ATT transport whose underlying socket fd can be
 /// mapped back to a device address via `btd_adapter_find_device_by_fd`.
-async fn resolve_bap_stream_device(
+pub async fn resolve_bap_stream_device(
     bap: &BtBap,
     adapter: &Arc<Mutex<BtdAdapter>>,
 ) -> Option<BdAddr> {
@@ -2147,7 +2285,7 @@ async fn resolve_bap_stream_device(
 ///
 /// Used when a BAP stream callback provides a service context that must
 /// be mapped to a device for transport creation.
-fn resolve_service_device(service: &BtdService) -> Option<&Arc<tokio::sync::Mutex<BtdDevice>>> {
+pub fn resolve_service_device(service: &BtdService) -> Option<&Arc<tokio::sync::Mutex<BtdDevice>>> {
     service.btd_service_get_device()
 }
 
@@ -2155,7 +2293,7 @@ fn resolve_service_device(service: &BtdService) -> Option<&Arc<tokio::sync::Mute
 ///
 /// Translates the D-Bus error name (if any) into an A2DP config error code
 /// using `a2dp_parse_config_error`, then returns an appropriate error or OK.
-fn handle_a2dp_config_reply(error_name: Option<&str>) -> Result<(), BtdError> {
+pub fn handle_a2dp_config_reply(error_name: Option<&str>) -> Result<(), BtdError> {
     match error_name {
         None => Ok(()),
         Some(name) => {
@@ -2171,7 +2309,7 @@ fn handle_a2dp_config_reply(error_name: Option<&str>) -> Result<(), BtdError> {
 ///
 /// Used when an A2DP stream is being configured and the setup context
 /// must be resolved to a BtdDevice for transport creation.
-fn get_a2dp_setup_device(setup: &super::a2dp::A2dpSetup) -> &Arc<BtdDevice> {
+pub fn get_a2dp_setup_device(setup: &super::a2dp::A2dpSetup) -> &Arc<BtdDevice> {
     a2dp_setup_get_device(setup)
 }
 
@@ -2180,7 +2318,7 @@ fn get_a2dp_setup_device(setup: &super::a2dp::A2dpSetup) -> &Arc<BtdDevice> {
 // ===========================================================================
 
 /// Find the MediaAdapter associated with a given BtdDevice.
-async fn find_adapter(device: &BtdDevice) -> Option<Arc<Mutex<MediaAdapter>>> {
+pub async fn find_adapter(device: &BtdDevice) -> Option<Arc<Mutex<MediaAdapter>>> {
     let device_adapter = &device.adapter;
     let adapters = ADAPTERS.lock().await;
     for ma_arc in adapters.iter() {
@@ -2193,7 +2331,7 @@ async fn find_adapter(device: &BtdDevice) -> Option<Arc<Mutex<MediaAdapter>>> {
 }
 
 /// Find a MediaAdapter by adapter reference.
-async fn find_media_adapter(adapter: &Arc<Mutex<BtdAdapter>>) -> Option<Arc<Mutex<MediaAdapter>>> {
+pub async fn find_media_adapter(adapter: &Arc<Mutex<BtdAdapter>>) -> Option<Arc<Mutex<MediaAdapter>>> {
     let adapters = ADAPTERS.lock().await;
     let adapter_path = adapter_get_path(adapter).await;
     for ma_arc in adapters.iter() {
@@ -2206,7 +2344,7 @@ async fn find_media_adapter(adapter: &Arc<Mutex<BtdAdapter>>) -> Option<Arc<Mute
 }
 
 /// Find a specific endpoint by sender and path within a media adapter.
-async fn find_endpoint_in_adapter(
+pub async fn find_endpoint_in_adapter(
     ma: &MediaAdapter,
     sender: &str,
     path: &str,

@@ -15,7 +15,6 @@
 //   3. Client-side TMAS attach/detach via `BtTmap::attach()`
 //   4. Plugin registration via `inventory::submit!`
 
-#![allow(dead_code)]
 
 use std::sync::{Arc, Mutex};
 
@@ -48,12 +47,12 @@ const TMAS_UUID_STR: &str = "00001855-0000-1000-8000-00805f9b34fb";
 ///
 /// Tracks the association between a remote Bluetooth device and the TMAP
 /// protocol engine ([`BtTmap`]).
-struct TmapData {
+pub struct TmapData {
     /// Reference to the remote Bluetooth device.
     device: Arc<tokio::sync::Mutex<BtdDevice>>,
     /// The TMAP protocol engine instance (shared via `Arc`; replaces
     /// C's `bt_tmap_ref`/`bt_tmap_unref` reference counting).
-    tmap: Arc<BtTmap>,
+    pub tmap: Arc<BtTmap>,
 }
 
 // ===========================================================================
@@ -83,7 +82,7 @@ fn tmap_debug(msg: &str) {
 // ===========================================================================
 
 /// Find a session index by device pointer comparison.
-fn find_session_by_device(
+pub fn find_session_by_device(
     sessions: &[TmapData],
     device: &Arc<tokio::sync::Mutex<BtdDevice>>,
 ) -> Option<usize> {

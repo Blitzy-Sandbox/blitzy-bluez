@@ -146,6 +146,9 @@ pub trait TransportOps: Send + Sync {
     /// Inject an ASHA protocol engine into ASHA-type transport ops.
     /// Default implementation does nothing (non-ASHA transports).
     fn set_asha_engine(&self, _asha: BtAsha) {}
+    /// Return the BAP stream associated with this transport, if any.
+    /// Used by `update_links()` to match linked streams against transports.
+    fn get_bap_stream(&self) -> Option<BtBapStream> { None }
 }
 
 // ===================================================================
@@ -862,13 +865,18 @@ impl TransportOps for BapUnicastOps {
                 inner.links.clear();
                 return;
             }
-            // Resolve links against the global transport list
+            // Resolve links against the global transport list — only include
+            // transports whose BAP stream matches one of the linked streams.
             let globals = TRANSPORTS.lock().unwrap();
             let mut new_links = Vec::new();
             for trc in globals.iter() {
                 if let Ok(tg) = trc.try_lock() {
                     if tg.inner.path != inner.path {
-                        new_links.push(Arc::clone(trc));
+                        if let Some(ref other_stream) = tg.ops.get_bap_stream() {
+                            if linked.iter().any(|ls| ls.same_stream(other_stream)) {
+                                new_links.push(Arc::clone(trc));
+                            }
+                        }
                     }
                 }
             }
@@ -885,6 +893,11 @@ impl TransportOps for BapUnicastOps {
         d.stream = None;
         d.state_cb_id = None;
         debug!("{}: BAP unicast destroyed", inner.path);
+    }
+
+    fn get_bap_stream(&self) -> Option<BtBapStream> {
+        let d = self.data.lock().ok()?;
+        d.stream.clone()
     }
 }
 
@@ -955,12 +968,18 @@ impl TransportOps for BapBroadcastOps {
                 inner.links.clear();
                 return;
             }
+            // Only include transports whose BAP stream matches a linked
+            // stream — prevents adding all unrelated transports as links.
             let globals = TRANSPORTS.lock().unwrap();
             let mut new_links = Vec::new();
             for trc in globals.iter() {
                 if let Ok(tg) = trc.try_lock() {
                     if tg.inner.path != inner.path {
-                        new_links.push(Arc::clone(trc));
+                        if let Some(ref other_stream) = tg.ops.get_bap_stream() {
+                            if linked.iter().any(|ls| ls.same_stream(other_stream)) {
+                                new_links.push(Arc::clone(trc));
+                            }
+                        }
                     }
                 }
             }
@@ -979,6 +998,11 @@ impl TransportOps for BapBroadcastOps {
         d.state_cb_id = None;
         inner.broadcasting = false;
         debug!("{}: BAP broadcast destroyed", inner.path);
+    }
+
+    fn get_bap_stream(&self) -> Option<BtBapStream> {
+        let d = self.data.lock().ok()?;
+        d.stream.clone()
     }
 }
 

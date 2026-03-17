@@ -20,7 +20,6 @@
 // - Profile matching against device UUIDs for auto-probe
 // - Custom D-Bus property support for profile-specific properties
 
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::fmt;
@@ -101,7 +100,7 @@ const DEFAULT_CHAN_HSP_HS: u16 = 6;
 const DEFAULT_CHAN_HFP_HF: u16 = 7;
 const DEFAULT_CHAN_OPP: u16 = 9;
 const DEFAULT_CHAN_FTP: u16 = 10;
-const DEFAULT_CHAN_BIP: u16 = 11;
+pub const DEFAULT_CHAN_BIP: u16 = 11;
 const DEFAULT_CHAN_HSP_AG: u16 = 12;
 const DEFAULT_CHAN_HFP_AG: u16 = 13;
 const DEFAULT_CHAN_SYNC: u16 = 14;
@@ -127,47 +126,47 @@ const PSE_UUID: &str = "0000112f-0000-1000-8000-00805f9b34fb";
 const MAS_UUID: &str = "00001132-0000-1000-8000-00805f9b34fb";
 const MNS_UUID: &str = "00001133-0000-1000-8000-00805f9b34fb";
 const SYNC_UUID: &str = "00001104-0000-1000-8000-00805f9b34fb";
-const GENERIC_ACCESS_UUID: &str = "00001800-0000-1000-8000-00805f9b34fb";
+pub const GENERIC_ACCESS_UUID: &str = "00001800-0000-1000-8000-00805f9b34fb";
 
 // SDP service class UUIDs used in set_service() remapping
-const HEADSET_SVCLASS_ID: u16 = 0x1108;
-const HANDSFREE_SVCLASS_ID: u16 = 0x111E;
-const HEADSET_AGW_SVCLASS_ID: u16 = 0x1112;
-const HANDSFREE_AGW_SVCLASS_ID: u16 = 0x111F;
-const OBEX_OBJPUSH_SVCLASS_ID: u16 = 0x1105;
-const OBEX_FILETRANS_SVCLASS_ID: u16 = 0x1106;
+pub const HEADSET_SVCLASS_ID: u16 = 0x1108;
+pub const HANDSFREE_SVCLASS_ID: u16 = 0x111E;
+pub const HEADSET_AGW_SVCLASS_ID: u16 = 0x1112;
+pub const HANDSFREE_AGW_SVCLASS_ID: u16 = 0x111F;
+pub const OBEX_OBJPUSH_SVCLASS_ID: u16 = 0x1105;
+pub const OBEX_FILETRANS_SVCLASS_ID: u16 = 0x1106;
 
 // OBEX UUIDs for service remapping
-const OBEX_OPP_UUID: &str = "00001105-0000-1000-8000-00805f9b34fb";
-const OBEX_FTP_UUID: &str = "00001106-0000-1000-8000-00805f9b34fb";
-const OBEX_PSE_UUID: &str = "0000112f-0000-1000-8000-00805f9b34fb";
-const OBEX_PCE_UUID: &str = "0000112e-0000-1000-8000-00805f9b34fb";
-const OBEX_MAS_UUID: &str = "00001132-0000-1000-8000-00805f9b34fb";
-const OBEX_MNS_UUID: &str = "00001133-0000-1000-8000-00805f9b34fb";
+pub const OBEX_OPP_UUID: &str = "00001105-0000-1000-8000-00805f9b34fb";
+pub const OBEX_FTP_UUID: &str = "00001106-0000-1000-8000-00805f9b34fb";
+pub const OBEX_PSE_UUID: &str = "0000112f-0000-1000-8000-00805f9b34fb";
+pub const OBEX_PCE_UUID: &str = "0000112e-0000-1000-8000-00805f9b34fb";
+pub const OBEX_MAS_UUID: &str = "00001132-0000-1000-8000-00805f9b34fb";
+pub const OBEX_MNS_UUID: &str = "00001133-0000-1000-8000-00805f9b34fb";
 
 // ===========================================================================
 // L2CAP protocol constants
 // ===========================================================================
 
-const L2CAP_UUID: u16 = 0x0100;
-const RFCOMM_UUID: u16 = 0x0003;
-const OBEX_UUID: u16 = 0x0008;
+pub const L2CAP_UUID: u16 = 0x0100;
+pub const RFCOMM_UUID: u16 = 0x0003;
+pub const OBEX_UUID: u16 = 0x0008;
 
 // ===========================================================================
 // SDP attribute IDs referenced in SDP record XML templates
 // ===========================================================================
 
-const SDP_ATTR_SVCLASS_ID_LIST: u16 = 0x0001;
-const SDP_ATTR_PROTO_DESC_LIST: u16 = 0x0004;
-const SDP_ATTR_BROWSE_GRP_LIST: u16 = 0x0005;
-const SDP_ATTR_PFILE_DESC_LIST: u16 = 0x0009;
-const SDP_ATTR_SVCNAME_PRIMARY: u16 = 0x0100;
-const SDP_ATTR_VERSION_NUM_LIST: u16 = 0x0200;
-const SDP_ATTR_SUPPORTED_FEATURES: u16 = 0x0311;
-const SDP_ATTR_GOEP_L2CAP_PSM: u16 = 0x0200;
+pub const SDP_ATTR_SVCLASS_ID_LIST: u16 = 0x0001;
+pub const SDP_ATTR_PROTO_DESC_LIST: u16 = 0x0004;
+pub const SDP_ATTR_BROWSE_GRP_LIST: u16 = 0x0005;
+pub const SDP_ATTR_PFILE_DESC_LIST: u16 = 0x0009;
+pub const SDP_ATTR_SVCNAME_PRIMARY: u16 = 0x0100;
+pub const SDP_ATTR_VERSION_NUM_LIST: u16 = 0x0200;
+pub const SDP_ATTR_SUPPORTED_FEATURES: u16 = 0x0311;
+pub const SDP_ATTR_GOEP_L2CAP_PSM: u16 = 0x0200;
 
 // Public browse group root UUID
-const PUBLIC_BROWSE_GROUP: u16 = 0x1002;
+pub const PUBLIC_BROWSE_GROUP: u16 = 0x1002;
 
 // ===========================================================================
 // External profile role type
@@ -441,11 +440,11 @@ pub struct BtdProfileUuidCb {
 
 /// Tracks an SDP record handle registered on a specific adapter for an
 /// external profile.
-struct ExtRecord {
+pub struct ExtRecord {
     /// The adapter this record was registered on.
-    adapter: Arc<Mutex<BtdAdapter>>,
+    pub adapter: Arc<Mutex<BtdAdapter>>,
     /// The SDP record handle assigned by the local SDP server.
-    handle: u32,
+    pub handle: u32,
 }
 
 // ===========================================================================
@@ -455,29 +454,29 @@ struct ExtRecord {
 /// Tracks an individual L2CAP/RFCOMM connection established for an external
 /// profile — either incoming (from a server socket) or outgoing (from a
 /// connect call).
-struct ExtIo {
+pub struct ExtIo {
     /// Back-reference to the external profile that owns this connection.
-    ext_profile_path: String,
+    pub ext_profile_path: String,
     /// The adapter associated with this connection.
-    adapter: Arc<Mutex<BtdAdapter>>,
+    pub adapter: Arc<Mutex<BtdAdapter>>,
     /// The remote device associated with this connection.
-    device: Option<Arc<Mutex<BtdDevice>>>,
+    pub device: Option<Arc<Mutex<BtdDevice>>>,
     /// Whether we are currently resolving the service via SDP.
-    resolving: bool,
+    pub resolving: bool,
     /// Whether the connection has been established.
-    connected: bool,
+    pub connected: bool,
     /// Negotiated protocol version.
-    version: u16,
+    pub version: u16,
     /// Negotiated protocol features.
-    features: u16,
+    pub features: u16,
     /// Remote L2CAP PSM (if applicable).
-    psm: u16,
+    pub psm: u16,
     /// Remote RFCOMM channel (if applicable).
-    chan: u8,
+    pub chan: u8,
     /// Agent authorization request ID (0 if none pending).
-    auth_id: u32,
+    pub auth_id: u32,
     /// The connected socket file descriptor.
-    fd: Option<OwnedFd>,
+    pub fd: Option<OwnedFd>,
 }
 
 // ===========================================================================
@@ -487,7 +486,7 @@ struct ExtIo {
 /// State for an external profile registered via D-Bus RegisterProfile.
 ///
 /// Corresponds to C `struct ext_profile` in profile.c.
-struct ExtProfile {
+pub struct ExtProfile {
     /// The embedded `BtdProfile` descriptor registered with the profile
     /// registry.
     profile: Arc<BtdProfile>,
@@ -516,10 +515,10 @@ struct ExtProfile {
     remote_uuid: String,
 
     /// SDP record identifier.
-    id: u32,
+    pub id: u32,
 
     /// L2CAP mode (basic, ERTM, etc.).
-    mode: u16,
+    pub mode: u16,
 
     /// Socket security level.
     sec_level: SecLevel,
@@ -540,10 +539,10 @@ struct ExtProfile {
     local_chan: i16,
 
     /// Remote L2CAP PSM to connect to.
-    remote_psm: u16,
+    pub remote_psm: u16,
 
     /// Remote RFCOMM channel to connect to.
-    remote_chan: u16,
+    pub remote_chan: u16,
 
     /// Profile version from D-Bus options.
     version: u16,
@@ -573,15 +572,15 @@ struct ExtProfile {
 
 /// A custom D-Bus property that can be registered for profile-specific
 /// information to be included in NewConnection option dictionaries.
-struct BtdProfileCustomProperty {
+pub struct BtdProfileCustomProperty {
     /// The UUID this property applies to.
     uuid: String,
     /// Property name.
     name: String,
     /// Property type signature (e.g., "s", "q", "ay").
-    type_sig: String,
+    pub type_sig: String,
     /// Callback to retrieve the property value.
-    getter: Box<dyn Fn(&BtdDevice) -> Option<OwnedValue> + Send + Sync>,
+    pub getter: Box<dyn Fn(&BtdDevice) -> Option<OwnedValue> + Send + Sync>,
 }
 
 // ===========================================================================
@@ -764,15 +763,15 @@ pub async fn btd_profile_remove_custom_prop(uuid: &str, name: &str) {
 /// Default settings for well-known profiles, matching C `defaults[]` array.
 /// Each entry maps a UUID to default name, priority, channel, PSM, security,
 /// and SDP record generation parameters.
-struct ProfileDefaults {
+pub struct ProfileDefaults {
     uuid: &'static str,
     name: &'static str,
-    priority: i32,
+    pub priority: i32,
     chan: i16,
-    psm: i16,
+    pub psm: i16,
     sec_level: SecLevel,
     authorize: bool,
-    auto_connect: bool,
+    pub auto_connect: bool,
     version: u16,
     features: u16,
 }
@@ -1977,7 +1976,7 @@ async fn ext_start_servers_on_adapter(
 
 /// Remove SDP records and stop server sockets for an external profile when
 /// an adapter is removed.
-async fn ext_remove_records(ext_arc: &Arc<Mutex<ExtProfile>>, adapter: &Arc<Mutex<BtdAdapter>>) {
+pub async fn ext_remove_records(ext_arc: &Arc<Mutex<ExtProfile>>, adapter: &Arc<Mutex<BtdAdapter>>) {
     let mut ext = ext_arc.lock().await;
 
     // Remove SDP records for this adapter
@@ -2031,7 +2030,7 @@ async fn remove_ext_profile(ext_arc: &Arc<Mutex<ExtProfile>>) {
 /// Handle D-Bus owner name disappearance — remove all profiles owned by that sender.
 ///
 /// Equivalent to C `ext_exited()` in profile.c.
-async fn ext_exited(owner: &str) {
+pub async fn ext_exited(owner: &str) {
     let profiles_to_remove: Vec<Arc<Mutex<ExtProfile>>> = {
         let ext_profiles = EXT_PROFILES.read().await;
         let mut to_remove = Vec::new();
@@ -2072,7 +2071,7 @@ async fn ext_exited(owner: &str) {
 /// Equivalent to C `send_new_connection()` in profile.c.
 /// Passes the connected socket FD, device path, and options dictionary
 /// to the external profile handler via D-Bus.
-async fn send_new_connection(
+pub async fn send_new_connection(
     ext: &ExtProfile,
     device: &BtdDevice,
     fd: OwnedFd,
@@ -2151,7 +2150,7 @@ async fn send_new_connection(
 /// Send RequestDisconnection to an external Profile1 handler.
 ///
 /// Equivalent to C `send_disconn_req()` in profile.c.
-async fn send_disconn_req(ext: &ExtProfile, device: &BtdDevice) -> Result<(), BtdError> {
+pub async fn send_disconn_req(ext: &ExtProfile, device: &BtdDevice) -> Result<(), BtdError> {
     let conn = btd_get_dbus_connection();
     let dev_path = device.get_path().to_owned();
 

@@ -23,10 +23,10 @@ use crate::log::btd_error;
 use crate::plugin::{PluginDesc, PluginPriority};
 use crate::profile::{btd_profile_register, btd_profile_unregister, BtdProfile};
 use crate::profiles::audio::avctp::{
-    avctp_add_state_cb, avctp_connect_browsing, avctp_remove_state_cb, AvctpSession, AvctpState,
-    BrowsingPduCb, ControlPduCb, PassthroughCb, AVC_CHANGED, AVC_CTYPE_CONTROL,
-    AVC_CTYPE_NOTIFY, AVC_CTYPE_STATUS, AVC_OP_VENDORDEP, AVC_SUBUNIT_PANEL, AVCTP_BROWSING_PSM,
-    AVCTP_CONTROL_PSM,
+    avctp_add_state_cb, avctp_connect_browsing, avctp_find_session_by_path,
+    avctp_remove_state_cb, AvctpSession, AvctpState, BrowsingPduCb, ControlPduCb,
+    PassthroughCb, AVC_CHANGED, AVC_CTYPE_CONTROL, AVC_CTYPE_NOTIFY, AVC_CTYPE_STATUS,
+    AVC_OP_VENDORDEP, AVC_SUBUNIT_PANEL, AVCTP_BROWSING_PSM, AVCTP_CONTROL_PSM,
 };
 use crate::profiles::audio::control::{control_connect, control_disconnect};
 use crate::profiles::audio::player::MediaPlayer;
@@ -1942,39 +1942,72 @@ async fn avrcp_state_changed_async(
 async fn find_or_create_avrcp_session(
     device_path: &str,
 ) -> Option<(Arc<StdMutex<AvrcpSession>>, Arc<TokioMutex<AvctpSession>>)> {
-    let servers = SERVERS.lock().ok()?;
-
-    // First, check for existing session
-    for server in servers.iter() {
-        if let Ok(srv) = server.lock() {
-            for session_arc in &srv.sessions {
-                if let Ok(sess) = session_arc.lock() {
-                    if sess.device_path == device_path {
-                        let avctp = sess.avctp.clone();
-                        return Some((session_arc.clone(), avctp));
+    // Check for existing session first — the SERVERS lock is entirely within
+    // this block so the non-Send MutexGuard never lives across an await.
+    {
+        let servers = SERVERS.lock().ok()?;
+        for server in servers.iter() {
+            if let Ok(srv) = server.lock() {
+                for session_arc in &srv.sessions {
+                    if let Ok(sess) = session_arc.lock() {
+                        if sess.device_path == device_path {
+                            let avctp = sess.avctp.clone();
+                            return Some((session_arc.clone(), avctp));
+                        }
                     }
                 }
             }
         }
     }
 
-    // No existing session — create one
-    // We need to find the AVCTP session for this device path
-    // This requires looking at the AVCTP layer, which we access via avctp_connect
-    // For now, the session creation is handled by the AVCTP layer when it connects.
-    // We'll create the AVRCP session wrapper when the state changes.
-
-    // Find a server to associate with (use first available).
-    // The actual AVRCP session creation happens when the control handler is
-    // first invoked, because the AVCTP state callback does not provide the
-    // AVCTP session Arc needed for AvrcpSession::new().
-    if let Some(server_arc) = servers.first() {
-        if server_arc.lock().is_ok() {
-            debug!("AVRCP: server found for new session for {}", device_path);
+    // No existing session — create one by finding the AVCTP session for this
+    // device and pairing it with an AVRCP server.  The SERVERS lock has been
+    // dropped so the async AVCTP lookup is safe for tokio::spawn (Send).
+    let avctp_session_arc = match avctp_find_session_by_path(device_path).await {
+        Some(s) => s,
+        None => {
+            debug!("AVRCP: no AVCTP session for {} — cannot create AVRCP session", device_path);
+            return None;
         }
-    }
+    };
 
-    None
+    // Extract the device Arc from the AVCTP session.
+    let device = {
+        let avctp_guard = avctp_session_arc.lock().await;
+        Arc::clone(&avctp_guard.device)
+    };
+
+    // Re-acquire servers lock for server lookup and session insertion — again
+    // scoped so the guard doesn't cross any await boundaries.
+    let (session_arc, avctp_arc) = {
+        let servers = SERVERS.lock().ok()?;
+
+        // Find a server to associate with (use first available).
+        let server_arc = match servers.first() {
+            Some(s) => Arc::clone(s),
+            None => {
+                debug!("AVRCP: no server available for new session for {}", device_path);
+                return None;
+            }
+        };
+
+        // Share the SAME AVCTP session from the AVCTP layer — AVRCP sends
+        // commands and registers handlers directly on the live session.
+        let avctp_arc = Arc::clone(&avctp_session_arc);
+
+        let session = AvrcpSession::new(device, avctp_arc.clone(), server_arc.clone());
+        let session_arc = Arc::new(StdMutex::new(session));
+
+        // Store the new session in the server's session list.
+        if let Ok(mut srv) = server_arc.lock() {
+            srv.sessions.push(Arc::clone(&session_arc));
+        }
+
+        (session_arc, avctp_arc)
+    };
+
+    debug!("AVRCP: created new session for {}", device_path);
+    Some((session_arc, avctp_arc))
 }
 
 /// Find an existing AVRCP session by device path.

@@ -20,7 +20,6 @@
 // ioctls (SIOCSIFFLAGS, SIOCBRADDIF, SIOCBRDELIF). All unsafe blocks are
 // individually documented with // SAFETY: comments explaining invariants.
 #![allow(unsafe_code)]
-#![allow(dead_code)]
 
 use std::mem;
 use std::os::unix::io::{AsRawFd, FromRawFd, OwnedFd, RawFd};
@@ -84,13 +83,13 @@ const PANU_UUID: &str = "00001115-0000-1000-8000-00805f9b34fb";
 const CON_SETUP_RETRIES: u32 = 3;
 
 /// Setup timeout in seconds (for each retry).
-const CON_SETUP_TO: u64 = 9;
+pub const CON_SETUP_TO: u64 = 9;
 
 /// BNEP setup response feature flag (for kernel feature detection).
 const BNEP_SETUP_RESPONSE: u32 = 0x01;
 
 /// BNEP base UUID bytes [4..16] used for UUID128 validation.
-const BNEP_BASE_UUID_TAIL: [u8; 12] =
+pub const BNEP_BASE_UUID_TAIL: [u8; 12] =
     [0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB];
 
 /// Linux bridge ioctl: add interface to bridge (not in libc crate for Linux).
@@ -108,7 +107,7 @@ const BNEP_UUID_VAL: u16 = 0x000F;
 /// SDP attribute IDs not provided by sdp/mod.rs.
 const SDP_ATTR_SVCNAME_PRIMARY: u16 = 0x0100;
 const SDP_ATTR_SVCDESC_PRIMARY: u16 = 0x0101;
-const SDP_ATTR_SVCPROV_PRIMARY: u16 = 0x0102;
+pub const SDP_ATTR_SVCPROV_PRIMARY: u16 = 0x0102;
 const SDP_ATTR_SECURITY_DESC: u16 = 0x030A;
 const SDP_ATTR_NET_ACCESS_TYPE: u16 = 0x030B;
 const SDP_ATTR_MAX_NET_ACCESS_RATE: u16 = 0x030C;
@@ -170,7 +169,7 @@ pub struct BnepSession {
     /// Raw file descriptor of the L2CAP socket (kept for ioctl).
     fd: Option<OwnedFd>,
     /// Source (local) Bluetooth address.
-    src: BdAddr,
+    pub src: BdAddr,
     /// Destination (remote) Bluetooth address.
     dst: BdAddr,
     /// Source BNEP service role (e.g., BNEP_SVC_PANU).
@@ -186,7 +185,7 @@ pub struct BnepSession {
     /// Socket monitor task handle.
     monitor_task: Option<JoinHandle<()>>,
     /// Number of setup retries remaining.
-    retry_count: u32,
+    pub retry_count: u32,
 }
 
 impl BnepSession {
@@ -770,7 +769,7 @@ fn bnep_cleanup() {
 /// Bluetooth base UUID for UUID128, and validates PAN role combinations.
 ///
 /// Returns `(dst_role, src_role)` on success, or an error response code.
-fn bnep_setup_decode(data: &[u8]) -> Result<(u16, u16), u16> {
+pub fn bnep_setup_decode(data: &[u8]) -> Result<(u16, u16), u16> {
     if data.len() < 3 {
         return Err(BNEP_CONN_NOT_ALLOWED);
     }
@@ -899,7 +898,7 @@ fn uuid_to_bnep_svc(uuid_str: &str) -> Result<u16, BtdError> {
 }
 
 /// Convert a BNEP service class ID to its UUID string representation.
-fn bnep_svc_to_uuid_str(svc: u16) -> &'static str {
+pub fn bnep_svc_to_uuid_str(svc: u16) -> &'static str {
     match svc {
         BNEP_SVC_PANU => PANU_UUID,
         BNEP_SVC_GN => GN_UUID,
@@ -933,7 +932,7 @@ pub struct NetworkConn {
     /// BNEP session when connected.
     pub session: Option<BnepSession>,
     /// Pending D-Bus Connect() reply channel.
-    pending_connect: Option<oneshot::Sender<Result<String, BtdError>>>,
+    pub pending_connect: Option<oneshot::Sender<Result<String, BtdError>>>,
     /// Connected UUID string for D-Bus property.
     connected_uuid: String,
 }
@@ -996,7 +995,7 @@ pub struct NetworkInterface {
 
 impl NetworkInterface {
     /// Create a new Network1 interface for a device.
-    fn new(peer: Arc<tokio::sync::Mutex<NetworkPeer>>) -> Self {
+    pub fn new(peer: Arc<tokio::sync::Mutex<NetworkPeer>>) -> Self {
         NetworkInterface { peer }
     }
 }
@@ -1344,11 +1343,11 @@ impl NetworkServer {
 // ===========================================================================
 
 /// Global registry of per-adapter NetworkServer instances.
-static NETWORK_SERVERS: std::sync::LazyLock<tokio::sync::Mutex<Vec<NetworkServer>>> =
+pub static NETWORK_SERVERS: std::sync::LazyLock<tokio::sync::Mutex<Vec<NetworkServer>>> =
     std::sync::LazyLock::new(|| tokio::sync::Mutex::new(Vec::new()));
 
 /// Global registry of per-device NetworkPeer instances (client side).
-static NETWORK_PEERS: std::sync::LazyLock<
+pub static NETWORK_PEERS: std::sync::LazyLock<
     tokio::sync::Mutex<Vec<Arc<tokio::sync::Mutex<NetworkPeer>>>>,
 > = std::sync::LazyLock::new(|| tokio::sync::Mutex::new(Vec::new()));
 
@@ -1436,7 +1435,7 @@ pub struct NetworkServerInterface {
 }
 
 impl NetworkServerInterface {
-    fn new(server: Arc<tokio::sync::Mutex<NetworkServer>>) -> Self {
+    pub fn new(server: Arc<tokio::sync::Mutex<NetworkServer>>) -> Self {
         NetworkServerInterface { server }
     }
 }

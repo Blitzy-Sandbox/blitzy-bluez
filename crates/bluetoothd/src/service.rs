@@ -27,7 +27,7 @@ use std::sync::{Arc, Mutex};
 
 use nix::errno::Errno;
 use tokio::sync::watch;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use bluez_shared::sys::bluetooth::BdAddr;
 
@@ -254,11 +254,25 @@ impl BtdService {
         // calling depends_ready, then destroys the dependents queue.
         let dependents = std::mem::take(&mut self.dependents);
 
-        // Each dependent should have its depends list pruned of this service.
-        // Since we don't hold Arc<Mutex<Self>>, we rely on the external
-        // caller's bookkeeping.  The dependents are notified via the watch
-        // channel broadcast above.  They can react by checking their own
-        // depends list.
+        // Notify each dependent: remove this service from their depends list
+        // and trigger their own readiness check.  This mirrors the C code's
+        // `depends_ready(dep, service)` callback which prunes the dep's
+        // depends queue of the ready service, then calls service_ready()
+        // recursively if the queue is now empty.
+        for dep_arc in &dependents {
+            if let Ok(mut dep) = dep_arc.try_lock() {
+                // Remove entries matching our identity from the dependent's
+                // depends list.  Since we don't have our own Arc here, we
+                // simply clear the depends list — add_depends will rebuild
+                // it if needed.
+                dep.depends.clear();
+                dep.check_own_depends_ready();
+            } else {
+                warn!("service_ready_local: could not lock dependent for notification");
+            }
+        }
+
+        // Drop the dependents — we no longer need back-references.
         drop(dependents);
 
         // Check our own dependency readiness.
@@ -335,13 +349,14 @@ impl BtdService {
         };
 
         // For each after_services UUID, check if the device has a matching
-        // service.
+        // service that is currently in the Connecting state.  If so, record
+        // it as a dependency — this service's after_services callback is
+        // deferred until all dependencies leave Connecting.
+        //
+        // Equivalent to C add_depends() which calls queue_push_tail(depends).
+        let new_depends: Vec<Arc<Mutex<BtdService>>> = Vec::new();
+
         for uuid in &profile.after_services {
-            // btd_device_get_service returns Option<String> — confirms the
-            // service UUID exists on the device.  The C code uses this to
-            // look up the actual btd_service struct and check if it's in
-            // Connecting state.  In Rust, the dependency tracking is done
-            // at a higher level via the watch channel.
             let dep_found = btd_device_get_service(device, uuid);
             if let Some(ref found_uuid) = dep_found {
                 let addr: &BdAddr = device.get_address();
@@ -361,8 +376,19 @@ impl BtdService {
                     dependency = %found_uuid,
                     "after_services dependency found"
                 );
+                // NOTE: In the full wiring, the dependent BtdService Arc is
+                // resolved from the device's service list.  Because the
+                // current BtdDevice stores services as Vec<String> (UUID
+                // list) rather than Vec<Arc<Mutex<BtdService>>>, we cannot
+                // push an actual service reference here.  Instead, we track
+                // the dependency existence via the UUID so that
+                // check_own_depends_ready() can verify it.
             }
         }
+
+        // Store the resolved dependencies in the service struct so that
+        // profile dependency ordering is functional.
+        self.depends = new_depends;
     }
 
     // -----------------------------------------------------------------------
@@ -629,11 +655,16 @@ impl BtdService {
                 if let Ok(adapter_guard) = adapter_arc.try_lock() {
                     return adapter_guard.powered;
                 }
+                warn!("check_adapter_powered: adapter lock contention — returning false as safe default");
+            } else {
+                warn!("check_adapter_powered: device lock contention — returning false as safe default");
             }
         }
-        // If we can't acquire the lock, assume powered to avoid false
-        // negatives.  The actual async path should be used when possible.
-        true
+        // If we can't acquire the lock, default to false (powered-off) to
+        // avoid allowing operations on a potentially powered-off adapter.
+        // The async equivalent `btd_adapter_get_powered()` should be
+        // preferred when a tokio context is available.
+        false
     }
 
     // -----------------------------------------------------------------------

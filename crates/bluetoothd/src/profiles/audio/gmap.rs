@@ -17,7 +17,6 @@
 //   3. Client-side GMAS attach/detach via `BtGmap::attach()`
 //   4. Plugin registration via `inventory::submit!`
 
-#![allow(dead_code)]
 
 use std::sync::{Arc, Mutex};
 
@@ -53,7 +52,7 @@ const GMAS_UUID_STR: &str = "00001858-0000-1000-8000-00805f9b34fb";
 ///
 /// Tracks the association between a remote Bluetooth device and the GMAP
 /// protocol engine ([`BtGmap`]).
-struct GmapData {
+pub struct GmapData {
     /// Reference to the remote Bluetooth device.
     device: Arc<tokio::sync::Mutex<BtdDevice>>,
     /// The GMAP protocol engine instance (shared via `Arc`; replaces
@@ -89,7 +88,7 @@ fn gmap_debug(msg: &str) {
 // ===========================================================================
 
 /// Find a session index by device pointer comparison.
-fn find_session_by_device(
+pub fn find_session_by_device(
     sessions: &[GmapData],
     device: &Arc<tokio::sync::Mutex<BtdDevice>>,
 ) -> Option<usize> {

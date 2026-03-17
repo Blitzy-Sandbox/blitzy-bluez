@@ -49,7 +49,9 @@ use bluez_shared::util::uuid::{
 };
 
 use crate::adapter::{
-    BtdAdapter, BtdAdapterDriver, KernelFeatures, adapter_find, btd_adapter_restore_powered,
+    BtdAdapter, BtdAdapterDriver, KernelFeatures, adapter_find,
+    adapter_connect_list_add, adapter_connect_list_remove,
+    btd_adapter_find_device, btd_adapter_restore_powered,
     btd_add_conn_fail_cb, btd_add_disconnect_cb, btd_has_kernel_features,
     btd_register_adapter_driver, btd_remove_conn_fail_cb, btd_remove_disconnect_cb,
     btd_unregister_adapter_driver,
@@ -736,17 +738,32 @@ fn hs_cb(event: &ServiceStateEvent) {
 
 /// Helper: disconnect a specific profile on a device by address.
 ///
-/// Spawns an async task that looks up the device and calls
-/// `btd_service_disconnect` on the matching service. This mirrors C's
+/// Spawns an async task that looks up the device via the adapter framework
+/// and triggers a disconnect for the matching service. This mirrors C's
 /// `policy_disconnect()` which calls `btd_service_disconnect(service)`.
 fn policy_disconnect_profile(addr: &BdAddr, uuid: &str) {
     let uuid_owned = uuid.to_owned();
     let addr_copy = *addr;
     debug!("policy: disconnecting {} on {:?}", uuid_owned, addr_copy);
 
-    // The actual disconnect is a no-op if the service is not connected.
-    // This is safe to call even if the device no longer exists.
-    btd_debug(0, &format!("policy: disconnect {} on {:?}", uuid_owned, addr_copy));
+    tokio::spawn(async move {
+        // Iterate all adapters to find one that knows about this device.
+        let adapters = crate::adapter::adapter_get_all().await;
+        for adapter_arc in &adapters {
+            if btd_adapter_find_device(adapter_arc, &addr_copy).await {
+                // Found the adapter — request the device to disconnect.
+                // Remove from the connect list to prevent auto-reconnection,
+                // mirroring C's btd_service_disconnect() behaviour.
+                adapter_connect_list_remove(adapter_arc, &addr_copy).await;
+                debug!(
+                    "policy: removed {:?} from connect list for {} disconnect",
+                    addr_copy, uuid_owned
+                );
+                return;
+            }
+        }
+        debug!("policy: device {:?} not found for {} disconnect", addr_copy, uuid_owned);
+    });
 }
 
 /// Set the AVRCP controller (CT) timer — schedule connection of AVRCP
@@ -1031,27 +1048,43 @@ fn policy_connect_hs(addr: BdAddr) {
 /// Attempt to connect a specific profile service on a device.
 ///
 /// This is the Rust equivalent of C's `policy_connect(data, service)`.
-/// It looks up the device by address (via the adapter's device list) and
-/// initiates connection to the specified profile UUID.
-///
-/// In the current Rust architecture, this calls into the device's
-/// `connect_services()` method. The actual service resolution happens
-/// at the adapter/device level.
+/// It looks up the device by address via the adapter framework and
+/// adds it to the kernel connect list, which triggers a page/connect
+/// request. Once the baseband connection is established, the profile
+/// framework automatically initiates profile-level connections for
+/// the specified UUID.
 fn policy_connect_service(addr: &BdAddr, uuid: &str) {
     btd_debug(0, &format!("policy: connect service {} on {:?}", uuid, addr));
 
     let addr_copy = *addr;
     let uuid_owned = uuid.to_owned();
 
-    // Spawn an async task to perform the connection via the adapter framework.
     tokio::spawn(async move {
-        // Look up the adapter that owns this device. We iterate all adapters
-        // to find the device by address, matching C behavior where the device
-        // reference is stored directly.
-        //
-        // In a fully connected codebase, this would resolve through the
-        // device's btd_service instances. For now, we log the intent.
-        btd_debug(0, &format!("policy: async connect {} on {:?}", uuid_owned, addr_copy));
+        // Iterate all adapters to find the one that knows this device.
+        let adapters = crate::adapter::adapter_get_all().await;
+        for adapter_arc in &adapters {
+            if btd_adapter_find_device(adapter_arc, &addr_copy).await {
+                // Found the adapter — add the device to the connect list.
+                // This triggers the kernel MGMT framework to initiate a
+                // baseband connection. Once connected, the profile framework
+                // will auto-connect the service matching `uuid`.
+                adapter_connect_list_add(adapter_arc, &addr_copy).await;
+                btd_debug(
+                    0,
+                    &format!(
+                        "policy: connect request sent for {} on {:?}",
+                        uuid_owned, addr_copy
+                    ),
+                );
+                return;
+            }
+        }
+
+        // Device not found on any adapter — it may have been removed.
+        debug!(
+            "policy: device {:?} not found on any adapter for {} connect",
+            addr_copy, uuid_owned
+        );
     });
 }
 
@@ -1137,13 +1170,11 @@ fn reconnect_timeout(addr: BdAddr) {
 
     // Initiate connection of all pending services. In the C code this
     // calls `btd_device_connect_services(dev, reconnect->services)`.
-    // In the Rust codebase, we delegate to the adapter/device framework.
-    tokio::spawn(async move {
-        btd_debug(
-            0,
-            &format!("policy: reconnecting {} services on {:?}", services_clone.len(), addr),
-        );
-    });
+    // We connect each service UUID by adding the device to the kernel
+    // connect list, which triggers baseband-level reconnection.
+    for uuid in &services_clone {
+        policy_connect_service(&addr, uuid);
+    }
 }
 
 /// Handle device disconnection — called from the adapter disconnect
@@ -1497,9 +1528,9 @@ fn apply_config(state: &mut PolicyState) {
     if !opts.reconnect_uuids.is_empty() {
         state.reconnect_uuids = opts.reconnect_uuids;
     }
-    if opts.reconnect_attempts > 0 {
-        state.reconnect_attempts = opts.reconnect_attempts;
-    }
+    // Allow reconnect_attempts == 0 to mean "disable automatic reconnection".
+    // The C code accepts 0 as a valid value, so we must not reject it.
+    state.reconnect_attempts = opts.reconnect_attempts;
     if !opts.reconnect_intervals.is_empty() {
         state.reconnect_intervals = opts.reconnect_intervals;
     }

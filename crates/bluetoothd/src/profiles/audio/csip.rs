@@ -23,7 +23,6 @@
 //   - `callback + user_data` → Rust closures / `Arc<dyn Fn>`
 //   - `errno` returns → `nix::errno::Errno`
 
-#![allow(dead_code)]
 
 use std::sync::{Arc, Mutex};
 
@@ -147,8 +146,11 @@ fn csip_ready(csip: &BtCsip) {
     };
 
     // Find the session corresponding to this CSIP instance.
+    // NOTE: We perform the pointer-based lookup inline to avoid calling
+    // `find_csip_arc()` which would attempt to re-acquire `SESSIONS.lock()`
+    // and deadlock on the non-reentrant `std::sync::Mutex`.
     let sessions = SESSIONS.lock().unwrap();
-    let data = match sessions.iter().find(|d| Arc::ptr_eq(&d.csip, &find_csip_arc(csip))) {
+    let data = match sessions.iter().find(|d| std::ptr::eq(csip, Arc::as_ref(&d.csip))) {
         Some(d) => d,
         None => {
             error!("CSIP: unable to find session for ready callback");
@@ -178,7 +180,7 @@ fn csip_ready(csip: &BtCsip) {
 /// Helper: find the Arc<BtCsip> in sessions that points to the given &BtCsip.
 /// This is needed because the ready/attached/detached callbacks receive a
 /// reference, but our sessions store Arc<BtCsip>.
-fn find_csip_arc(csip: &BtCsip) -> Arc<BtCsip> {
+pub fn find_csip_arc(csip: &BtCsip) -> Arc<BtCsip> {
     let sessions = SESSIONS.lock().unwrap();
     for d in sessions.iter() {
         if std::ptr::eq(csip, Arc::as_ref(&d.csip)) {

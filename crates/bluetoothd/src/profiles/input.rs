@@ -19,7 +19,6 @@
 // - `input.conf` — Configuration template
 
 #![allow(unsafe_code)]
-#![allow(dead_code)]
 
 use std::collections::HashMap;
 use std::os::unix::io::{AsRawFd, OwnedFd};
@@ -136,15 +135,15 @@ const HOG_INFO_UUID: u16 = 0x2A4A;
 const HOG_REPORT_MAP_UUID: u16 = 0x2A4B;
 const HOG_REPORT_UUID: u16 = 0x2A4D;
 const HOG_PROTO_MODE_UUID: u16 = 0x2A4E;
-const HOG_CONTROL_POINT_UUID: u16 = 0x2A4C;
+pub const HOG_CONTROL_POINT_UUID: u16 = 0x2A4C;
 const HOG_REPORT_REFERENCE_UUID: u16 = 0x2908;
 const HOG_CCC_UUID: u16 = 0x2902;
 
 const HOG_REPORT_TYPE_INPUT: u8 = 1;
-const HOG_REPORT_TYPE_OUTPUT: u8 = 2;
-const HOG_REPORT_TYPE_FEATURE: u8 = 3;
+pub const HOG_REPORT_TYPE_OUTPUT: u8 = 2;
+pub const HOG_REPORT_TYPE_FEATURE: u8 = 3;
 
-const HOG_PROTO_MODE_BOOT: u8 = 0;
+pub const HOG_PROTO_MODE_BOOT: u8 = 0;
 const HOG_PROTO_MODE_REPORT: u8 = 1;
 
 const HID_INFO_SIZE: usize = 4;
@@ -152,7 +151,7 @@ const HID_INFO_SIZE: usize = 4;
 /// HOG UUID string used for LE profile registration.
 const HOG_UUID_STR: &str = "00001812-0000-1000-8000-00805f9b34fb";
 
-const MAX_RECONNECT_ATTEMPTS: u32 = 6;
+pub const MAX_RECONNECT_ATTEMPTS: u32 = 6;
 
 // ===========================================================================
 // Cable pairing types (from sixaxis.h)
@@ -265,7 +264,7 @@ pub enum ReconnectMode {
 }
 
 impl ReconnectMode {
-    fn from_sdp(val: u8) -> Self {
+    pub fn from_sdp(val: u8) -> Self {
         match val {
             0 => Self::None,
             1 => Self::Device,
@@ -275,7 +274,7 @@ impl ReconnectMode {
         }
     }
 
-    fn as_str(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             Self::None => "none",
             Self::Device => "device",
@@ -287,7 +286,7 @@ impl ReconnectMode {
 
 /// Parsed input plugin configuration from `/etc/bluetooth/input.conf`.
 #[derive(Debug, Clone)]
-struct InputConfig {
+pub struct InputConfig {
     idle_timeout: u32,
     userspace_hid: UhidState,
     classic_bonded_only: bool,
@@ -404,46 +403,46 @@ impl SuspendCallbacks for NoopSuspend {}
 
 /// HID Information parsed from SDP or GATT.
 #[derive(Debug, Clone, Default)]
-struct HidInformation {
-    bcd_hid: u16,
-    country: u8,
-    flags: u8,
+pub struct HidInformation {
+    pub bcd_hid: u16,
+    pub country: u8,
+    pub flags: u8,
 }
 
 /// Classic BR/EDR HIDP device state.
-struct InputDevice {
-    path: String,
-    src: BdAddr,
-    dst: BdAddr,
-    ctrl_fd: Option<OwnedFd>,
-    intr_fd: Option<OwnedFd>,
-    uhid: Option<BtUhid>,
-    reconnect_mode: ReconnectMode,
-    disable_sdp: bool,
-    virtual_cable_unplug: bool,
-    report_req_pending: bool,
-    report_req_timer: Option<tokio::task::JoinHandle<()>>,
-    idle_timeout: u32,
-    uhid_state: UhidState,
-    sub_class: u8,
-    app_name: Option<String>,
-    descriptor: Vec<u8>,
-    vendor: u16,
-    product: u16,
-    version: u16,
-    country: u8,
-    parser: u16,
-    flags: u16,
-    reconnect_attempts: u32,
-    reconnect_timer: Option<tokio::task::JoinHandle<()>>,
-    idle_timer: Option<tokio::task::JoinHandle<()>>,
-    connected: bool,
-    disconnecting: bool,
-    suspend: Box<dyn SuspendCallbacks>,
+pub struct InputDevice {
+    pub path: String,
+    pub src: BdAddr,
+    pub dst: BdAddr,
+    pub ctrl_fd: Option<OwnedFd>,
+    pub intr_fd: Option<OwnedFd>,
+    pub uhid: Option<BtUhid>,
+    pub reconnect_mode: ReconnectMode,
+    pub disable_sdp: bool,
+    pub virtual_cable_unplug: bool,
+    pub report_req_pending: bool,
+    pub report_req_timer: Option<tokio::task::JoinHandle<()>>,
+    pub idle_timeout: u32,
+    pub uhid_state: UhidState,
+    pub sub_class: u8,
+    pub app_name: Option<String>,
+    pub descriptor: Vec<u8>,
+    pub vendor: u16,
+    pub product: u16,
+    pub version: u16,
+    pub country: u8,
+    pub parser: u16,
+    pub flags: u16,
+    pub reconnect_attempts: u32,
+    pub reconnect_timer: Option<tokio::task::JoinHandle<()>>,
+    pub idle_timer: Option<tokio::task::JoinHandle<()>>,
+    pub connected: bool,
+    pub disconnecting: bool,
+    pub suspend: Box<dyn SuspendCallbacks>,
 }
 
 impl InputDevice {
-    fn new(path: String, src: BdAddr, dst: BdAddr, config: &InputConfig) -> Self {
+    pub fn new(path: String, src: BdAddr, dst: BdAddr, config: &InputConfig) -> Self {
         Self {
             path,
             src,
@@ -476,17 +475,17 @@ impl InputDevice {
         }
     }
 
-    fn use_uhid(&self) -> bool {
+    pub fn use_uhid(&self) -> bool {
         matches!(self.uhid_state, UhidState::Enabled | UhidState::Persist)
     }
 
-    fn reconnect_mode_str(&self) -> &'static str {
+    pub fn reconnect_mode_str(&self) -> &'static str {
         self.reconnect_mode.as_str()
     }
 
     /// Populate SDP-derived fields.
     #[allow(clippy::too_many_arguments)]
-    fn set_sdp_data(
+    pub fn set_sdp_data(
         &mut self,
         sub_class: u8,
         vendor: u16,
@@ -519,7 +518,7 @@ impl InputDevice {
     ///
     /// # Safety
     /// Contains `unsafe` ioctl call — designated FFI boundary (AAP §0.7.4).
-    fn hidp_connadd(&self) -> Result<(), InputError> {
+    pub fn hidp_connadd(&self) -> Result<(), InputError> {
         let ctrl_fd = self
             .ctrl_fd
             .as_ref()
@@ -577,7 +576,7 @@ impl InputDevice {
     ///
     /// # Safety
     /// Contains `unsafe` ioctl call — designated FFI boundary.
-    fn hidp_conndel(&self, flags: u32) -> Result<(), InputError> {
+    pub fn hidp_conndel(&self, flags: u32) -> Result<(), InputError> {
         let ctrl_fd = self
             .ctrl_fd
             .as_ref()
@@ -598,7 +597,7 @@ impl InputDevice {
     }
 
     /// Create UHID virtual device (userspace HID path).
-    fn create_uhid(&mut self) -> Result<(), InputError> {
+    pub fn create_uhid(&mut self) -> Result<(), InputError> {
         let name = self.app_name.clone().unwrap_or_else(|| "Bluetooth HID".to_owned());
 
         let icon = Self::sub_class_to_icon(self.sub_class);
@@ -629,7 +628,7 @@ impl InputDevice {
         Ok(())
     }
 
-    fn destroy_uhid(&mut self) {
+    pub fn destroy_uhid(&mut self) {
         if let Some(ref mut uhid) = self.uhid {
             if let Err(e) = uhid.destroy(false) {
                 btd_warn(0, &format!("input: UHID destroy failed: {}", e));
@@ -640,14 +639,14 @@ impl InputDevice {
         }
     }
 
-    fn uhid_input(&mut self, report_number: u8, data: &[u8]) -> Result<(), InputError> {
+    pub fn uhid_input(&mut self, report_number: u8, data: &[u8]) -> Result<(), InputError> {
         let uhid =
             self.uhid.as_mut().ok_or_else(|| InputError::UhidError("no UHID device".into()))?;
         uhid.input(report_number, data).map_err(|e| InputError::UhidError(format!("input: {}", e)))
     }
 
     /// Handle data received on HIDP interrupt channel.
-    fn handle_intr_data(&mut self, data: &[u8]) {
+    pub fn handle_intr_data(&mut self, data: &[u8]) {
         if data.is_empty() {
             return;
         }
@@ -677,7 +676,7 @@ impl InputDevice {
         }
     }
 
-    fn send_ctrl_report(&self, trans: u8, rtype: u8, data: &[u8]) -> Result<(), InputError> {
+    pub fn send_ctrl_report(&self, trans: u8, rtype: u8, data: &[u8]) -> Result<(), InputError> {
         let fd = self
             .ctrl_fd
             .as_ref()
@@ -700,7 +699,7 @@ impl InputDevice {
         Ok(())
     }
 
-    fn send_intr_report(&self, rtype: u8, data: &[u8]) -> Result<(), InputError> {
+    pub fn send_intr_report(&self, rtype: u8, data: &[u8]) -> Result<(), InputError> {
         let fd = self
             .intr_fd
             .as_ref()
@@ -723,20 +722,20 @@ impl InputDevice {
         Ok(())
     }
 
-    fn cancel_reconnect(&mut self) {
+    pub fn cancel_reconnect(&mut self) {
         if let Some(timer) = self.reconnect_timer.take() {
             timer.abort();
         }
         self.reconnect_attempts = 0;
     }
 
-    fn cancel_idle_timer(&mut self) {
+    pub fn cancel_idle_timer(&mut self) {
         if let Some(timer) = self.idle_timer.take() {
             timer.abort();
         }
     }
 
-    fn disconnect_device(&mut self) {
+    pub fn disconnect_device(&mut self) {
         self.disconnecting = true;
         self.cancel_reconnect();
         self.cancel_idle_timer();
@@ -758,7 +757,7 @@ impl InputDevice {
         debug!("input: device {} disconnected", self.dst.ba2str());
     }
 
-    fn sub_class_to_icon(sub_class: u8) -> String {
+    pub fn sub_class_to_icon(sub_class: u8) -> String {
         match sub_class & 0xC0 {
             0x40 => "input-keyboard".to_owned(),
             0x80 => "input-mouse".to_owned(),
@@ -772,11 +771,11 @@ impl InputDevice {
 // HID Server — Per-adapter L2CAP listeners (from server.c)
 // ===========================================================================
 
-struct HidServer {
+pub struct HidServer {
     address: BdAddr,
     ctrl_listener: Option<BluetoothListener>,
     intr_listener: Option<BluetoothListener>,
-    cable_pairing: bool,
+    pub cable_pairing: bool,
     ctrl_task: Option<tokio::task::JoinHandle<()>>,
     intr_task: Option<tokio::task::JoinHandle<()>>,
 }
@@ -884,11 +883,11 @@ fn hid_server_stop(adapter: &Arc<TokioMutex<BtdAdapter>>) {
 
 /// A single HoG report characteristic.
 #[derive(Debug, Clone)]
-struct HogReport {
+pub struct HogReport {
     /// ATT handle of the Report characteristic value.
     value_handle: u16,
     /// ATT handle of the CCC descriptor (for input reports).
-    ccc_handle: u16,
+    pub ccc_handle: u16,
     /// Report ID from Report Reference descriptor.
     report_id: u8,
     /// Report type (input=1, output=2, feature=3).
@@ -908,9 +907,9 @@ pub struct BtHog {
     /// HID Report Map descriptor data.
     report_map: Vec<u8>,
     /// HID Information characteristic data.
-    hid_info: HidInformation,
+    pub hid_info: HidInformation,
     /// Current protocol mode.
-    protocol_mode: u8,
+    pub protocol_mode: u8,
     /// Discovered input report characteristics.
     input_reports: Vec<HogReport>,
     /// Discovered output report characteristics.
@@ -933,6 +932,10 @@ pub struct BtHog {
     gatt_ready: bool,
     /// Ready callback registration ID.
     ready_id: u32,
+    /// Pending report type/ID updates from async Report Reference reads.
+    /// Each entry is (value_handle, report_id, report_type).
+    /// Applied by `apply_pending_report_updates()` before UHID creation.
+    pending_report_updates: Arc<std::sync::Mutex<Vec<(u16, u8, u8)>>>,
 }
 
 impl BtHog {
@@ -956,6 +959,7 @@ impl BtHog {
             name: name.to_owned(),
             gatt_ready: false,
             ready_id: 0,
+            pending_report_updates: Arc::new(std::sync::Mutex::new(Vec::new())),
         }
     }
 
@@ -1232,6 +1236,21 @@ impl BtHog {
             }
         }
 
+        // Create HogReport entry — initially typed as INPUT.
+        // The Report Reference descriptor is read asynchronously; the callback
+        // updates the report type/ID through a shared pending-updates queue,
+        // mirroring the C code's `report_reference_cb` which writes directly
+        // to the `struct report` via the user_data pointer.
+        let report = HogReport {
+            value_handle: handle,
+            ccc_handle: ccc_handle.unwrap_or(0),
+            report_id: 0,
+            report_type: HOG_REPORT_TYPE_INPUT,
+            notify_id: 0,
+        };
+
+        self.input_reports.push(report);
+
         if let Some(rr_handle) = report_ref_handle {
             let client = match self.gatt_client {
                 Some(ref c) => Arc::clone(c),
@@ -1239,6 +1258,7 @@ impl BtHog {
             };
 
             let value_handle = handle;
+            let pending = Arc::clone(&self.pending_report_updates);
             client.read_value(
                 rr_handle,
                 Box::new(move |success, _att_ecode, data| {
@@ -1249,21 +1269,16 @@ impl BtHog {
                             "input/hog: Report ref: id={} type={} handle={}",
                             report_id, report_type, value_handle
                         );
+                        // Queue the update — the report in input_reports will be
+                        // patched when apply_pending_report_updates() is called
+                        // before UHID creation / notification registration.
+                        if let Ok(mut updates) = pending.lock() {
+                            updates.push((value_handle, report_id, report_type));
+                        }
                     }
                 }),
             );
         }
-
-        // Create HogReport entry.
-        let report = HogReport {
-            value_handle: handle,
-            ccc_handle: ccc_handle.unwrap_or(0),
-            report_id: 0,
-            report_type: HOG_REPORT_TYPE_INPUT,
-            notify_id: 0,
-        };
-
-        self.input_reports.push(report);
     }
 
     /// Attempt to read the report map from GATT if not found in DB cache.
@@ -1304,6 +1319,10 @@ impl BtHog {
 
     /// Create the UHID device using the discovered report map.
     fn create_uhid_device(&mut self) {
+        // Apply any pending Report Reference descriptor updates so that
+        // report type classification is correct before UHID creation.
+        self.apply_pending_report_updates();
+
         if self.report_map.is_empty() {
             btd_warn(0, "input/hog: no report map for UHID creation");
             return;
@@ -1335,6 +1354,34 @@ impl BtHog {
         self.uhid = Some(uhid);
         debug!("input/hog: UHID device created for {}", self.dst.ba2str());
         self.register_input_notifications();
+    }
+
+    /// Apply pending Report Reference descriptor updates to input_reports.
+    ///
+    /// The async `read_value` callbacks push `(value_handle, report_id, report_type)`
+    /// tuples into `pending_report_updates`.  This method drains that queue and
+    /// patches the corresponding `HogReport` entries so that report type
+    /// classification (Input=1, Output=2, Feature=3) is correct before UHID
+    /// device creation and notification registration.
+    fn apply_pending_report_updates(&mut self) {
+        let updates: Vec<(u16, u8, u8)> = {
+            match self.pending_report_updates.lock() {
+                Ok(mut u) => std::mem::take(&mut *u),
+                Err(e) => {
+                    warn!("input/hog: failed to lock pending updates: {}", e);
+                    return;
+                }
+            }
+        };
+        for (value_handle, report_id, report_type) in updates {
+            for rpt in &mut self.input_reports {
+                if rpt.value_handle == value_handle {
+                    rpt.report_id = report_id;
+                    rpt.report_type = report_type;
+                    break;
+                }
+            }
+        }
     }
 
     /// Enable CCC notifications for all input report characteristics.

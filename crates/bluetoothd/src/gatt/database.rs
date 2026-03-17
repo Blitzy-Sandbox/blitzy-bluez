@@ -19,7 +19,6 @@
 // called from top-level daemon wiring but form part of the complete GATT
 // database implementation.  They will be connected once the adapter and
 // device modules are fully integrated.
-#![allow(dead_code)]
 
 use std::collections::{BTreeMap, HashMap};
 use std::sync::{Arc, Weak};
@@ -44,13 +43,13 @@ use crate::sdp::{
 // ---------------------------------------------------------------------------
 
 /// D-Bus interface name for the GATT Manager.
-const GATT_MANAGER_IFACE: &str = "org.bluez.GattManager1";
+pub const GATT_MANAGER_IFACE: &str = "org.bluez.GattManager1";
 
 /// D-Bus interface names for external GATT objects.
-const GATT_SERVICE_IFACE: &str = "org.bluez.GattService1";
-const GATT_CHRC_IFACE: &str = "org.bluez.GattCharacteristic1";
-const GATT_DESC_IFACE: &str = "org.bluez.GattDescriptor1";
-const GATT_PROFILE_IFACE: &str = "org.bluez.GattProfile1";
+pub const GATT_SERVICE_IFACE: &str = "org.bluez.GattService1";
+pub const GATT_CHRC_IFACE: &str = "org.bluez.GattCharacteristic1";
+pub const GATT_DESC_IFACE: &str = "org.bluez.GattDescriptor1";
+pub const GATT_PROFILE_IFACE: &str = "org.bluez.GattProfile1";
 
 /// Bluetooth SIG UUID16 values for core services and characteristics.
 const UUID_GAP: u16 = 0x1800;
@@ -72,44 +71,44 @@ const CLI_FEAT_SIZE: usize = 1;
 /// Robust Caching feature bit within Client Supported Features byte 0.
 const BT_GATT_CHRC_CLI_FEAT_ROBUST_CACHING: u8 = 0x01;
 /// EATT support bit within Client Supported Features byte 0.
-const BT_GATT_CHRC_CLI_FEAT_EATT: u8 = 0x02;
+pub const BT_GATT_CHRC_CLI_FEAT_EATT: u8 = 0x02;
 /// Multiple Notifications feature bit within Client Supported Features byte 0.
-const BT_GATT_CHRC_CLI_FEAT_NFY_MULTI: u8 = 0x04;
+pub const BT_GATT_CHRC_CLI_FEAT_NFY_MULTI: u8 = 0x04;
 
 /// EATT support bit within Server Supported Features.
-const BT_GATT_CHRC_SERVER_FEAT_EATT: u8 = 0x01;
+pub const BT_GATT_CHRC_SERVER_FEAT_EATT: u8 = 0x01;
 
 /// ATT error code for Database Out Of Sync (Robust Caching).
 const BT_ATT_ERROR_DB_OUT_OF_SYNC: u8 = 0x12;
-const BT_ATT_ERROR_INVALID_OFFSET: u8 = 0x07;
-const BT_ATT_ERROR_INVALID_ATTRIBUTE_VALUE_LEN: u8 = 0x0D;
-const BT_ATT_ERROR_UNLIKELY: u8 = 0x0E;
-const BT_ATT_ERROR_VALUE_NOT_ALLOWED: u8 = 0xFE;
+pub const BT_ATT_ERROR_INVALID_OFFSET: u8 = 0x07;
+pub const BT_ATT_ERROR_INVALID_ATTRIBUTE_VALUE_LEN: u8 = 0x0D;
+pub const BT_ATT_ERROR_UNLIKELY: u8 = 0x0E;
+pub const BT_ATT_ERROR_VALUE_NOT_ALLOWED: u8 = 0xFE;
 
 /// ATT permission bits matching the C constants.
 const BT_ATT_PERM_READ: u32 = 0x0001;
 const BT_ATT_PERM_WRITE: u32 = 0x0002;
-const BT_ATT_PERM_READ_ENCRYPT: u32 = 0x0004;
-const BT_ATT_PERM_WRITE_ENCRYPT: u32 = 0x0008;
-const BT_ATT_PERM_READ_AUTHEN: u32 = 0x0010;
-const BT_ATT_PERM_WRITE_AUTHEN: u32 = 0x0020;
-const BT_ATT_PERM_READ_SECURE: u32 = 0x0100;
-const BT_ATT_PERM_WRITE_SECURE: u32 = 0x0200;
+pub const BT_ATT_PERM_READ_ENCRYPT: u32 = 0x0004;
+pub const BT_ATT_PERM_WRITE_ENCRYPT: u32 = 0x0008;
+pub const BT_ATT_PERM_READ_AUTHEN: u32 = 0x0010;
+pub const BT_ATT_PERM_WRITE_AUTHEN: u32 = 0x0020;
+pub const BT_ATT_PERM_READ_SECURE: u32 = 0x0100;
+pub const BT_ATT_PERM_WRITE_SECURE: u32 = 0x0200;
 const BT_ATT_PERM_NONE: u32 = 0x0000;
 
 /// GATT characteristic properties matching the C BT_GATT_CHRC_PROP_* values.
-const BT_GATT_CHRC_PROP_BROADCAST: u8 = 0x01;
+pub const BT_GATT_CHRC_PROP_BROADCAST: u8 = 0x01;
 const BT_GATT_CHRC_PROP_READ: u8 = 0x02;
-const BT_GATT_CHRC_PROP_WRITE_WITHOUT_RESP: u8 = 0x04;
+pub const BT_GATT_CHRC_PROP_WRITE_WITHOUT_RESP: u8 = 0x04;
 const BT_GATT_CHRC_PROP_WRITE: u8 = 0x08;
-const BT_GATT_CHRC_PROP_NOTIFY: u8 = 0x10;
+pub const BT_GATT_CHRC_PROP_NOTIFY: u8 = 0x10;
 const BT_GATT_CHRC_PROP_INDICATE: u8 = 0x20;
-const BT_GATT_CHRC_PROP_AUTH: u8 = 0x40;
-const BT_GATT_CHRC_PROP_EXT_PROP: u8 = 0x80;
+pub const BT_GATT_CHRC_PROP_AUTH: u8 = 0x40;
+pub const BT_GATT_CHRC_PROP_EXT_PROP: u8 = 0x80;
 
 /// Extended properties.
-const BT_GATT_CHRC_EXT_PROP_RELIABLE_WRITE: u8 = 0x01;
-const BT_GATT_CHRC_EXT_PROP_WRITABLE_AUX: u8 = 0x02;
+pub const BT_GATT_CHRC_EXT_PROP_RELIABLE_WRITE: u8 = 0x01;
+pub const BT_GATT_CHRC_EXT_PROP_WRITABLE_AUX: u8 = 0x02;
 
 // ---------------------------------------------------------------------------
 // CCC and device state types
@@ -117,7 +116,7 @@ const BT_GATT_CHRC_EXT_PROP_WRITABLE_AUX: u8 = 0x02;
 
 /// Per-handle Client Characteristic Configuration state for a single device.
 #[derive(Clone, Debug)]
-struct CccState {
+pub struct CccState {
     /// Attribute handle of the CCC descriptor.
     handle: u16,
     /// CCC value (2 bytes LE: bit 0 = notification, bit 1 = indication).
@@ -129,7 +128,7 @@ struct CccCbData {
     /// Attribute handle of the CCC descriptor.
     handle: u16,
     /// Callback invoked when the CCC value changes.
-    callback: Box<dyn Fn(u16, &CccWriteInfo) -> u8 + Send + Sync>,
+    pub callback: Box<dyn Fn(u16, &CccWriteInfo) -> u8 + Send + Sync>,
 }
 
 /// Information passed to CCC write callbacks.
@@ -143,7 +142,7 @@ pub struct CccWriteInfo {
 
 /// Per-device tracking of CCC states, client features, and change-awareness
 /// for Robust Caching.
-struct DeviceState {
+pub struct DeviceState {
     /// Bluetooth address of the remote device.
     bdaddr: BdAddr,
     /// Address type: BDADDR_BREDR, BDADDR_LE_PUBLIC, BDADDR_LE_RANDOM.
@@ -170,9 +169,9 @@ struct PendingSvcChng {
 }
 
 /// Helper for looking up a device by address + type.
-struct DeviceInfo {
-    bdaddr: BdAddr,
-    bdaddr_type: u8,
+pub struct DeviceInfo {
+    pub bdaddr: BdAddr,
+    pub bdaddr_type: u8,
 }
 
 // ---------------------------------------------------------------------------
@@ -180,11 +179,11 @@ struct DeviceInfo {
 // ---------------------------------------------------------------------------
 
 /// Encapsulates notification/indication parameters for dispatch.
-struct Notify {
-    handle: u16,
-    ccc_handle: u16,
-    value: Vec<u8>,
-    is_service_changed: bool,
+pub struct Notify {
+    pub handle: u16,
+    pub ccc_handle: u16,
+    pub value: Vec<u8>,
+    pub is_service_changed: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -202,77 +201,77 @@ struct GattRecord {
 // ---------------------------------------------------------------------------
 
 /// A registered external GATT application (from RegisterApplication).
-struct GattApp {
+pub struct GattApp {
     /// Back-reference to the owning database.
-    database: Weak<Mutex<BtdGattDatabaseInner>>,
+    pub database: Weak<Mutex<BtdGattDatabaseInner>>,
     /// D-Bus unique name of the owner.
-    owner: String,
+    pub owner: String,
     /// D-Bus object path of the ObjectManager root.
-    path: String,
+    pub path: String,
     /// Whether application registration failed during proxy enumeration.
-    failed: bool,
+    pub failed: bool,
     /// External services parsed from the application.
-    services: Vec<ExternalService>,
+    pub services: Vec<ExternalService>,
 }
 
 /// An externally-registered GATT service.
-struct ExternalService {
+pub struct ExternalService {
     /// D-Bus object path of the service.
-    path: String,
+    pub path: String,
     /// Service UUID.
-    uuid: BtUuid,
+    pub uuid: BtUuid,
     /// Whether this is a primary service.
-    is_primary: bool,
+    pub is_primary: bool,
     /// Included service object paths.
-    includes: Vec<String>,
+    pub includes: Vec<String>,
     /// Number of attributes this service contributes.
-    attr_cnt: u16,
+    pub attr_cnt: u16,
     /// Characteristics belonging to this service.
-    chrcs: Vec<ExternalChrc>,
+    pub chrcs: Vec<ExternalChrc>,
     /// Descriptors belonging to this service.
-    descs: Vec<ExternalDesc>,
+    pub descs: Vec<ExternalDesc>,
     /// GattDb attribute handle once registered.
-    attrib_handle: Option<u16>,
+    pub attrib_handle: Option<u16>,
 }
 
 /// An externally-registered GATT characteristic.
-struct ExternalChrc {
+pub struct ExternalChrc {
     /// D-Bus object path.
-    path: String,
+    pub path: String,
     /// D-Bus object path of the owning service.
-    service_path: String,
+    pub service_path: String,
     /// GATT characteristic properties.
-    props: u8,
+    pub props: u8,
     /// Extended properties.
-    ext_props: u8,
+    pub ext_props: u8,
     /// Attribute permissions.
-    perm: u32,
+    pub perm: u32,
     /// CCC permissions (for notification/indication).
-    ccc_perm: u32,
+    pub ccc_perm: u32,
     /// Whether prepare-authorization is required.
-    req_prep_authorization: bool,
+    pub req_prep_authorization: bool,
     /// UUID of this characteristic.
-    uuid: BtUuid,
+    pub uuid: BtUuid,
     /// Optional fixed handle hint.
-    handle: u16,
+    pub handle: u16,
     /// GattDb attribute handle once registered.
-    attrib_handle: Option<u16>,
+    pub attrib_handle: Option<u16>,
 }
 
 /// An externally-registered GATT descriptor.
-struct ExternalDesc {
+pub struct ExternalDesc {
     /// D-Bus object path of the owning characteristic.
-    chrc_path: String,
+    pub chrc_path: String,
     /// Attribute permissions.
-    perm: u32,
+    pub perm: u32,
     /// Whether prepare-authorization is required.
-    req_prep_authorization: bool,
+    pub req_prep_authorization: bool,
     /// UUID of this descriptor.
-    uuid: BtUuid,
+    pub uuid: BtUuid,
     /// Optional fixed handle hint.
-    handle: u16,
+    pub handle: u16,
     /// GattDb attribute handle once registered.
-    attrib_handle: Option<u16>,
+    pub attrib_handle: Option<u16>,
 }
 
 // ---------------------------------------------------------------------------
@@ -288,7 +287,7 @@ pub struct BtdGattDatabaseInner {
     /// Adapter path on D-Bus (e.g. "/org/bluez/hci0").
     adapter_path: String,
     /// Adapter name for the GAP Device Name characteristic.
-    adapter_name: String,
+    pub adapter_name: String,
     /// Adapter class for the GAP Appearance characteristic.
     adapter_class: u32,
     /// Whether the adapter supports LL Privacy.
@@ -298,7 +297,7 @@ pub struct BtdGattDatabaseInner {
     /// Configuration options from main.conf.
     gatt_channels: u8,
     /// GATT MTU from configuration.
-    gatt_mtu: u16,
+    pub gatt_mtu: u16,
     /// DID source (0 = not set, non-zero = PnP ID present).
     did_source: u16,
     /// DID vendor ID.
@@ -679,7 +678,7 @@ impl Drop for BtdGattDatabase {
 // ---------------------------------------------------------------------------
 
 /// zbus interface implementation for `org.bluez.GattManager1`.
-struct GattManager {
+pub struct GattManager {
     inner: Arc<Mutex<BtdGattDatabaseInner>>,
 }
 
@@ -690,7 +689,7 @@ impl GattManager {
     /// The application must implement `org.freedesktop.DBus.ObjectManager` at
     /// `application` and expose `GattService1`, `GattCharacteristic1`, and
     /// `GattDescriptor1` interfaces.
-    async fn register_application(
+    pub async fn register_application(
         &self,
         #[zbus(header)] header: zbus::message::Header<'_>,
         application: ObjectPath<'_>,
@@ -998,7 +997,7 @@ fn get_or_create_device_state<'a>(
 
 /// Find the CCC state for a specific handle within a device state, creating
 /// it if it does not exist.
-fn get_ccc_state(device_state: &mut DeviceState, handle: u16) -> &mut CccState {
+pub fn get_ccc_state(device_state: &mut DeviceState, handle: u16) -> &mut CccState {
     let exists = device_state.ccc_states.iter().any(|c| c.handle == handle);
     if !exists {
         device_state.ccc_states.push(CccState { handle, value: 0 });
@@ -1298,7 +1297,7 @@ fn remove_sdp_records_for_handle(state: &mut BtdGattDatabaseInner, service_handl
 /// Parse characteristic flags from a list of D-Bus string flags.
 ///
 /// Returns `(props, ext_props, perm, ccc_perm, req_prep_authorization)`.
-fn parse_chrc_flags(flags: &[String]) -> Option<(u8, u8, u32, u32, bool)> {
+pub fn parse_chrc_flags(flags: &[String]) -> Option<(u8, u8, u32, u32, bool)> {
     let mut props: u8 = 0;
     let mut ext_props: u8 = 0;
     let mut perm: u32 = 0;
@@ -1410,7 +1409,7 @@ fn parse_chrc_flags(flags: &[String]) -> Option<(u8, u8, u32, u32, bool)> {
 /// Parse descriptor flags from a list of D-Bus string flags.
 ///
 /// Returns `(perm, req_prep_authorization)`.
-fn parse_desc_flags(flags: &[String]) -> Option<(u32, bool)> {
+pub fn parse_desc_flags(flags: &[String]) -> Option<(u32, bool)> {
     let mut perm: u32 = 0;
     let mut req_prep_authorization = false;
 
@@ -1451,7 +1450,7 @@ fn parse_desc_flags(flags: &[String]) -> Option<(u32, bool)> {
 
 /// Map a D-Bus error name to an ATT error code for external application
 /// read/write failures.
-fn dbus_error_to_att_ecode(error_name: &str, message: &str, perm_err: u8) -> u8 {
+pub fn dbus_error_to_att_ecode(error_name: &str, message: &str, perm_err: u8) -> u8 {
     const ERROR_INTERFACE: &str = "org.bluez.Error";
 
     if error_name == format!("{}.Failed", ERROR_INTERFACE) {
@@ -1499,7 +1498,7 @@ fn dbus_error_to_att_ecode(error_name: &str, message: &str, perm_err: u8) -> u8 
 // ---------------------------------------------------------------------------
 
 /// Read callback for GAP Device Name (0x2A00).
-fn gap_device_name_read(state: &BtdGattDatabaseInner, offset: u16) -> Result<Vec<u8>, u8> {
+pub fn gap_device_name_read(state: &BtdGattDatabaseInner, offset: u16) -> Result<Vec<u8>, u8> {
     debug!("GAP Device Name read request");
     let name = state.adapter_name.as_bytes();
     let off = offset as usize;
@@ -1510,7 +1509,7 @@ fn gap_device_name_read(state: &BtdGattDatabaseInner, offset: u16) -> Result<Vec
 }
 
 /// Read callback for GAP Appearance (0x2A01).
-fn gap_appearance_read(state: &BtdGattDatabaseInner, offset: u16) -> Result<Vec<u8>, u8> {
+pub fn gap_appearance_read(state: &BtdGattDatabaseInner, offset: u16) -> Result<Vec<u8>, u8> {
     debug!("GAP Appearance read request");
     let dev_class = state.adapter_class;
     let appearance = [(dev_class & 0xFF) as u8, ((dev_class >> 8) & 0x1F) as u8];
@@ -1522,7 +1521,7 @@ fn gap_appearance_read(state: &BtdGattDatabaseInner, offset: u16) -> Result<Vec<
 }
 
 /// Read callback for GAP Central Address Resolution (0x2AA6).
-fn gap_car_read(_state: &BtdGattDatabaseInner, _offset: u16) -> Result<Vec<u8>, u8> {
+pub fn gap_car_read(_state: &BtdGattDatabaseInner, _offset: u16) -> Result<Vec<u8>, u8> {
     debug!("GAP Central Address Resolution read request");
     // Returns 0x01 if address resolution is supported, 0x00 otherwise.
     // This is simplified — the full implementation checks per-device flags.
@@ -1530,7 +1529,7 @@ fn gap_car_read(_state: &BtdGattDatabaseInner, _offset: u16) -> Result<Vec<u8>, 
 }
 
 /// Read callback for GATT Service Changed CCC.
-fn svc_chngd_ccc_read(
+pub fn svc_chngd_ccc_read(
     state: &BtdGattDatabaseInner,
     bdaddr: &BdAddr,
     bdaddr_type: u8,
@@ -1544,7 +1543,7 @@ fn svc_chngd_ccc_read(
 }
 
 /// Read callback for Client Supported Features (0x2B29).
-fn cli_feat_read(
+pub fn cli_feat_read(
     state: &BtdGattDatabaseInner,
     bdaddr: &BdAddr,
     bdaddr_type: u8,
@@ -1561,7 +1560,7 @@ fn cli_feat_read(
 }
 
 /// Write callback for Client Supported Features (0x2B29).
-fn cli_feat_write(
+pub fn cli_feat_write(
     state: &mut BtdGattDatabaseInner,
     bdaddr: &BdAddr,
     bdaddr_type: u8,
@@ -1607,7 +1606,7 @@ fn cli_feat_write(
 }
 
 /// Read callback for Database Hash (0x2B2A).
-fn db_hash_read(
+pub fn db_hash_read(
     state: &mut BtdGattDatabaseInner,
     bdaddr: &BdAddr,
     bdaddr_type: u8,
@@ -1622,7 +1621,7 @@ fn db_hash_read(
 }
 
 /// Read callback for Server Supported Features (0x2B3A).
-fn server_feat_read(state: &BtdGattDatabaseInner) -> Result<Vec<u8>, u8> {
+pub fn server_feat_read(state: &BtdGattDatabaseInner) -> Result<Vec<u8>, u8> {
     debug!("Server Supported Features read");
     let mut value: u8 = 0;
     if state.gatt_channels > 1 {
@@ -1632,7 +1631,7 @@ fn server_feat_read(state: &BtdGattDatabaseInner) -> Result<Vec<u8>, u8> {
 }
 
 /// Read callback for PnP ID (0x2A50) in the Device Information Service.
-fn pnp_id_read(state: &BtdGattDatabaseInner) -> Result<Vec<u8>, u8> {
+pub fn pnp_id_read(state: &BtdGattDatabaseInner) -> Result<Vec<u8>, u8> {
     let mut pdu = [0u8; 7];
     // DID source is stored as u16 but the PnP ID uses only the low byte.
     pdu[0] = state.did_source as u8;
@@ -1650,7 +1649,7 @@ fn pnp_id_read(state: &BtdGattDatabaseInner) -> Result<Vec<u8>, u8> {
 // ---------------------------------------------------------------------------
 
 /// Generic CCC read callback — looks up the per-device CCC value.
-fn gatt_ccc_read(
+pub fn gatt_ccc_read(
     state: &BtdGattDatabaseInner,
     bdaddr: &BdAddr,
     bdaddr_type: u8,
@@ -1665,7 +1664,7 @@ fn gatt_ccc_read(
 
 /// Generic CCC write callback — validates and updates per-device CCC value,
 /// invokes registered callbacks.
-fn gatt_ccc_write(
+pub fn gatt_ccc_write(
     state: &mut BtdGattDatabaseInner,
     bdaddr: &BdAddr,
     bdaddr_type: u8,

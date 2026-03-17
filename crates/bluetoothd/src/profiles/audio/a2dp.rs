@@ -15,7 +15,6 @@
 // A2DP lifecycle but not all code paths are exercised through static analysis.
 // The runtime callback dispatch (AVDTP ind/cfm, plugin init/exit, adapter
 // driver) invokes these at runtime.
-#![allow(dead_code)]
 
 use std::io;
 use std::path::PathBuf;
@@ -126,7 +125,7 @@ static CONFIG_ERRORS: &[(&str, u8)] = &[
 ];
 
 /// Callback ID counter for setup callbacks.
-static CB_ID: AtomicU64 = AtomicU64::new(1);
+pub static CB_ID: AtomicU64 = AtomicU64::new(1);
 
 // ===========================================================================
 // Global State
@@ -222,7 +221,7 @@ pub struct A2dpServer {
 
 impl A2dpServer {
     /// Create a new A2DP server for the given adapter.
-    fn new(adapter: Arc<Mutex<BtdAdapter>>) -> Self {
+    pub fn new(adapter: Arc<Mutex<BtdAdapter>>) -> Self {
         Self {
             adapter,
             seps: Vec::new(),
@@ -346,7 +345,7 @@ pub struct A2dpChannel {
     device: Arc<BtdDevice>,
     session: Option<Arc<Mutex<AvdtpSession>>>,
     remote_seps: Vec<A2dpRemoteSep>,
-    auth_pending: bool,
+    pub auth_pending: bool,
     state_cb_id: Option<u64>,
     last_used: Option<A2dpLastUsed>,
 }
@@ -411,22 +410,22 @@ impl A2dpRemoteSep {
 }
 
 /// Tracks the last-used local/remote SEP pair for a channel.
-struct A2dpLastUsed {
-    lsep_seid: u8,
-    rsep_seid: u8,
+pub struct A2dpLastUsed {
+    pub lsep_seid: u8,
+    pub rsep_seid: u8,
 }
 
 /// Type alias for A2DP setup callback functions.
 type SetupCallbackFn = Box<dyn FnOnce(Option<&A2dpSetup>, Option<&A2dpError>) + Send>;
 
 /// Setup callback entry.
-struct A2dpSetupCb {
-    id: u64,
-    config_cb: Option<SetupCallbackFn>,
-    resume_cb: Option<SetupCallbackFn>,
-    suspend_cb: Option<SetupCallbackFn>,
-    select_cb: Option<SetupCallbackFn>,
-    discover_cb: Option<SetupCallbackFn>,
+pub struct A2dpSetupCb {
+    pub id: u64,
+    pub config_cb: Option<SetupCallbackFn>,
+    pub resume_cb: Option<SetupCallbackFn>,
+    pub suspend_cb: Option<SetupCallbackFn>,
+    pub select_cb: Option<SetupCallbackFn>,
+    pub discover_cb: Option<SetupCallbackFn>,
 }
 
 /// Per-operation state for A2DP stream setup procedures.
@@ -437,12 +436,12 @@ pub struct A2dpSetup {
     device_ref: Arc<BtdDevice>,
     stream_idx: Option<usize>,
     sep: Option<Arc<Mutex<A2dpSep>>>,
-    rsep_seid: Option<u8>,
-    callbacks: Vec<A2dpSetupCb>,
-    caps: Vec<u8>,
-    err: Option<A2dpError>,
-    start: bool,
-    reconfigure: bool,
+    pub rsep_seid: Option<u8>,
+    pub callbacks: Vec<A2dpSetupCb>,
+    pub caps: Vec<u8>,
+    pub err: Option<A2dpError>,
+    pub start: bool,
+    pub reconfigure: bool,
 }
 
 impl A2dpSetup {
@@ -487,7 +486,7 @@ pub fn a2dp_setup_get_device(setup: &A2dpSetup) -> &Arc<BtdDevice> {
 }
 
 /// Convert an AVDTP error to an errno-compatible I/O error kind.
-fn error_to_errno(err: &AvdtpError) -> io::ErrorKind {
+pub fn error_to_errno(err: &AvdtpError) -> io::ErrorKind {
     match err {
         AvdtpError::Timeout => io::ErrorKind::TimedOut,
         AvdtpError::InvalidState(_) => io::ErrorKind::InvalidInput,
@@ -530,7 +529,7 @@ async fn find_channel(
 }
 
 /// Find or create a setup operation for the given channel.
-async fn find_or_create_setup(channel: &Arc<Mutex<A2dpChannel>>) -> Arc<Mutex<A2dpSetup>> {
+pub async fn find_or_create_setup(channel: &Arc<Mutex<A2dpChannel>>) -> Arc<Mutex<A2dpSetup>> {
     {
         let setups = SETUPS.lock().await;
         for setup_arc in setups.iter() {
@@ -564,13 +563,13 @@ async fn find_or_create_setup(channel: &Arc<Mutex<A2dpChannel>>) -> Arc<Mutex<A2
 }
 
 /// Remove a setup from the global list.
-async fn remove_setup(setup: &Arc<Mutex<A2dpSetup>>) {
+pub async fn remove_setup(setup: &Arc<Mutex<A2dpSetup>>) {
     let mut setups = SETUPS.lock().await;
     setups.retain(|s| !Arc::ptr_eq(s, setup));
 }
 
 /// Simple hex decode helper.
-fn hex_decode(s: &str) -> Option<Vec<u8>> {
+pub fn hex_decode(s: &str) -> Option<Vec<u8>> {
     let s = s.trim();
     if s.len() % 2 != 0 {
         return None;
@@ -584,7 +583,7 @@ fn hex_decode(s: &str) -> Option<Vec<u8>> {
 }
 
 /// Simple hex encode helper.
-fn hex_encode(data: &[u8]) -> String {
+pub fn hex_encode(data: &[u8]) -> String {
     data.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
@@ -927,7 +926,7 @@ async fn channel_remove(channel: &Arc<Mutex<A2dpChannel>>) {
 // ===========================================================================
 
 /// Store discovered remote SEPs to the cache file.
-async fn store_remote_seps(channel: &Arc<Mutex<A2dpChannel>>) {
+pub async fn store_remote_seps(channel: &Arc<Mutex<A2dpChannel>>) {
     let ch = channel.lock().await;
     let addr_str = addr_to_str(ch.device.get_address());
     let storage_dir = {
@@ -957,7 +956,7 @@ async fn store_remote_seps(channel: &Arc<Mutex<A2dpChannel>>) {
 }
 
 /// Load cached remote SEPs from disk.
-async fn load_cached_seps(channel: &Arc<Mutex<A2dpChannel>>) {
+pub async fn load_cached_seps(channel: &Arc<Mutex<A2dpChannel>>) {
     let (addr_str, storage_dir) = {
         let ch = channel.lock().await;
         let addr = addr_to_str(ch.device.get_address());
@@ -989,7 +988,7 @@ async fn load_cached_seps(channel: &Arc<Mutex<A2dpChannel>>) {
 }
 
 /// Parse a cached remote SEP entry from its string representation.
-fn parse_cached_sep(seid: u8, value: &str) -> Option<A2dpRemoteSep> {
+pub fn parse_cached_sep(seid: u8, value: &str) -> Option<A2dpRemoteSep> {
     let parts: Vec<&str> = value.splitn(4, ':').collect();
     if parts.len() < 4 {
         return None;
@@ -1013,7 +1012,7 @@ fn parse_cached_sep(seid: u8, value: &str) -> Option<A2dpRemoteSep> {
 }
 
 /// Invalidate the remote SEP cache for a channel.
-async fn invalidate_remote_cache(channel: &Arc<Mutex<A2dpChannel>>) {
+pub async fn invalidate_remote_cache(channel: &Arc<Mutex<A2dpChannel>>) {
     let mut ch = channel.lock().await;
     ch.remote_seps.clear();
     ch.last_used = None;
@@ -1025,7 +1024,7 @@ async fn invalidate_remote_cache(channel: &Arc<Mutex<A2dpChannel>>) {
 // ===========================================================================
 
 /// Finalize discover callbacks on a setup.
-async fn finalize_discover(setup: &Arc<Mutex<A2dpSetup>>) {
+pub async fn finalize_discover(setup: &Arc<Mutex<A2dpSetup>>) {
     let mut s = setup.lock().await;
     let err = s.err.take();
     let callbacks: Vec<A2dpSetupCb> = std::mem::take(&mut s.callbacks);
@@ -1040,7 +1039,7 @@ async fn finalize_discover(setup: &Arc<Mutex<A2dpSetup>>) {
 }
 
 /// Finalize select capabilities callbacks on a setup.
-async fn finalize_select(setup: &Arc<Mutex<A2dpSetup>>) {
+pub async fn finalize_select(setup: &Arc<Mutex<A2dpSetup>>) {
     let mut s = setup.lock().await;
     let err = s.err.take();
     let callbacks: Vec<A2dpSetupCb> = std::mem::take(&mut s.callbacks);
@@ -1055,7 +1054,7 @@ async fn finalize_select(setup: &Arc<Mutex<A2dpSetup>>) {
 }
 
 /// Finalize configuration callbacks on a setup.
-async fn finalize_config(setup: &Arc<Mutex<A2dpSetup>>) {
+pub async fn finalize_config(setup: &Arc<Mutex<A2dpSetup>>) {
     let mut s = setup.lock().await;
     let err = s.err.take();
     let callbacks: Vec<A2dpSetupCb> = std::mem::take(&mut s.callbacks);
@@ -1070,7 +1069,7 @@ async fn finalize_config(setup: &Arc<Mutex<A2dpSetup>>) {
 }
 
 /// Finalize resume callbacks on a setup.
-async fn finalize_resume(setup: &Arc<Mutex<A2dpSetup>>) {
+pub async fn finalize_resume(setup: &Arc<Mutex<A2dpSetup>>) {
     let mut s = setup.lock().await;
     let err = s.err.take();
     let callbacks: Vec<A2dpSetupCb> = std::mem::take(&mut s.callbacks);
@@ -1085,7 +1084,7 @@ async fn finalize_resume(setup: &Arc<Mutex<A2dpSetup>>) {
 }
 
 /// Finalize suspend callbacks on a setup.
-async fn finalize_suspend(setup: &Arc<Mutex<A2dpSetup>>) {
+pub async fn finalize_suspend(setup: &Arc<Mutex<A2dpSetup>>) {
     let mut s = setup.lock().await;
     let err = s.err.take();
     let callbacks: Vec<A2dpSetupCb> = std::mem::take(&mut s.callbacks);
@@ -1405,9 +1404,9 @@ async fn start_suspend_timer(sep: &Arc<Mutex<A2dpSep>>) {
 // ===========================================================================
 
 /// Implementation of AVDTP SEP indication callbacks for A2DP.
-struct A2dpSepIndImpl {
-    server: Arc<Mutex<A2dpServer>>,
-    channel: Arc<Mutex<A2dpChannel>>,
+pub struct A2dpSepIndImpl {
+    pub server: Arc<Mutex<A2dpServer>>,
+    pub channel: Arc<Mutex<A2dpChannel>>,
 }
 
 impl AvdtpSepInd for A2dpSepIndImpl {
@@ -1500,9 +1499,9 @@ impl AvdtpSepInd for A2dpSepIndImpl {
 // ===========================================================================
 
 /// Implementation of AVDTP SEP confirmation callbacks for A2DP.
-struct A2dpSepCfmImpl {
-    server: Arc<Mutex<A2dpServer>>,
-    channel: Arc<Mutex<A2dpChannel>>,
+pub struct A2dpSepCfmImpl {
+    pub server: Arc<Mutex<A2dpServer>>,
+    pub channel: Arc<Mutex<A2dpChannel>>,
 }
 
 impl AvdtpSepCfm for A2dpSepCfmImpl {
@@ -1633,7 +1632,7 @@ impl BtdAdapterDriver for A2dpAdapterDriver {
 }
 
 /// Probe callback for a2dp adapter — creates the A2dpServer.
-async fn a2dp_server_probe(adapter: &Arc<Mutex<BtdAdapter>>) -> Result<(), BtdError> {
+pub async fn a2dp_server_probe(adapter: &Arc<Mutex<BtdAdapter>>) -> Result<(), BtdError> {
     if find_server(adapter).await.is_some() {
         return Ok(());
     }
@@ -1649,7 +1648,7 @@ async fn a2dp_server_probe(adapter: &Arc<Mutex<BtdAdapter>>) -> Result<(), BtdEr
 }
 
 /// Remove callback for a2dp adapter — destroys the A2dpServer.
-async fn a2dp_server_remove(adapter: &Arc<Mutex<BtdAdapter>>) {
+pub async fn a2dp_server_remove(adapter: &Arc<Mutex<BtdAdapter>>) {
     let mut servers = SERVERS.lock().await;
 
     let idx = {

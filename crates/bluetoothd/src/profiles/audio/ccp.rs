@@ -22,7 +22,6 @@
 //   - `BtCcp::set_user_data()` / `get_user_data()` is used to associate the
 //     device reference with the CCP protocol engine instance.
 
-#![allow(dead_code)]
 #![allow(unused_imports)]
 
 use std::any::Any;
@@ -67,7 +66,7 @@ const GTBS_UUID_STR: &str = "0000184c-0000-1000-8000-00805f9b34fb";
 /// handle, and state_id. The Rust version stores the device and CCP engine
 /// references; service state transitions are handled by the profile framework
 /// automatically.
-struct CcpData {
+pub struct CcpData {
     /// Reference to the remote Bluetooth device.
     device: Arc<tokio::sync::Mutex<BtdDevice>>,
     /// The CCP protocol engine instance.
@@ -160,7 +159,7 @@ fn ccp_data_remove(device: &Arc<tokio::sync::Mutex<BtdDevice>>) {
 }
 
 /// Find a CCP session index by device pointer.
-fn find_session_by_device(
+pub fn find_session_by_device(
     sessions: &[CcpData],
     device: &Arc<tokio::sync::Mutex<BtdDevice>>,
 ) -> Option<usize> {

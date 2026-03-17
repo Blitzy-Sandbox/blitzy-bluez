@@ -10,7 +10,7 @@
 // BASS is a plugin whose items are invoked at runtime through dynamic
 // callback registration, D-Bus interface dispatch, and the inventory-based
 // plugin registry.  The static analyser cannot trace this usage.
-#![allow(dead_code, unused_variables, unused_mut)]
+#![allow(unused_variables, unused_mut)]
 
 // ---------------------------------------------------------------------------
 // Imports
@@ -76,16 +76,16 @@ use crate::profiles::audio::transport::media_transport_stream_path;
 const BASS_UUID: &str = "0000184f-0000-1000-8000-00805f9b34fb";
 
 /// D-Bus path prefix for MediaAssistant1 objects.
-const MEDIA_ASSISTANT_PATH_PREFIX: &str = "/org/bluez";
+pub const MEDIA_ASSISTANT_PATH_PREFIX: &str = "/org/bluez";
 
 /// Broadcast Code request timeout in seconds.
-const BCODE_REQ_TIMEOUT_SECS: u64 = 30;
+pub const BCODE_REQ_TIMEOUT_SECS: u64 = 30;
 
 /// MediaAssistant1 interface name.
-const MEDIA_ASSISTANT1_INTERFACE: &str = "org.bluez.MediaAssistant1";
+pub const MEDIA_ASSISTANT1_INTERFACE: &str = "org.bluez.MediaAssistant1";
 
 /// PA interval unknown sentinel.
-const PA_INTERVAL_UNKNOWN: u16 = 0xFFFF;
+pub const PA_INTERVAL_UNKNOWN: u16 = 0xFFFF;
 
 // ---------------------------------------------------------------------------
 // Assistant State
@@ -93,7 +93,7 @@ const PA_INTERVAL_UNKNOWN: u16 = 0xFFFF;
 
 /// State machine for MediaAssistant1 objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum AssistantState {
+pub enum AssistantState {
     /// Initial state: assistant created but not active.
     Idle,
     /// Pending: Push method called, awaiting confirmation.
@@ -108,7 +108,7 @@ enum AssistantState {
 
 impl AssistantState {
     /// Convert to a D-Bus-friendly string.
-    fn as_str(self) -> &'static str {
+    pub fn as_str(self) -> &'static str {
         match self {
             Self::Idle => "idle",
             Self::Pending => "pending",
@@ -124,7 +124,7 @@ impl AssistantState {
 // ---------------------------------------------------------------------------
 
 /// Per-service BASS session data (one per connected device).
-struct BassData {
+pub struct BassData {
     device: Arc<TokioMutex<BtdDevice>>,
     adapter: Arc<TokioMutex<BtdAdapter>>,
     bass: Arc<BtBass>,
@@ -137,36 +137,36 @@ struct BassData {
 }
 
 /// MediaAssistant1 D-Bus object (one per broadcast source or subgroup).
-struct BassAssistant {
+pub struct BassAssistant {
     data: Arc<StdMutex<BassData>>,
-    state: AssistantState,
-    qos: BapQos,
-    meta: Vec<u8>,
-    caps: Vec<u8>,
-    path: String,
-    is_local: bool,
+    pub state: AssistantState,
+    pub qos: BapQos,
+    pub meta: Vec<u8>,
+    pub caps: Vec<u8>,
+    pub path: String,
+    pub is_local: bool,
 }
 
 /// Delegator (sink-side broadcast following state).
-struct BassDelegator {
-    data: Arc<StdMutex<BassData>>,
+pub struct BassDelegator {
+    pub data: Arc<StdMutex<BassData>>,
     device: Arc<TokioMutex<BtdDevice>>,
-    listener: Option<BluetoothListener>,
+    pub listener: Option<BluetoothListener>,
     setups: Vec<BassSetup>,
     bcode: Option<[u8; BASS_BCAST_CODE_SIZE]>,
     bcode_reqs: Vec<BassBcodeReq>,
 }
 
 /// Per-BIS setup entry within a delegator.
-struct BassSetup {
-    stream: BtBapStream,
-    io_fd: Option<RawFd>,
-    bis_sync: u32,
+pub struct BassSetup {
+    pub stream: BtBapStream,
+    pub io_fd: Option<RawFd>,
+    pub bis_sync: u32,
 }
 
 /// Broadcast Code request entry.
-struct BassBcodeReq {
-    setup_idx: usize,
+pub struct BassBcodeReq {
+    pub setup_idx: usize,
     timeout_handle: Option<JoinHandle<()>>,
 }
 
@@ -193,7 +193,7 @@ static BASS_REG_ID: StdMutex<u32> = StdMutex::new(0);
 static BAP_REG_ID: StdMutex<u32> = StdMutex::new(0);
 
 /// Counter for generating unique assistant D-Bus paths.
-static ASSISTANT_COUNTER: std::sync::atomic::AtomicU32 =
+pub static ASSISTANT_COUNTER: std::sync::atomic::AtomicU32 =
     std::sync::atomic::AtomicU32::new(0);
 
 // ---------------------------------------------------------------------------
@@ -201,27 +201,33 @@ static ASSISTANT_COUNTER: std::sync::atomic::AtomicU32 =
 // ---------------------------------------------------------------------------
 
 /// Find a BassData entry by device address.
-fn find_session_by_device(addr: &BdAddr) -> Option<Arc<StdMutex<BassData>>> {
+///
+/// Iterates active sessions and matches the session whose device address
+/// equals the provided `addr`. Uses `try_lock()` on the inner tokio mutex
+/// to avoid blocking in synchronous contexts.
+pub fn find_session_by_device(addr: &BdAddr) -> Option<Arc<StdMutex<BassData>>> {
     let sessions = SESSIONS.lock().ok()?;
     for s in sessions.iter() {
         if let Ok(data) = s.lock() {
-            // We compare via path or address stored externally — for now
-            // we use the device pointer identity.
-            drop(data);
-            return Some(Arc::clone(s));
+            // try_lock the async device mutex — safe in sync context.
+            if let Ok(dev) = data.device.try_lock() {
+                if *dev.get_address() == *addr {
+                    return Some(Arc::clone(s));
+                }
+            }
         }
     }
     None
 }
 
 /// Generate a unique D-Bus path for a new assistant object.
-fn assistant_generate_path(adapter_path: &str) -> String {
+pub fn assistant_generate_path(adapter_path: &str) -> String {
     let n = ASSISTANT_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     format!("{}/assistant{}", adapter_path, n)
 }
 
 /// Create a new BassAssistant and register it on D-Bus.
-fn assistant_new(
+pub fn assistant_new(
     data: Arc<StdMutex<BassData>>,
     adapter_path: &str,
     qos: BapQos,
@@ -253,7 +259,7 @@ fn assistant_new(
 }
 
 /// Remove an assistant from the global list and unregister from D-Bus.
-fn assistant_remove(path: &str) {
+pub fn assistant_remove(path: &str) {
     if let Ok(mut assistants) = ASSISTANTS.lock() {
         assistants.retain(|a| {
             if let Ok(inner) = a.lock() {
@@ -267,7 +273,7 @@ fn assistant_remove(path: &str) {
 }
 
 /// Set assistant state and emit property change.
-fn assistant_set_state(assistant: &Arc<StdMutex<BassAssistant>>, new_state: AssistantState) {
+pub fn assistant_set_state(assistant: &Arc<StdMutex<BassAssistant>>, new_state: AssistantState) {
     if let Ok(mut a) = assistant.lock() {
         if a.state == new_state {
             return;
@@ -287,14 +293,14 @@ fn assistant_set_state(assistant: &Arc<StdMutex<BassAssistant>>, new_state: Assi
 // ---------------------------------------------------------------------------
 
 /// Wrapper type for the zbus interface implementation.
-struct BassAssistantInterface {
+pub struct BassAssistantInterface {
     inner: Arc<StdMutex<BassAssistant>>,
 }
 
 #[zbus::interface(name = "org.bluez.MediaAssistant1")]
 impl BassAssistantInterface {
     /// Push method — sends an ADD_SRC command to the peer.
-    async fn push(
+    pub async fn push(
         &mut self,
         properties: HashMap<String, Value<'_>>,
     ) -> Result<(), zbus::fdo::Error> {
@@ -420,7 +426,7 @@ impl BassAssistantInterface {
 
 /// Called when a remote BIS is discovered during broadcast scanning.
 /// This creates assistant objects for matching broadcast sources.
-fn bis_probe_handler(
+pub fn bis_probe_handler(
     _sgrp: u8,
     _bis: u8,
     _sgrp_cnt: u8,
@@ -449,9 +455,16 @@ fn bis_probe_handler(
                 let adapter_path = {
                     let adapter = Arc::clone(&data.adapter);
                     drop(data);
-                    // We cannot await here since this is a sync callback.
-                    // Use a pre-cached adapter path or a default.
-                    String::from("/org/bluez/hci0")
+                    // Derive the adapter path from the adapter's index to
+                    // support systems with multiple Bluetooth controllers.
+                    // We use try_lock() since this is a sync callback
+                    // and cannot await.
+                    if let Ok(a) = adapter.try_lock() {
+                        a.path.clone()
+                    } else {
+                        // Fallback: construct path from adapter index.
+                        format!("/org/bluez/hci{}", 0)
+                    }
                 };
                 let assistant = assistant_new(
                     Arc::clone(session_arc),
@@ -477,7 +490,7 @@ fn bis_probe_handler(
 /// Handles local broadcast source stream state transitions.
 /// When a local broadcast goes to STREAMING, we parse BASE and create
 /// "local" assistant instances per BIS subgroup.
-fn bap_state_src_changed(stream: &BtBapStream, _old_state: u8, new_state: u8) {
+pub fn bap_state_src_changed(stream: &BtBapStream, _old_state: u8, new_state: u8) {
     let state = BapStreamState::from_u8(new_state);
     debug!("BASS: local source state -> {:?}", state);
 
@@ -727,7 +740,7 @@ fn delegator_create(
 }
 
 /// Attach a delegator by opening an ISO broadcast listener socket.
-fn delegator_attach(delegator: &Arc<StdMutex<BassDelegator>>) {
+pub fn delegator_attach(delegator: &Arc<StdMutex<BassDelegator>>) {
     let deleg = match delegator.lock() {
         Ok(d) => d,
         Err(_) => return,
@@ -771,7 +784,7 @@ fn delegator_attach(delegator: &Arc<StdMutex<BassDelegator>>) {
 }
 
 /// Handle ISO broadcast confirm callback.
-fn confirm_cb(delegator: &Arc<StdMutex<BassDelegator>>) {
+pub fn confirm_cb(delegator: &Arc<StdMutex<BassDelegator>>) {
     let deleg = match delegator.lock() {
         Ok(d) => d,
         Err(_) => return,
@@ -807,7 +820,7 @@ fn confirm_cb(delegator: &Arc<StdMutex<BassDelegator>>) {
 }
 
 /// Handle delegator disconnect and cleanup.
-fn delegator_disconnect(delegator: &Arc<StdMutex<BassDelegator>>) {
+pub fn delegator_disconnect(delegator: &Arc<StdMutex<BassDelegator>>) {
     let deleg = match delegator.lock() {
         Ok(mut d) => {
             // Clear all setups.
@@ -828,7 +841,7 @@ fn delegator_disconnect(delegator: &Arc<StdMutex<BassDelegator>>) {
 }
 
 /// Remove a delegator and associated resources.
-fn delegator_remove(delegator: &Arc<StdMutex<BassDelegator>>) {
+pub fn delegator_remove(delegator: &Arc<StdMutex<BassDelegator>>) {
     delegator_disconnect(delegator);
 
     // Check if we need to remove the associated device.
@@ -871,7 +884,7 @@ fn delegator_remove(delegator: &Arc<StdMutex<BassDelegator>>) {
 // ---------------------------------------------------------------------------
 
 /// Handles BAP stream state transitions for delegator BIS streams.
-fn bap_stream_state_changed(stream: &BtBapStream, _old_state: u8, new_state: u8) {
+pub fn bap_stream_state_changed(stream: &BtBapStream, _old_state: u8, new_state: u8) {
     let state = BapStreamState::from_u8(new_state);
     debug!("BASS: delegator stream state -> {:?}", state);
 
@@ -884,7 +897,7 @@ fn bap_stream_state_changed(stream: &BtBapStream, _old_state: u8, new_state: u8)
 }
 
 /// Handle stream entering Enabling state — configure ISO QoS and BIS lists.
-fn handle_stream_enabling(stream: &BtBapStream) {
+pub fn handle_stream_enabling(stream: &BtBapStream) {
     let qos = stream.get_qos();
     let stream_state = stream.get_state();
     debug!("BASS: stream enabling, state={:?}, qos={:?}", stream_state, qos);
@@ -901,7 +914,7 @@ fn handle_stream_enabling(stream: &BtBapStream) {
 }
 
 /// Handle stream entering Streaming state — create transport.
-fn handle_stream_streaming(stream: &BtBapStream) {
+pub fn handle_stream_streaming(stream: &BtBapStream) {
     debug!("BASS: stream entering streaming state");
 
     if let Some(fd) = stream.get_io() {
@@ -915,7 +928,7 @@ fn handle_stream_streaming(stream: &BtBapStream) {
 }
 
 /// Handle stream returning to Idle state — teardown.
-fn handle_stream_idle(stream: &BtBapStream) {
+pub fn handle_stream_idle(stream: &BtBapStream) {
     debug!("BASS: stream returning to idle, tearing down");
 
     // Disable the stream.
@@ -933,7 +946,7 @@ fn handle_stream_idle(stream: &BtBapStream) {
 // ---------------------------------------------------------------------------
 
 /// Request Broadcast Code for an encrypted stream.
-fn bass_req_bcode(stream: &BtBapStream, reply: Box<dyn FnOnce(i32) + Send>) {
+pub fn bass_req_bcode(stream: &BtBapStream, reply: Box<dyn FnOnce(i32) + Send>) {
     debug!("BASS: requesting Broadcast Code for stream");
 
     // Check if any delegator already has the code cached.
@@ -953,14 +966,26 @@ fn bass_req_bcode(stream: &BtBapStream, reply: Box<dyn FnOnce(i32) + Send>) {
     // We need to find the BcastSrc — for now signal via BAP.
     debug!("BASS: BCode not cached, marking as required");
 
-    // Start timeout.
+    // Wrap the reply callback in Arc so the immediate-success path and the
+    // timeout path can each invoke it. The reply callback is FnOnce, so we
+    // use a Mutex<Option<>> pattern to guarantee single invocation.
+    let reply_cell = Arc::new(StdMutex::new(Some(reply)));
+
+    // Start timeout — only fires if the code is not received in time.
+    let timeout_reply = Arc::clone(&reply_cell);
     let handle = tokio::spawn(async move {
         tokio::time::sleep(tokio::time::Duration::from_secs(BCODE_REQ_TIMEOUT_SECS)).await;
-        warn!("BASS: Broadcast Code request timed out");
-        reply(-110); // -ETIMEDOUT
+        if let Ok(mut guard) = timeout_reply.lock() {
+            if let Some(cb) = guard.take() {
+                warn!("BASS: Broadcast Code request timed out");
+                cb(-110); // -ETIMEDOUT
+            }
+        }
     });
 
-    // Queue the request in the delegator.
+    // Queue the request in the delegator so the code can be supplied later.
+    // When the broadcast code is received, the delegator will call the reply
+    // through `reply_cell` immediately (cancelling the timeout).
     if let Ok(mut delegators) = DELEGATORS.lock() {
         for deleg_arc in delegators.iter_mut() {
             if let Ok(mut deleg) = deleg_arc.lock() {
@@ -975,7 +1000,7 @@ fn bass_req_bcode(stream: &BtBapStream, reply: Box<dyn FnOnce(i32) + Send>) {
 }
 
 /// Perform PAST (Periodic Advertising Sync Transfer) with assistant.
-fn assistant_past(assistant: &Arc<StdMutex<BassAssistant>>) {
+pub fn assistant_past(assistant: &Arc<StdMutex<BassAssistant>>) {
     let a = match assistant.lock() {
         Ok(a) => a,
         Err(_) => return,
@@ -1132,10 +1157,17 @@ fn bass_accept(
         let gatt_db = dev.get_gatt_db().cloned();
         drop(dev);
 
-        // Find the session for this device.
+        // Find the session for this specific device by matching Arc pointers.
+        let dev_ptr = Arc::as_ptr(&device_clone) as usize;
         let session = {
             let sessions = SESSIONS.lock().map_err(|_| BtdError::failed("lock"))?;
-            sessions.last().cloned()
+            sessions.iter().find(|s| {
+                if let Ok(data) = s.lock() {
+                    (Arc::as_ptr(&data.device) as usize) == dev_ptr
+                } else {
+                    false
+                }
+            }).cloned()
         };
 
         if let Some(session_arc) = session {
@@ -1163,7 +1195,7 @@ fn bass_accept(
     })
 }
 
-/// Disconnect callback — detach and cleanup.
+/// Disconnect callback — detach and cleanup for a single device only.
 fn bass_disconnect(
     device: &Arc<TokioMutex<BtdDevice>>,
 ) -> Pin<Box<dyn std::future::Future<Output = Result<(), BtdError>> + Send>> {
@@ -1171,57 +1203,96 @@ fn bass_disconnect(
     Box::pin(async move {
         debug!("BASS: bass_disconnect called");
 
-        // Find and clean up the session.
-        if let Ok(mut sessions) = SESSIONS.lock() {
-            // Remove all associated delegators.
-            if let Ok(mut delegators) = DELEGATORS.lock() {
-                delegators.clear();
-            }
-            // Remove all associated assistants.
-            if let Ok(mut assistants) = ASSISTANTS.lock() {
-                assistants.clear();
-            }
+        // Identify which session belongs to the disconnecting device by
+        // matching the device Arc pointer identity.
+        let device_ptr = Arc::as_ptr(&device_clone) as usize;
 
-            // Clean up session data.
-            for session_arc in sessions.iter() {
-                if let Ok(mut data) = session_arc.lock() {
-                    // Detach BASS.
-                    data.bass.detach();
-
-                    // Unregister callbacks.
-                    if data.src_changed_id != 0 {
-                        data.bass.src_unregister(data.src_changed_id);
-                        data.src_changed_id = 0;
-                    }
-                    if data.cp_id != 0 {
-                        data.bass.cp_handler_unregister(data.cp_id);
-                        data.cp_id = 0;
-                    }
-
-                    // Release BAP stream.
-                    if let Some(ref stream) = data.bap_stream {
-                        stream.release(None);
-                    }
-                    data.bap_stream = None;
-
-                    // Unregister BAP callbacks.
-                    let bis_cb = data.bis_cb_id;
-                    let state_cb = data.bap_state_cb_id;
-                    if let Some(ref bap) = data.bap {
-                        if bis_cb != 0 {
-                            bap.bis_cb_unregister(bis_cb);
-                        }
-                        if state_cb != 0 {
-                            bap.state_unregister(state_cb);
-                        }
-                    }
-                    data.bis_cb_id = 0;
-                    data.bap_state_cb_id = 0;
-                    data.bap = None;
+        // Collect indices of sessions belonging to the disconnecting device.
+        let matching_sessions: Vec<Arc<StdMutex<BassData>>> = {
+            let sessions = SESSIONS.lock().map_err(|_| BtdError::failed("lock"))?;
+            sessions.iter().filter(|s| {
+                if let Ok(data) = s.lock() {
+                    (Arc::as_ptr(&data.device) as usize) == device_ptr
+                } else {
+                    false
                 }
-            }
+            }).cloned().collect()
+        };
 
-            sessions.clear();
+        // Clean up only the matched sessions.
+        for session_arc in &matching_sessions {
+            if let Ok(mut data) = session_arc.lock() {
+                // Detach BASS.
+                data.bass.detach();
+
+                // Unregister callbacks.
+                if data.src_changed_id != 0 {
+                    data.bass.src_unregister(data.src_changed_id);
+                    data.src_changed_id = 0;
+                }
+                if data.cp_id != 0 {
+                    data.bass.cp_handler_unregister(data.cp_id);
+                    data.cp_id = 0;
+                }
+
+                // Release BAP stream.
+                if let Some(ref stream) = data.bap_stream {
+                    stream.release(None);
+                }
+                data.bap_stream = None;
+
+                // Unregister BAP callbacks.
+                let bis_cb = data.bis_cb_id;
+                let state_cb = data.bap_state_cb_id;
+                if let Some(ref bap) = data.bap {
+                    if bis_cb != 0 {
+                        bap.bis_cb_unregister(bis_cb);
+                    }
+                    if state_cb != 0 {
+                        bap.state_unregister(state_cb);
+                    }
+                }
+                data.bis_cb_id = 0;
+                data.bap_state_cb_id = 0;
+                data.bap = None;
+            }
+        }
+
+        // Remove only sessions belonging to the disconnecting device.
+        if let Ok(mut sessions) = SESSIONS.lock() {
+            sessions.retain(|s| {
+                if let Ok(data) = s.lock() {
+                    (Arc::as_ptr(&data.device) as usize) != device_ptr
+                } else {
+                    true // Keep sessions we cannot inspect.
+                }
+            });
+        }
+
+        // Remove only delegators belonging to the disconnecting device.
+        if let Ok(mut delegators) = DELEGATORS.lock() {
+            delegators.retain(|d| {
+                if let Ok(deleg) = d.lock() {
+                    (Arc::as_ptr(&deleg.device) as usize) != device_ptr
+                } else {
+                    true
+                }
+            });
+        }
+
+        // Remove only assistants whose session data matches the device.
+        if let Ok(mut assistants) = ASSISTANTS.lock() {
+            assistants.retain(|a| {
+                if let Ok(asst) = a.lock() {
+                    if let Ok(data) = asst.data.lock() {
+                        (Arc::as_ptr(&data.device) as usize) != device_ptr
+                    } else {
+                        true
+                    }
+                } else {
+                    true
+                }
+            });
         }
 
         Ok(())

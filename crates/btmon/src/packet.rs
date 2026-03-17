@@ -4220,8 +4220,10 @@ pub fn packet_hci_acldata(
     );
     print_packet(tv, cred, ident, index, "", COLOR_HCI_ACLDATA, "ACL Data", &text, "");
 
-    if !has_filter(PacketFilter::SHOW_ACL_DATA) {
-        return;
+    // SHOW_ACL_DATA only controls raw hexdump output, matching the C original
+    // where l2cap_packet() is always called unconditionally.
+    if has_filter(PacketFilter::SHOW_ACL_DATA) {
+        print_hexdump(data);
     }
 
     if data.len() > 4 {
@@ -4230,7 +4232,7 @@ pub fn packet_hci_acldata(
         if !incoming {
             get_conn_data_for_index(index, handle);
         }
-        // Dispatch to L2CAP
+        // Dispatch to L2CAP — unconditional, matching C behavior
         l2cap::l2cap_packet(index, incoming, handle, flags as u8, payload, payload.len() as u16);
     }
 }

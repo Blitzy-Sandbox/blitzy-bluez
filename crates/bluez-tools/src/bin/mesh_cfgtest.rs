@@ -1232,15 +1232,16 @@ fn setup_test_dir() -> Result<(PathBuf, PathBuf, String), MeshTestError> {
         MeshTestError::Setup(format!("Failed to create {}: {e}", test_dir.display()))
     })?;
 
-    // Resolve the bluetooth-meshd executable path relative to our own binary
+    // Resolve the bluetooth-meshd executable path relative to our own binary.
+    // Cargo places all workspace binaries in the same output directory
+    // (e.g. target/debug/), so bluetooth-meshd lives next to mesh-cfgtest.
     let self_exe = std::fs::read_link("/proc/self/exe")
         .map_err(|e| MeshTestError::Setup(format!("readlink /proc/self/exe: {e}")))?;
-    let bluez_dir = self_exe
+    let bin_dir = self_exe
         .parent()
-        .and_then(|p| p.parent())
-        .ok_or_else(|| MeshTestError::Setup("Cannot determine bluez dir".to_string()))?;
+        .ok_or_else(|| MeshTestError::Setup("Cannot determine binary dir".to_string()))?;
 
-    let exe_path = bluez_dir.join("mesh").join("bluetooth-meshd");
+    let exe_path = bin_dir.join("bluetooth-meshd");
     let io_string = format!("unit:{}/test_sk", test_dir.display());
 
     info!("test_dir={} exe={} io={}", test_dir.display(), exe_path.display(), io_string);

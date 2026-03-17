@@ -68,6 +68,18 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+/// Serialisation lock for OBEX transfer tests.
+///
+/// Each test creates its own socket pair and session, so there is no
+/// shared protocol state.  However, when all 38 async tests execute in
+/// parallel the OS scheduler can preempt a test thread between a write
+/// and the corresponding read, causing the 2-second safety timeout in
+/// `drive_write`/`drive_read` to occasionally expire under load.  By
+/// holding this lock for the duration of each test we ensure only one
+/// OBEX transfer test drives I/O at a time, eliminating the contention
+/// that produces flaky timeout-based failures.
+static TEST_SERIALIZER: Mutex<()> = Mutex::new(());
+
 use nix::sys::socket::{AddressFamily, SockFlag, SockType, socketpair};
 use nix::unistd::{read, write};
 use obexd::obex::header::{
@@ -731,6 +743,7 @@ async fn do_connect_handshake(session: &mut ObexSession, test_fd: &OwnedFd, conn
 /// C: `test_conn_req`
 #[tokio::test]
 async fn test_conn_req() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let connected = Arc::new(AtomicBool::new(false));
@@ -767,6 +780,7 @@ async fn test_conn_req() {
 /// C: `test_conn_rsp`
 #[tokio::test]
 async fn test_conn_rsp() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let got_request = Arc::new(AtomicBool::new(false));
@@ -811,6 +825,7 @@ async fn test_conn_rsp() {
 /// C: `test_put_req`
 #[tokio::test]
 async fn test_put_req() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -845,6 +860,7 @@ async fn test_put_req() {
 /// C: `test_put_req_delay`
 #[tokio::test]
 async fn test_put_req_delay() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -896,6 +912,7 @@ async fn test_put_req_delay() {
 /// C: `test_put_req_eagain`
 #[tokio::test]
 async fn test_put_req_eagain() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -947,6 +964,7 @@ async fn test_put_req_eagain() {
 /// C: `test_put_rsp`
 #[tokio::test]
 async fn test_put_rsp() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -992,6 +1010,7 @@ async fn test_put_rsp() {
 /// C: `test_put_rsp_delay`
 #[tokio::test]
 async fn test_put_rsp_delay() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -1042,6 +1061,7 @@ async fn test_put_rsp_delay() {
 /// C: `test_get_req`
 #[tokio::test]
 async fn test_get_req() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -1080,6 +1100,7 @@ async fn test_get_req() {
 /// C: `test_get_req_app`
 #[tokio::test]
 async fn test_get_req_app() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -1123,6 +1144,7 @@ async fn test_get_req_app() {
 /// C: `test_get_req_delay`
 #[tokio::test]
 async fn test_get_req_delay() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -1174,6 +1196,7 @@ async fn test_get_req_delay() {
 /// C: `test_get_rsp`
 #[tokio::test]
 async fn test_get_rsp() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -1204,6 +1227,7 @@ async fn test_get_rsp() {
 /// C: `test_get_rsp_app`
 #[tokio::test]
 async fn test_get_rsp_app() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -1233,6 +1257,7 @@ async fn test_get_rsp_app() {
 /// C: `test_get_rsp_delay`
 #[tokio::test]
 async fn test_get_rsp_delay() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -1271,6 +1296,7 @@ async fn test_get_rsp_delay() {
 /// C: `test_get_rsp_eagain`
 #[tokio::test]
 async fn test_get_rsp_eagain() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -1304,6 +1330,7 @@ async fn test_get_rsp_eagain() {
 /// C: `test_stream_put_req`
 #[tokio::test]
 async fn test_stream_put_req() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -1352,6 +1379,7 @@ async fn test_stream_put_req() {
 /// C: `test_stream_put_rsp`
 #[tokio::test]
 async fn test_stream_put_rsp() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -1391,6 +1419,7 @@ async fn test_stream_put_rsp() {
 /// C: `test_stream_put_req_abort`
 #[tokio::test]
 async fn test_stream_put_req_abort() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -1432,6 +1461,7 @@ async fn test_stream_put_req_abort() {
 /// C: `test_stream_put_rsp_abort`
 #[tokio::test]
 async fn test_stream_put_rsp_abort() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -1473,6 +1503,7 @@ async fn test_stream_put_rsp_abort() {
 /// C: `test_stream_get_req`
 #[tokio::test]
 async fn test_stream_get_req() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -1513,6 +1544,7 @@ async fn test_stream_get_req() {
 /// C: `test_stream_get_rsp`
 #[tokio::test]
 async fn test_stream_get_rsp() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -1549,6 +1581,7 @@ async fn test_stream_get_rsp() {
 /// C: `test_conn_get_req`
 #[tokio::test]
 async fn test_conn_get_req() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     // Perform CONNECT handshake
@@ -1592,6 +1625,7 @@ async fn test_conn_get_req() {
 /// C: `test_conn_get_rsp`
 #[tokio::test]
 async fn test_conn_get_rsp() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     // Set up CONNECT handler
@@ -1637,6 +1671,7 @@ async fn test_conn_get_rsp() {
 /// C: `test_conn_put_req`
 #[tokio::test]
 async fn test_conn_put_req() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     // Perform CONNECT handshake
@@ -1678,6 +1713,7 @@ async fn test_conn_put_req() {
 /// C: `test_conn_put_rsp`
 #[tokio::test]
 async fn test_conn_put_rsp() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     // Set up CONNECT handler
@@ -1734,6 +1770,7 @@ async fn test_conn_put_rsp() {
 /// C: `test_conn_get_wrg_rsp`
 #[tokio::test]
 async fn test_conn_get_wrg_rsp() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     // Set up CONNECT handler
@@ -1793,6 +1830,7 @@ async fn test_conn_get_wrg_rsp() {
 /// C: `test_conn_put_req_seq`
 #[tokio::test]
 async fn test_conn_put_req_seq() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::Stream);
 
     // Perform CONNECT handshake
@@ -1848,6 +1886,7 @@ async fn test_conn_put_req_seq() {
 /// C: `test_packet_put_req`
 #[tokio::test]
 async fn test_packet_put_req() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::SeqPacket);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -1892,6 +1931,7 @@ async fn test_packet_put_req() {
 /// C: `test_packet_put_req_wait`
 #[tokio::test]
 async fn test_packet_put_req_wait() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::SeqPacket);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -1942,6 +1982,7 @@ async fn test_packet_put_req_wait() {
 /// C: `test_packet_put_req_suspend_resume`
 #[tokio::test]
 async fn test_packet_put_req_suspend_resume() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::SeqPacket);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -2000,6 +2041,7 @@ async fn test_packet_put_req_suspend_resume() {
 /// C: `test_packet_put_rsp`
 #[tokio::test]
 async fn test_packet_put_rsp() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::SeqPacket);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -2045,6 +2087,7 @@ async fn test_packet_put_rsp() {
 /// C: `test_packet_put_rsp_wait`
 #[tokio::test]
 async fn test_packet_put_rsp_wait() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::SeqPacket);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -2089,6 +2132,7 @@ async fn test_packet_put_rsp_wait() {
 /// C: `test_packet_get_rsp`
 #[tokio::test]
 async fn test_packet_get_rsp() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::SeqPacket);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -2121,6 +2165,7 @@ async fn test_packet_get_rsp() {
 /// C: `test_packet_get_rsp_wait`
 #[tokio::test]
 async fn test_packet_get_rsp_wait() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::SeqPacket);
 
     let done = Arc::new(AtomicBool::new(false));
@@ -2153,6 +2198,7 @@ async fn test_packet_get_rsp_wait() {
 /// C: `test_packet_get_req`
 #[tokio::test]
 async fn test_packet_get_req() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::SeqPacket);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -2198,6 +2244,7 @@ async fn test_packet_get_req() {
 /// C: `test_packet_get_req_wait`
 #[tokio::test]
 async fn test_packet_get_req_wait() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::SeqPacket);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -2246,6 +2293,7 @@ async fn test_packet_get_req_wait() {
 /// C: `test_packet_get_req_suspend_resume`
 #[tokio::test]
 async fn test_packet_get_req_suspend_resume() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::SeqPacket);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -2303,6 +2351,7 @@ async fn test_packet_get_req_suspend_resume() {
 /// C: `test_packet_get_req_wait_next`
 #[tokio::test]
 async fn test_packet_get_req_wait_next() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::SeqPacket);
 
     let received = Arc::new(Mutex::new(Vec::new()));
@@ -2347,6 +2396,7 @@ async fn test_packet_get_req_wait_next() {
 /// C: `test_conn_put_req_seq_srm`
 #[tokio::test]
 async fn test_conn_put_req_seq_srm() {
+    let _lock = TEST_SERIALIZER.lock().unwrap();
     let (mut session, test_fd) = create_endpoints(SockType::SeqPacket);
 
     // Perform CONNECT handshake with SRM

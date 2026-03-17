@@ -2924,8 +2924,7 @@ fn register_iso_test_rej(
 // Entry point
 // ---------------------------------------------------------------------------
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let args: Vec<String> = std::env::args().collect();
     tester_init(&args);
 

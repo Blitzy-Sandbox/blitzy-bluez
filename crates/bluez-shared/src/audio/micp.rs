@@ -1075,6 +1075,24 @@ fn micp_notify_ready(micp: &Arc<BtMicp>) {
 mod tests {
     use super::*;
 
+    /// Serialization mutex for tests that access module-level globals
+    /// (`MICP_DB`, `MICP_CBS`, `MICP_CB_NEXT_ID`, `SESSIONS`).
+    /// Acquiring this lock at the start of each such test prevents
+    /// global-state races when `cargo test` runs tests in parallel.
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Helper: acquires the test serialization lock and clears all
+    /// module-level global state, returning the lock guard to keep
+    /// the test isolated for its entire duration.
+    fn setup_isolated() -> std::sync::MutexGuard<'static, ()> {
+        let guard = TEST_LOCK.lock().unwrap();
+        MICP_DB.lock().unwrap().clear();
+        MICP_CBS.lock().unwrap().clear();
+        SESSIONS.lock().unwrap().clear();
+        *MICP_CB_NEXT_ID.lock().unwrap() = 0;
+        guard
+    }
+
     #[test]
     fn test_mics_constants() {
         assert_eq!(MICS_NOT_MUTED, 0x00);
@@ -1095,15 +1113,7 @@ mod tests {
 
     #[test]
     fn test_micp_register_unregister() {
-        // Clear global state for test isolation.
-        {
-            let mut cbs = MICP_CBS.lock().unwrap();
-            cbs.clear();
-        }
-        {
-            let mut next_id = MICP_CB_NEXT_ID.lock().unwrap();
-            *next_id = 0;
-        }
+        let _guard = setup_isolated();
 
         let id = bt_micp_register(Some(Box::new(|_| {})), Some(Box::new(|_| {})));
         assert!(id > 0);
@@ -1120,11 +1130,7 @@ mod tests {
 
     #[test]
     fn test_micp_db_add_and_lookup() {
-        // Clear global state.
-        {
-            let mut list = MICP_DB.lock().unwrap();
-            list.clear();
-        }
+        let _guard = setup_isolated();
 
         let db = GattDb::new();
         bt_micp_add_db(&db);
@@ -1146,10 +1152,7 @@ mod tests {
 
     #[test]
     fn test_micp_db_idempotent() {
-        {
-            let mut list = MICP_DB.lock().unwrap();
-            list.clear();
-        }
+        let _guard = setup_isolated();
 
         let db = GattDb::new();
         bt_micp_add_db(&db);
@@ -1161,10 +1164,7 @@ mod tests {
 
     #[test]
     fn test_bt_micp_new() {
-        {
-            let mut list = MICP_DB.lock().unwrap();
-            list.clear();
-        }
+        let _guard = setup_isolated();
 
         let db = GattDb::new();
         bt_micp_add_db(&db);
@@ -1175,10 +1175,7 @@ mod tests {
 
     #[test]
     fn test_bt_micp_new_no_db_registration() {
-        {
-            let mut list = MICP_DB.lock().unwrap();
-            list.clear();
-        }
+        let _guard = setup_isolated();
 
         let db = GattDb::new();
         // Don't call bt_micp_add_db — new should still succeed because
@@ -1189,10 +1186,7 @@ mod tests {
 
     #[test]
     fn test_bt_micp_set_debug() {
-        {
-            let mut list = MICP_DB.lock().unwrap();
-            list.clear();
-        }
+        let _guard = setup_isolated();
 
         let db = GattDb::new();
         bt_micp_add_db(&db);
@@ -1204,10 +1198,7 @@ mod tests {
 
     #[test]
     fn test_bt_micp_ready_register_unregister() {
-        {
-            let mut list = MICP_DB.lock().unwrap();
-            list.clear();
-        }
+        let _guard = setup_isolated();
 
         let db = GattDb::new();
         bt_micp_add_db(&db);
@@ -1222,10 +1213,7 @@ mod tests {
 
     #[test]
     fn test_bt_micp_get_att_none() {
-        {
-            let mut list = MICP_DB.lock().unwrap();
-            list.clear();
-        }
+        let _guard = setup_isolated();
 
         let db = GattDb::new();
         bt_micp_add_db(&db);
@@ -1237,10 +1225,7 @@ mod tests {
 
     #[test]
     fn test_bt_micp_set_user_data() {
-        {
-            let mut list = MICP_DB.lock().unwrap();
-            list.clear();
-        }
+        let _guard = setup_isolated();
 
         let db = GattDb::new();
         bt_micp_add_db(&db);

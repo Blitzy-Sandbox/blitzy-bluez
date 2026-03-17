@@ -2372,8 +2372,7 @@ fn test_sco_11(
 // Main entry point
 // ---------------------------------------------------------------------------
 
-#[tokio::main]
-async fn main() -> ExitCode {
+fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     tester_init(&args);
 

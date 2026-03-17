@@ -162,49 +162,54 @@ impl ObexTransportDriver for BluetoothTransportDriver {
         let all_service_drivers = list_service_drivers();
         let rt = tokio::runtime::Handle::try_current().map_err(|_| -libc::EINVAL)?;
 
-        rt.block_on(async {
-            let mut state = global_state().lock().await;
+        // Use block_in_place + block_on to perform async work from a
+        // synchronous trait method within the running multi-thread runtime.
+        tokio::task::block_in_place(|| {
+            rt.block_on(async {
+                let mut state = global_state().lock().await;
 
-            for driver_name in &server.service_drivers {
-                let driver =
-                    match all_service_drivers.iter().find(|d| d.name() == driver_name.as_str()) {
-                        Some(d) => Arc::clone(d),
+                for driver_name in &server.service_drivers {
+                    let driver =
+                        match all_service_drivers.iter().find(|d| d.name() == driver_name.as_str())
+                        {
+                            Some(d) => Arc::clone(d),
+                            None => {
+                                tracing::warn!(
+                                    "bluetooth: service driver '{}' not found in registry",
+                                    driver_name
+                                );
+                                continue;
+                            }
+                        };
+
+                    let service = driver.service();
+                    let uuid = match service2uuid(service) {
+                        Some(u) => u,
                         None => {
-                            tracing::warn!(
-                                "bluetooth: service driver '{}' not found in registry",
+                            tracing::debug!(
+                                "bluetooth: no UUID for service 0x{:04x} (driver '{}')",
+                                service,
                                 driver_name
                             );
                             continue;
                         }
                     };
 
-                let service = driver.service();
-                let uuid = match service2uuid(service) {
-                    Some(u) => u,
-                    None => {
-                        tracing::debug!(
-                            "bluetooth: no UUID for service 0x{:04x} (driver '{}')",
-                            service,
-                            driver_name
-                        );
-                        continue;
-                    }
-                };
+                    tracing::info!(
+                        "bluetooth: registered profile for '{}' (UUID {})",
+                        driver_name,
+                        uuid
+                    );
 
-                tracing::info!(
-                    "bluetooth: registered profile for '{}' (UUID {})",
-                    driver_name,
-                    uuid
-                );
+                    state.profiles.push(BluetoothProfile {
+                        uuid: uuid.to_string(),
+                        driver,
+                        path: None,
+                    });
+                }
 
-                state.profiles.push(BluetoothProfile {
-                    uuid: uuid.to_string(),
-                    driver,
-                    path: None,
-                });
-            }
-
-            Ok(())
+                Ok(())
+            })
         })
     }
 
@@ -215,18 +220,22 @@ impl ObexTransportDriver for BluetoothTransportDriver {
             Err(_) => return,
         };
 
-        rt.block_on(async {
-            let mut state = global_state().lock().await;
+        // Use block_in_place + block_on to perform async work from a
+        // synchronous trait method within the running multi-thread runtime.
+        tokio::task::block_in_place(|| {
+            rt.block_on(async {
+                let mut state = global_state().lock().await;
 
-            // Clone the connection before iterating profiles to satisfy borrow checker.
-            let conn = state.conn.clone();
-            if let Some(conn) = conn.as_ref() {
-                for profile in &mut state.profiles {
-                    unregister_profile(conn, profile).await;
+                // Clone the connection before iterating profiles to satisfy borrow checker.
+                let conn = state.conn.clone();
+                if let Some(conn) = conn.as_ref() {
+                    for profile in &mut state.profiles {
+                        unregister_profile(conn, profile).await;
+                    }
                 }
-            }
 
-            state.profiles.clear();
+                state.profiles.clear();
+            });
         });
     }
 
@@ -666,46 +675,50 @@ fn socket_transport(fd: RawFd) -> Option<BtTransport> {
 pub fn bluetooth_init() -> Result<(), i32> {
     let rt = tokio::runtime::Handle::try_current().map_err(|_| -libc::EINVAL)?;
 
-    rt.block_on(async {
-        // Create a system-bus D-Bus connection.
-        let conn = zbus::Connection::system().await.map_err(|e| {
-            tracing::error!("bluetooth: failed to connect to system bus: {}", e);
-            -libc::EIO
-        })?;
+    // Use block_in_place + block_on to perform async D-Bus setup from the
+    // synchronous plugin init callback within the running multi-thread runtime.
+    tokio::task::block_in_place(|| {
+        rt.block_on(async {
+            // Create a system-bus D-Bus connection.
+            let conn = zbus::Connection::system().await.map_err(|e| {
+                tracing::error!("bluetooth: failed to connect to system bus: {}", e);
+                -libc::EIO
+            })?;
 
-        {
-            let mut state = global_state().lock().await;
-            state.conn = Some(conn.clone());
-        }
+            {
+                let mut state = global_state().lock().await;
+                state.conn = Some(conn.clone());
+            }
 
-        // Start the BlueZ name watcher.
-        let state_arc = Arc::new(TokioMutex::new(BluetoothState::new()));
-        // Swap the global state with a shared Arc.
-        {
-            let mut real_state = global_state().lock().await;
-            let mut inner = state_arc.lock().await;
-            inner.conn = real_state.conn.take();
-            inner.profiles = std::mem::take(&mut real_state.profiles);
-            inner.server_index = real_state.server_index;
-        }
-        // Store the connection back.
-        {
-            let inner = state_arc.lock().await;
-            let mut real_state = global_state().lock().await;
-            real_state.conn = inner.conn.clone();
-            real_state.profiles = Vec::new(); // Will be populated by start()
-        }
+            // Start the BlueZ name watcher.
+            let state_arc = Arc::new(TokioMutex::new(BluetoothState::new()));
+            // Swap the global state with a shared Arc.
+            {
+                let mut real_state = global_state().lock().await;
+                let mut inner = state_arc.lock().await;
+                inner.conn = real_state.conn.take();
+                inner.profiles = std::mem::take(&mut real_state.profiles);
+                inner.server_index = real_state.server_index;
+            }
+            // Store the connection back.
+            {
+                let inner = state_arc.lock().await;
+                let mut real_state = global_state().lock().await;
+                real_state.conn = inner.conn.clone();
+                real_state.profiles = Vec::new(); // Will be populated by start()
+            }
 
-        start_name_watcher(state_arc).await;
+            start_name_watcher(state_arc).await;
 
-        // Register the transport driver.
-        let driver = Arc::new(BluetoothTransportDriver);
-        obex_transport_driver_register(driver).inspect_err(|&e| {
-            tracing::error!("bluetooth: transport driver registration failed: {}", e);
-        })?;
+            // Register the transport driver.
+            let driver = Arc::new(BluetoothTransportDriver);
+            obex_transport_driver_register(driver).inspect_err(|&e| {
+                tracing::error!("bluetooth: transport driver registration failed: {}", e);
+            })?;
 
-        tracing::info!("bluetooth: transport plugin initialised");
-        Ok(())
+            tracing::info!("bluetooth: transport plugin initialised");
+            Ok(())
+        })
     })
 }
 
@@ -719,24 +732,28 @@ pub fn bluetooth_exit() {
         Err(_) => return,
     };
 
-    rt.block_on(async {
-        let mut state = global_state().lock().await;
+    // Use block_in_place + block_on to perform async teardown from the
+    // synchronous plugin exit callback within the running multi-thread runtime.
+    tokio::task::block_in_place(|| {
+        rt.block_on(async {
+            let mut state = global_state().lock().await;
 
-        // Stop the name watcher.
-        if let Some(handle) = state.watcher_handle.take() {
-            handle.abort();
-        }
-
-        // Unregister all profiles.
-        let conn = state.conn.clone();
-        if let Some(conn) = conn.as_ref() {
-            for profile in &mut state.profiles {
-                unregister_profile(conn, profile).await;
+            // Stop the name watcher.
+            if let Some(handle) = state.watcher_handle.take() {
+                handle.abort();
             }
-        }
 
-        state.profiles.clear();
-        state.conn = None;
+            // Unregister all profiles.
+            let conn = state.conn.clone();
+            if let Some(conn) = conn.as_ref() {
+                for profile in &mut state.profiles {
+                    unregister_profile(conn, profile).await;
+                }
+            }
+
+            state.profiles.clear();
+            state.conn = None;
+        });
     });
 
     // Unregister the transport driver.

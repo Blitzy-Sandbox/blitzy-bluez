@@ -14,6 +14,7 @@ pub mod control;
 pub mod csip;
 pub mod gmap;
 pub mod hfp;
+pub mod mcp;
 pub mod media;
 pub mod micp;
 pub mod player;

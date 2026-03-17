@@ -8,6 +8,7 @@
 pub mod a2dp;
 pub mod avctp;
 pub mod avdtp;
+pub mod avrcp;
 pub mod ccp;
 pub mod control;
 pub mod csip;

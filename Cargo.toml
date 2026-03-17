@@ -185,6 +185,10 @@ name = "test_avdtp"
 path = "tests/unit/test_avdtp.rs"
 
 [[test]]
+name = "test_avrcp"
+path = "tests/unit/test_avrcp.rs"
+
+[[test]]
 name = "test_avctp"
 path = "tests/unit/test_avctp.rs"
 

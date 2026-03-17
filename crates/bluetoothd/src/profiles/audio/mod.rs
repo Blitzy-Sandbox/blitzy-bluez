@@ -11,6 +11,8 @@ pub mod avctp;
 pub mod avdtp;
 pub mod avrcp;
 pub mod bap;
+#[allow(dead_code, unused_variables, unused_mut, unused_imports)]
+pub mod bass;
 pub mod ccp;
 pub mod control;
 pub mod csip;

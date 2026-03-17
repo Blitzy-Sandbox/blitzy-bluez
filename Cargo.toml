@@ -343,6 +343,10 @@ path = "tests/integration/dbus_contract_test.rs"
 name = "smoke_test"
 path = "tests/integration/smoke_test.rs"
 
+[[test]]
+name = "test_hog"
+path = "tests/unit/test_hog.rs"
+
 # ---------------------------------------------------------------------------
 # Workspace lint configuration
 # ---------------------------------------------------------------------------

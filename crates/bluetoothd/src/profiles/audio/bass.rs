@@ -10,6 +10,7 @@
 // BASS is a plugin whose items are invoked at runtime through dynamic
 // callback registration, D-Bus interface dispatch, and the inventory-based
 // plugin registry.  The static analyser cannot trace this usage.
+#![allow(dead_code, unused_variables, unused_mut)]
 
 // ---------------------------------------------------------------------------
 // Imports

@@ -15,6 +15,7 @@ pub mod gmap;
 pub mod media;
 pub mod micp;
 pub mod player;
+pub mod sink;
 pub mod source;
 pub mod telephony;
 pub mod tmap;

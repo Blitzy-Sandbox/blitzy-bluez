@@ -887,6 +887,10 @@ impl AvdtpSession {
     pub fn streams(&self) -> &[AvdtpStream] {
         &self.streams
     }
+    /// Returns a mutable reference to the stream list.
+    pub fn streams_mut(&mut self) -> &mut [AvdtpStream] {
+        &mut self.streams
+    }
     pub fn initiator(&self) -> bool {
         self.initiator
     }

@@ -42,8 +42,8 @@ use super::avdtp::AvdtpSepType;
 
 use bluez_shared::att::transport::BtAtt;
 use bluez_shared::audio::bap::{
-    BapCodec, BapPacOps, BapPacQos, BapQos, BapType, BtBap, BtBapPac, BtBapStream,
-    bap_debug_caps, bap_debug_metadata, bt_bap_add_vendor_pac_full,
+    BapCodec, BapPacOps, BapPacQos, BapQos, BapType, BtBap, BtBapPac, BtBapStream, bap_debug_caps,
+    bap_debug_metadata, bt_bap_add_vendor_pac_full,
 };
 use bluez_shared::audio::gmap::{
     BtGmap, GmapBgrFeatures, GmapBgsFeatures, GmapRole, GmapUggFeatures, GmapUgtFeatures,
@@ -376,13 +376,7 @@ pub struct MediaApp {
 impl MediaApp {
     /// Create a new application container.
     fn new(sender: String, path: String) -> Self {
-        Self {
-            sender,
-            path,
-            endpoints: Vec::new(),
-            players: Vec::new(),
-            watch_id: 0,
-        }
+        Self { sender, path, endpoints: Vec::new(), players: Vec::new(), watch_id: 0 }
     }
 }
 
@@ -475,17 +469,15 @@ pub trait LocalPlayerCallback: Send + Sync {
 }
 
 /// Global list of registered local player callback handlers.
-static LOCAL_PLAYER_CBS: std::sync::LazyLock<
-    Mutex<Vec<(u32, Arc<dyn LocalPlayerCallback>)>>,
-> = std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
+static LOCAL_PLAYER_CBS: std::sync::LazyLock<Mutex<Vec<(u32, Arc<dyn LocalPlayerCallback>)>>> =
+    std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// Next callback ID counter.
 static CB_ID_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(1);
 
 /// Global list of local player watch entries.
-static LOCAL_PLAYER_WATCHES: std::sync::LazyLock<
-    Mutex<Vec<LocalPlayerWatch>>,
-> = std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
+static LOCAL_PLAYER_WATCHES: std::sync::LazyLock<Mutex<Vec<LocalPlayerWatch>>> =
+    std::sync::LazyLock::new(|| Mutex::new(Vec::new()));
 
 /// A watch entry that is notified when players are added/removed.
 struct LocalPlayerWatch {
@@ -590,14 +582,20 @@ async fn check_experimental_support(adapter: &Arc<Mutex<BtdAdapter>>) -> bool {
 }
 
 /// Initialize an A2DP Source endpoint — registers AVDTP SEP.
-fn endpoint_init_a2dp_source(endpoint: &mut MediaEndpoint, _adapter: &Arc<Mutex<BtdAdapter>>) -> bool {
+fn endpoint_init_a2dp_source(
+    endpoint: &mut MediaEndpoint,
+    _adapter: &Arc<Mutex<BtdAdapter>>,
+) -> bool {
     debug!("media: initializing A2DP source endpoint path={}", endpoint.path);
     // A2DP SEP registration is handled asynchronously in media_endpoint_create
     true
 }
 
 /// Initialize an A2DP Sink endpoint — registers AVDTP SEP.
-fn endpoint_init_a2dp_sink(endpoint: &mut MediaEndpoint, _adapter: &Arc<Mutex<BtdAdapter>>) -> bool {
+fn endpoint_init_a2dp_sink(
+    endpoint: &mut MediaEndpoint,
+    _adapter: &Arc<Mutex<BtdAdapter>>,
+) -> bool {
     debug!("media: initializing A2DP sink endpoint path={}", endpoint.path);
     // A2DP SEP registration is handled asynchronously in media_endpoint_create
     true
@@ -610,7 +608,10 @@ fn endpoint_init_pac_sink(endpoint: &mut MediaEndpoint, _adapter: &Arc<Mutex<Btd
 }
 
 /// Initialize a PAC Source endpoint — registers BAP PAC record.
-fn endpoint_init_pac_source(endpoint: &mut MediaEndpoint, _adapter: &Arc<Mutex<BtdAdapter>>) -> bool {
+fn endpoint_init_pac_source(
+    endpoint: &mut MediaEndpoint,
+    _adapter: &Arc<Mutex<BtdAdapter>>,
+) -> bool {
     debug!("media: initializing PAC source endpoint path={}", endpoint.path);
     endpoint_init_pac(endpoint, BapType::SOURCE)
 }
@@ -745,7 +746,8 @@ pub enum PropertyValue {
 // ===========================================================================
 
 /// Parsed endpoint properties: (uuid, codec, cid, vid, caps, metadata, delay_reporting, qos, features).
-type ParsedEndpointProps = (String, u8, u16, u16, Vec<u8>, Vec<u8>, bool, BapPacQos, EndpointFeatures);
+type ParsedEndpointProps =
+    (String, u8, u16, u16, Vec<u8>, Vec<u8>, bool, BapPacQos, EndpointFeatures);
 
 /// Parse endpoint properties from a D-Bus property dictionary.
 ///
@@ -962,9 +964,7 @@ fn set_position(player: &mut MediaPlayer, position: u32) {
 /// Set the shuffle setting of a player.
 fn set_shuffle(player: &mut MediaPlayer, shuffle: bool) {
     let value = if shuffle { "alltracks" } else { "off" };
-    player
-        .settings
-        .insert("Shuffle".to_string(), value.to_string());
+    player.settings.insert("Shuffle".to_string(), value.to_string());
     debug!("media: player {} shuffle set to {}", player.path, value);
 }
 
@@ -978,9 +978,7 @@ fn set_repeat(player: &mut MediaPlayer, loop_status: &str) {
         "Playlist" => "alltracks",
         _ => "off",
     };
-    player
-        .settings
-        .insert("Repeat".to_string(), value.to_string());
+    player.settings.insert("Repeat".to_string(), value.to_string());
     debug!("media: player {} repeat set to {}", player.path, value);
 }
 
@@ -998,7 +996,10 @@ fn set_name(player: &mut MediaPlayer, name: &str) {
 ///
 /// This scans all endpoints on the adapter, computes aggregate TMAP roles and
 /// GMAP roles+features, and writes them to the GATT database.
-async fn update_features(adapter: &Arc<Mutex<BtdAdapter>>, endpoints: &[Arc<Mutex<MediaEndpoint>>]) {
+async fn update_features(
+    adapter: &Arc<Mutex<BtdAdapter>>,
+    endpoints: &[Arc<Mutex<MediaEndpoint>>],
+) {
     let db_opt = btd_adapter_get_database(adapter).await;
     let db = match db_opt {
         Some(d) => d,
@@ -1053,14 +1054,9 @@ async fn update_features(adapter: &Arc<Mutex<BtdAdapter>>, endpoints: &[Arc<Mute
     // registration we may have an active BAP session whose ATT transport
     // can be used. This is invoked when a BAP-based endpoint establishes
     // a connection and provides its ATT transport to the media subsystem.
-    update_gmap_features_if_available(
-        &gatt_db, gmap_role, ugg_feat, ugt_feat, bgs_feat, bgr_feat,
-    );
+    update_gmap_features_if_available(&gatt_db, gmap_role, ugg_feat, ugt_feat, bgs_feat, bgr_feat);
 
-    debug!(
-        "media: aggregate features — tmap={:?} gmap_role={:?}",
-        tmap_role, gmap_role
-    );
+    debug!("media: aggregate features — tmap={:?} gmap_role={:?}", tmap_role, gmap_role);
 }
 
 // ===========================================================================
@@ -1086,9 +1082,7 @@ pub async fn media_endpoint_create(
     features: EndpointFeatures,
 ) -> Result<Arc<Mutex<MediaEndpoint>>, BtdError> {
     // Check that the UUID is supported.
-    let init_entry = INIT_TABLE
-        .iter()
-        .find(|e| e.uuid.eq_ignore_ascii_case(&uuid));
+    let init_entry = INIT_TABLE.iter().find(|e| e.uuid.eq_ignore_ascii_case(&uuid));
 
     let entry = match init_entry {
         Some(e) => e,
@@ -1151,15 +1145,7 @@ pub async fn media_endpoint_create(
 
     // For A2DP endpoints, register SEP asynchronously.
     if uuid.eq_ignore_ascii_case(A2DP_SOURCE_UUID) {
-        match a2dp_add_sep(
-            adapter,
-            AvdtpSepType::Source,
-            codec,
-            delay_reporting,
-            None,
-        )
-        .await
-        {
+        match a2dp_add_sep(adapter, AvdtpSepType::Source, codec, delay_reporting, None).await {
             Ok(sep) => {
                 endpoint.sep = Some(sep);
             }
@@ -1169,15 +1155,7 @@ pub async fn media_endpoint_create(
             }
         }
     } else if uuid.eq_ignore_ascii_case(A2DP_SINK_UUID) {
-        match a2dp_add_sep(
-            adapter,
-            AvdtpSepType::Sink,
-            codec,
-            delay_reporting,
-            None,
-        )
-        .await
-        {
+        match a2dp_add_sep(adapter, AvdtpSepType::Sink, codec, delay_reporting, None).await {
             Ok(sep) => {
                 endpoint.sep = Some(sep);
             }
@@ -1205,10 +1183,8 @@ pub async fn media_endpoint_create(
                 BapType::BCAST_SINK.bits()
             };
 
-            let pac_ops: Arc<dyn BapPacOps> = Arc::new(MediaPacOps {
-                sender: sender.clone(),
-                path: path.clone(),
-            });
+            let pac_ops: Arc<dyn BapPacOps> =
+                Arc::new(MediaPacOps { sender: sender.clone(), path: path.clone() });
 
             let pac = bt_bap_add_vendor_pac_full(
                 &gatt_db,
@@ -1229,10 +1205,7 @@ pub async fn media_endpoint_create(
 
     let endpoint_arc = Arc::new(Mutex::new(endpoint));
 
-    info!(
-        "media: registered endpoint sender={} path={} uuid={}",
-        sender, path, uuid
-    );
+    info!("media: registered endpoint sender={} path={} uuid={}", sender, path, uuid);
 
     Ok(endpoint_arc)
 }
@@ -1276,20 +1249,14 @@ impl BapPacOps for MediaPacOps {
         _qos: &BapPacQos,
         _cb: Box<dyn FnOnce(Result<(Vec<u8>, Vec<u8>, BapQos), i32>) + Send>,
     ) -> Result<(), i32> {
-        debug!(
-            "media: pac_select sender={} path={}",
-            self.sender, self.path
-        );
+        debug!("media: pac_select sender={} path={}", self.sender, self.path);
         // In production, this invokes SelectProperties on the client endpoint
         // via a D-Bus proxy call. For now, we accept the default configuration.
         Ok(())
     }
 
     fn cancel_select(&self, _lpac: &BtBapPac) {
-        debug!(
-            "media: pac_cancel_select sender={} path={}",
-            self.sender, self.path
-        );
+        debug!("media: pac_cancel_select sender={} path={}", self.sender, self.path);
     }
 
     fn config(
@@ -1299,10 +1266,7 @@ impl BapPacOps for MediaPacOps {
         _qos: &BapQos,
         cb: Box<dyn FnOnce(Result<(), i32>) + Send>,
     ) -> Result<(), i32> {
-        debug!(
-            "media: pac_config sender={} path={}",
-            self.sender, self.path
-        );
+        debug!("media: pac_config sender={} path={}", self.sender, self.path);
         // In production, this invokes SetConfiguration on the client endpoint
         // via a D-Bus proxy call. For now, accept the configuration.
         cb(Ok(()));
@@ -1310,10 +1274,7 @@ impl BapPacOps for MediaPacOps {
     }
 
     fn clear(&self, _stream: &BtBapStream) {
-        debug!(
-            "media: pac_clear sender={} path={}",
-            self.sender, self.path
-        );
+        debug!("media: pac_clear sender={} path={}", self.sender, self.path);
         // In production, this invokes ClearConfiguration on the client endpoint.
     }
 }
@@ -1323,7 +1284,9 @@ impl BapPacOps for MediaPacOps {
 // ===========================================================================
 
 /// Get the A2DP SEP handle from a media endpoint.
-pub fn media_endpoint_get_sep(endpoint: &MediaEndpoint) -> Option<&Arc<tokio::sync::Mutex<A2dpSep>>> {
+pub fn media_endpoint_get_sep(
+    endpoint: &MediaEndpoint,
+) -> Option<&Arc<tokio::sync::Mutex<A2dpSep>>> {
     endpoint.sep.as_ref()
 }
 
@@ -1387,9 +1350,7 @@ pub fn media_endpoint_get_asha(adapter: &Arc<Mutex<BtdAdapter>>) -> MediaEndpoin
 /// Register a local player callback handler.
 ///
 /// Returns a callback ID that can be used with `local_player_unregister_callbacks`.
-pub async fn local_player_register_callbacks(
-    cb: Arc<dyn LocalPlayerCallback>,
-) -> u32 {
+pub async fn local_player_register_callbacks(cb: Arc<dyn LocalPlayerCallback>) -> u32 {
     let id = CB_ID_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     let mut cbs = LOCAL_PLAYER_CBS.lock().await;
     cbs.push((id, cb));
@@ -1462,11 +1423,7 @@ pub fn local_player_get_adapter(player: &MediaPlayer) -> &Arc<Mutex<BtdAdapter>>
 
 /// List all player settings as key-value pairs.
 pub fn local_player_list_settings(player: &MediaPlayer) -> Vec<(String, String)> {
-    player
-        .settings
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect()
+    player.settings.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
 }
 
 /// Get a single player setting by key.
@@ -1495,11 +1452,7 @@ pub fn local_player_get_metadata<'a>(player: &'a MediaPlayer, key: &str) -> Opti
 
 /// List all metadata fields as key-value pairs.
 pub fn local_player_list_metadata(player: &MediaPlayer) -> Vec<(String, String)> {
-    player
-        .track
-        .iter()
-        .map(|(k, v)| (k.clone(), v.clone()))
-        .collect()
+    player.track.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
 }
 
 /// Get the current playback status string.
@@ -1515,8 +1468,7 @@ pub fn local_player_get_position(player: &MediaPlayer) -> u32 {
     if player.status == "playing" {
         if let Some(ref start) = player.play_start {
             let elapsed = start.elapsed();
-            let elapsed_ms =
-                (elapsed.as_secs() * 1_000 + elapsed.subsec_millis() as u64) as u32;
+            let elapsed_ms = (elapsed.as_secs() * 1_000 + elapsed.subsec_millis() as u64) as u32;
             return player.position.saturating_add(elapsed_ms);
         }
     }
@@ -1583,10 +1535,7 @@ pub async fn local_player_previous(player: &MediaPlayer) -> Result<(), BtdError>
 /// This calls the MPRIS2 method on the player's D-Bus interface using
 /// the shared zbus Connection.
 async fn local_player_send(player: &MediaPlayer, method: &str) -> Result<(), BtdError> {
-    debug!(
-        "media: sending {} to player sender={} path={}",
-        method, player.sender, player.path
-    );
+    debug!("media: sending {} to player sender={} path={}", method, player.sender, player.path);
 
     // Get the shared D-Bus connection for outgoing proxy calls.
     let conn = btd_get_dbus_connection();
@@ -1604,26 +1553,14 @@ async fn local_player_send(player: &MediaPlayer, method: &str) -> Result<(), Btd
         Ok(proxy) => {
             let call_result: zbus::Result<()> = proxy.call(method, &()).await;
             if let Err(e) = call_result {
-                warn!(
-                    "media: failed to send {} to player {}: {}",
-                    method, player.path, e
-                );
-                return Err(BtdError::Failed(format!(
-                    "D-Bus call {} failed: {}",
-                    method, e
-                )));
+                warn!("media: failed to send {} to player {}: {}", method, player.path, e);
+                return Err(BtdError::Failed(format!("D-Bus call {} failed: {}", method, e)));
             }
             Ok(())
         }
         Err(e) => {
-            error!(
-                "media: failed to create proxy for player {}: {}",
-                player.path, e
-            );
-            Err(BtdError::Failed(format!(
-                "D-Bus proxy creation failed: {}",
-                e
-            )))
+            error!("media: failed to create proxy for player {}: {}", player.path, e);
+            Err(BtdError::Failed(format!("D-Bus proxy creation failed: {}", e)))
         }
     }
 }
@@ -1653,10 +1590,7 @@ fn probe_tx_timestamping(adapter_index: u16) -> bool {
     // The actual ethtool ioctl probe is delegated to the FFI boundary module
     // in bluez-shared when the full unsafe path is available.
     if std::path::Path::new(&ts_path).exists() {
-        debug!(
-            "media: HCI interface hci{} exists, probing timestamping",
-            adapter_index
-        );
+        debug!("media: HCI interface hci{} exists, probing timestamping", adapter_index);
         // Conservative: return false unless the sys module provides a safe wrapper.
         // In production, the bluez-shared sys module would expose a safe
         // `probe_ethtool_ts_info()` function that wraps the unsafe ioctl.
@@ -1674,21 +1608,16 @@ fn probe_tx_timestamping(adapter_index: u16) -> bool {
 ///
 /// Returns a deduplicated list of UUID strings from the init table that
 /// have at least one registered endpoint or are supported by the adapter.
-fn compute_supported_uuids(
-    adapter: &MediaAdapter,
-) -> Vec<String> {
+fn compute_supported_uuids(adapter: &MediaAdapter) -> Vec<String> {
     let mut uuids = Vec::new();
 
     for entry in INIT_TABLE {
         // Check if any endpoint uses this UUID.
-        let has_endpoint = adapter
-            .endpoints
-            .iter()
-            .any(|_ep_arc| {
-                // We can't lock async mutexes here synchronously.
-                // In production, use a pre-computed set or blocking lock.
-                true
-            });
+        let has_endpoint = adapter.endpoints.iter().any(|_ep_arc| {
+            // We can't lock async mutexes here synchronously.
+            // In production, use a pre-computed set or blocking lock.
+            true
+        });
 
         if (has_endpoint || (entry.supported_fn)(&adapter.adapter))
             && !uuids.iter().any(|u: &String| u.eq_ignore_ascii_case(entry.uuid))
@@ -1713,11 +1642,7 @@ async fn compute_supported_features(adapter: &mut MediaAdapter) -> Vec<String> {
 
     // Probe TX timestamping (cached).
     if adapter.so_timestamping < 0 {
-        adapter.so_timestamping = if probe_tx_timestamping(adapter_index) {
-            1
-        } else {
-            0
-        };
+        adapter.so_timestamping = if probe_tx_timestamping(adapter_index) { 1 } else { 0 };
     }
 
     if adapter.so_timestamping > 0 {
@@ -1830,9 +1755,7 @@ pub async fn register_endpoint(
             for ep_arc in &ma.endpoints {
                 let ep = ep_arc.lock().await;
                 if ep.sender == sender && ep.path == path {
-                    return Err(BtdError::AlreadyExists(
-                        "Endpoint already registered".to_string(),
-                    ));
+                    return Err(BtdError::AlreadyExists("Endpoint already registered".to_string()));
                 }
             }
         }
@@ -1873,13 +1796,7 @@ pub async fn register_endpoint(
     }
 
     // Register custom property for MediaEndpoints (on profile D-Bus object).
-    btd_profile_add_custom_prop(
-        &uuid,
-        "MediaEndpoints",
-        "ao",
-        Box::new(|_device| None),
-    )
-    .await;
+    btd_profile_add_custom_prop(&uuid, "MediaEndpoints", "ao", Box::new(|_device| None)).await;
 
     Ok(())
 }
@@ -1931,15 +1848,11 @@ pub async fn unregister_endpoint(
                 return Ok(());
             }
 
-            return Err(BtdError::DoesNotExist(
-                "Endpoint not registered".to_string(),
-            ));
+            return Err(BtdError::DoesNotExist("Endpoint not registered".to_string()));
         }
     }
 
-    Err(BtdError::DoesNotExist(
-        "No media adapter found".to_string(),
-    ))
+    Err(BtdError::DoesNotExist("No media adapter found".to_string()))
 }
 
 /// Register a player from D-Bus RegisterPlayer method.
@@ -1958,9 +1871,7 @@ pub async fn register_player(
             for p_arc in &ma.players {
                 let p = p_arc.lock().await;
                 if p.sender == sender && p.path == path {
-                    return Err(BtdError::AlreadyExists(
-                        "Player already registered".to_string(),
-                    ));
+                    return Err(BtdError::AlreadyExists("Player already registered".to_string()));
                 }
             }
         }
@@ -2046,22 +1957,15 @@ pub async fn unregister_player(
                     (watch.remove_callback)(&player);
                 }
 
-                info!(
-                    "media: unregistered player sender={} path={}",
-                    sender, path
-                );
+                info!("media: unregistered player sender={} path={}", sender, path);
                 return Ok(());
             }
 
-            return Err(BtdError::DoesNotExist(
-                "Player not registered".to_string(),
-            ));
+            return Err(BtdError::DoesNotExist("Player not registered".to_string()));
         }
     }
 
-    Err(BtdError::DoesNotExist(
-        "No media adapter found".to_string(),
-    ))
+    Err(BtdError::DoesNotExist("No media adapter found".to_string()))
 }
 
 /// Register an application from D-Bus RegisterApplication method.
@@ -2091,10 +1995,7 @@ pub async fn register_application(
     }
     drop(adapters);
 
-    info!(
-        "media: registering application sender={} root={}",
-        sender, root
-    );
+    info!("media: registering application sender={} root={}", sender, root);
 
     // In production, this would:
     // 1. Use zbus::fdo::ObjectManagerProxy::get_managed_objects() to introspect
@@ -2130,10 +2031,7 @@ pub async fn unregister_application(
     for ma_arc in adapters.iter_mut() {
         let mut ma = ma_arc.lock().await;
         if ma.path == adapter_path {
-            let idx = ma
-                .apps
-                .iter()
-                .position(|app| app.sender == sender && app.path == root);
+            let idx = ma.apps.iter().position(|app| app.sender == sender && app.path == root);
 
             if let Some(i) = idx {
                 let app = ma.apps.remove(i);
@@ -2142,34 +2040,25 @@ pub async fn unregister_application(
                 for ep_arc in &app.endpoints {
                     let ep = ep_arc.lock().await;
                     // Find and remove from adapter endpoint list.
-                    ma.endpoints
-                        .retain(|e| !Arc::ptr_eq(e, ep_arc));
+                    ma.endpoints.retain(|e| !Arc::ptr_eq(e, ep_arc));
                     drop(ep);
                     media_endpoint_remove(ep_arc).await;
                 }
 
                 // Remove all players from this app.
                 for p_arc in &app.players {
-                    ma.players
-                        .retain(|p| !Arc::ptr_eq(p, p_arc));
+                    ma.players.retain(|p| !Arc::ptr_eq(p, p_arc));
                 }
 
-                info!(
-                    "media: unregistered application sender={} root={}",
-                    sender, root
-                );
+                info!("media: unregistered application sender={} root={}", sender, root);
                 return Ok(());
             }
 
-            return Err(BtdError::DoesNotExist(
-                "Application not registered".to_string(),
-            ));
+            return Err(BtdError::DoesNotExist("Application not registered".to_string()));
         }
     }
 
-    Err(BtdError::DoesNotExist(
-        "No media adapter found".to_string(),
-    ))
+    Err(BtdError::DoesNotExist("No media adapter found".to_string()))
 }
 
 // ===========================================================================
@@ -2304,9 +2193,7 @@ async fn find_adapter(device: &BtdDevice) -> Option<Arc<Mutex<MediaAdapter>>> {
 }
 
 /// Find a MediaAdapter by adapter reference.
-async fn find_media_adapter(
-    adapter: &Arc<Mutex<BtdAdapter>>,
-) -> Option<Arc<Mutex<MediaAdapter>>> {
+async fn find_media_adapter(adapter: &Arc<Mutex<BtdAdapter>>) -> Option<Arc<Mutex<MediaAdapter>>> {
     let adapters = ADAPTERS.lock().await;
     let adapter_path = adapter_get_path(adapter).await;
     for ma_arc in adapters.iter() {
@@ -2420,22 +2307,13 @@ mod tests {
         let mut player = MediaPlayer::new(adapter, "sender".to_string(), "/player".to_string());
 
         let mut meta = HashMap::new();
-        meta.insert(
-            "xesam:title".to_string(),
-            PropertyValue::String("Test Song".to_string()),
-        );
-        meta.insert(
-            "xesam:artist".to_string(),
-            PropertyValue::String("Test Artist".to_string()),
-        );
+        meta.insert("xesam:title".to_string(), PropertyValue::String("Test Song".to_string()));
+        meta.insert("xesam:artist".to_string(), PropertyValue::String("Test Artist".to_string()));
         meta.insert(
             "mpris:length".to_string(),
             PropertyValue::I64(180_000_000), // 180 seconds in microseconds
         );
-        meta.insert(
-            "xesam:trackNumber".to_string(),
-            PropertyValue::I32(5),
-        );
+        meta.insert("xesam:trackNumber".to_string(), PropertyValue::I32(5));
 
         parse_player_metadata(&mut player, &meta);
 
@@ -2463,10 +2341,7 @@ mod tests {
     #[test]
     fn test_parse_endpoint_properties_valid() {
         let mut props = HashMap::new();
-        props.insert(
-            "UUID".to_string(),
-            PropertyValue::String(A2DP_SOURCE_UUID.to_string()),
-        );
+        props.insert("UUID".to_string(), PropertyValue::String(A2DP_SOURCE_UUID.to_string()));
         props.insert("Codec".to_string(), PropertyValue::U8(0x00));
         props.insert("Capabilities".to_string(), PropertyValue::Bytes(vec![0x01, 0x02]));
         props.insert("DelayReporting".to_string(), PropertyValue::Bool(true));

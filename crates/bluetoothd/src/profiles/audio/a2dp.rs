@@ -326,6 +326,11 @@ impl A2dpSep {
         self.locked
     }
 
+    /// Get the SEP type (source or sink).
+    pub fn sep_type(&self) -> AvdtpSepType {
+        self.sep_type
+    }
+
     /// Cancel the suspend timer if active.
     fn cancel_suspend_timer(&mut self) {
         if let Some(handle) = self.suspend_timer.take() {
@@ -1322,6 +1327,27 @@ pub async fn a2dp_cancel(device: &Arc<BtdDevice>) {
     });
 
     debug!("a2dp: cancelled operations for device {}", addr_to_str(device.get_address()));
+}
+
+/// Find the A2DP channel associated with a given device.
+///
+/// Searches all A2DP servers for a channel whose device matches by
+/// `Arc::ptr_eq`.  Returns `None` if no channel exists.
+///
+/// This is the public counterpart of `find_channel` for use by the
+/// source/sink profile modules.
+pub async fn a2dp_get_channel(device: &Arc<BtdDevice>) -> Option<Arc<Mutex<A2dpChannel>>> {
+    let servers = SERVERS.lock().await;
+    for srv_arc in servers.iter() {
+        let srv = srv_arc.lock().await;
+        for ch_arc in &srv.channels {
+            let ch = ch_arc.lock().await;
+            if Arc::ptr_eq(&ch.device, device) {
+                return Some(Arc::clone(ch_arc));
+            }
+        }
+    }
+    None
 }
 
 /// Find the AVDTP session that contains a stream for the given SEP.

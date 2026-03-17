@@ -14,5 +14,6 @@ pub mod csip;
 pub mod gmap;
 pub mod micp;
 pub mod player;
+pub mod telephony;
 pub mod tmap;
 pub mod vcp;

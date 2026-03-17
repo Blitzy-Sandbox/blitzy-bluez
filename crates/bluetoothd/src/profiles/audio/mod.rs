@@ -12,6 +12,7 @@ pub mod ccp;
 pub mod control;
 pub mod csip;
 pub mod gmap;
+pub mod media;
 pub mod micp;
 pub mod player;
 pub mod telephony;

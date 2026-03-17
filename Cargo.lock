@@ -211,6 +211,7 @@ name = "bluez"
 version = "5.86.0"
 dependencies = [
  "aes",
+ "alsa",
  "bitflags",
  "bluetoothd",
  "bluez-emulator",

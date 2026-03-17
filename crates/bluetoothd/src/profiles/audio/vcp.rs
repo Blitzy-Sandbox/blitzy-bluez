@@ -22,19 +22,19 @@ use std::sync::{Arc, Mutex};
 
 use tracing::{debug, error};
 
-use bluez_shared::audio::vcp::{bt_vcp_add_db, bt_vcp_register, bt_vcp_unregister, BtVcp};
+use bluez_shared::audio::vcp::{BtVcp, bt_vcp_add_db, bt_vcp_register, bt_vcp_unregister};
 use bluez_shared::gatt::db::GattDb;
 
 use crate::adapter::{
-    btd_adapter_find_device_by_fd, btd_adapter_get_database, btd_adapter_get_default,
-    adapter_get_path, BtdAdapter,
+    BtdAdapter, adapter_get_path, btd_adapter_find_device_by_fd, btd_adapter_get_database,
+    btd_adapter_get_default,
 };
 use crate::device::BtdDevice;
 use crate::error::BtdError;
 use crate::plugin::{PluginDesc, PluginPriority};
 use crate::profile::{
-    btd_profile_register, btd_profile_unregister, BtdProfile, BTD_PROFILE_BEARER_LE,
-    BTD_PROFILE_PRIORITY_MEDIUM,
+    BTD_PROFILE_BEARER_LE, BTD_PROFILE_PRIORITY_MEDIUM, BtdProfile, btd_profile_register,
+    btd_profile_unregister,
 };
 use crate::service::BtdService;
 
@@ -205,9 +205,7 @@ fn find_session_by_vcp(sessions: &[VcpData], vcp: &BtVcp) -> Option<usize> {
 /// exists for the given device.
 ///
 /// This is the Rust equivalent of the C `bt_audio_vcp_get_volume()`.
-pub fn bt_audio_vcp_get_volume(
-    device: &Arc<tokio::sync::Mutex<BtdDevice>>,
-) -> Result<u8, i32> {
+pub fn bt_audio_vcp_get_volume(device: &Arc<tokio::sync::Mutex<BtdDevice>>) -> Result<u8, i32> {
     let sessions = SESSIONS.lock().map_err(|_| -libc::EINVAL)?;
 
     match find_session_by_device(&sessions, device) {
@@ -331,10 +329,8 @@ fn vcp_remove(device: &Arc<tokio::sync::Mutex<BtdDevice>>) {
     };
 
     let dev_ptr = Arc::as_ptr(device);
-    let vcp_opt = sessions
-        .iter()
-        .find(|s| Arc::as_ptr(&s.device) == dev_ptr)
-        .map(|s| Arc::clone(&s.vcp));
+    let vcp_opt =
+        sessions.iter().find(|s| Arc::as_ptr(&s.device) == dev_ptr).map(|s| Arc::clone(&s.vcp));
 
     drop(sessions);
 
@@ -407,10 +403,7 @@ fn vcp_disconnect(
         let vcp_opt = {
             let sessions = SESSIONS.lock().map_err(|_| BtdError::failed("lock sessions"))?;
             let dev_ptr = Arc::as_ptr(&device);
-            sessions
-                .iter()
-                .find(|s| Arc::as_ptr(&s.device) == dev_ptr)
-                .map(|s| Arc::clone(&s.vcp))
+            sessions.iter().find(|s| Arc::as_ptr(&s.device) == dev_ptr).map(|s| Arc::clone(&s.vcp))
         };
 
         if let Some(vcp) = vcp_opt {
@@ -595,10 +588,8 @@ fn vcp_init() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     // Register global VCP attach/detach callbacks.
-    let attached_cb: Box<dyn Fn(&BtVcp) + Send + Sync> =
-        Box::new(vcp_remote_client_attached);
-    let detached_cb: Box<dyn Fn(&BtVcp) + Send + Sync> =
-        Box::new(vcp_remote_client_detached);
+    let attached_cb: Box<dyn Fn(&BtVcp) + Send + Sync> = Box::new(vcp_remote_client_attached);
+    let detached_cb: Box<dyn Fn(&BtVcp) + Send + Sync> = Box::new(vcp_remote_client_detached);
 
     let id = bt_vcp_register(Some(attached_cb), Some(detached_cb));
 

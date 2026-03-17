@@ -30,14 +30,12 @@ use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info};
 
 use bluez_shared::att::transport::BtAtt;
-use bluez_shared::audio::csip::{
-    bt_csip_register, bt_csip_unregister, BtCsip, CsipSirkType,
-};
+use bluez_shared::audio::csip::{BtCsip, CsipSirkType, bt_csip_register, bt_csip_unregister};
 use bluez_shared::crypto::aes_cmac::bt_crypto_sef;
 
 use crate::adapter::{
-    btd_adapter_find_device_by_fd, btd_adapter_get_database, btd_adapter_get_default,
-    adapter_get_path, BtdAdapter,
+    BtdAdapter, adapter_get_path, btd_adapter_find_device_by_fd, btd_adapter_get_database,
+    btd_adapter_get_default,
 };
 use crate::config::BtdCsis;
 use crate::device::BtdDevice;
@@ -45,8 +43,8 @@ use crate::error::BtdError;
 use crate::log::{btd_debug, btd_error};
 use crate::plugin::{PluginDesc, PluginPriority};
 use crate::profile::{
-    btd_profile_register, btd_profile_unregister, BtdProfile, BTD_PROFILE_BEARER_LE,
-    BTD_PROFILE_PRIORITY_MEDIUM,
+    BTD_PROFILE_BEARER_LE, BTD_PROFILE_PRIORITY_MEDIUM, BtdProfile, btd_profile_register,
+    btd_profile_unregister,
 };
 use crate::service::BtdService;
 
@@ -163,10 +161,7 @@ fn csip_ready(csip: &BtCsip) {
     // The Rust BtdDevice::add_set() takes a string identifier.
     let encrypt = sirk_type == CsipSirkType::Encrypt;
     let sirk_hex: String = key.iter().map(|b| format!("{b:02x}")).collect();
-    let set_id = format!(
-        "csip:enc={},sirk={},size={},rank={}",
-        encrypt, sirk_hex, size, rank
-    );
+    let set_id = format!("csip:enc={},sirk={},size={},rank={}", encrypt, sirk_hex, size, rank);
 
     // We need to lock the device to add the set. Since this callback is
     // synchronous, use blocking_lock().
@@ -261,9 +256,7 @@ fn csip_attached(csip: Arc<BtCsip>) {
     let addr = device_addr.unwrap();
     let placeholder_adapter = tokio::task::block_in_place(|| {
         let handle = tokio::runtime::Handle::current();
-        handle.block_on(async {
-            btd_adapter_get_default().await
-        })
+        handle.block_on(async { btd_adapter_get_default().await })
     });
     let adapter = match placeholder_adapter {
         Some(a) => a,
@@ -371,9 +364,7 @@ fn csip_data_cleanup(data: &CsipData) {
 /// GATT database from the device to initialize the BtCsip engine.
 ///
 /// Replaces the C `csip_probe()` function.
-fn csip_probe(
-    device: &Arc<tokio::sync::Mutex<BtdDevice>>,
-) -> Result<(), BtdError> {
+fn csip_probe(device: &Arc<tokio::sync::Mutex<BtdDevice>>) -> Result<(), BtdError> {
     debug!("CSIP: probe");
 
     // Access device fields — we need adapter and GATT DB. Since this is a
@@ -428,12 +419,8 @@ fn csip_probe(
     // For the probe callback, we don't have the service directly, but the
     // session will be matched by device.
 
-    let data = CsipData {
-        device: Arc::clone(device),
-        service: None,
-        csip: Arc::clone(&csip),
-        ready_id,
-    };
+    let data =
+        CsipData { device: Arc::clone(device), service: None, csip: Arc::clone(&csip), ready_id };
 
     csip_data_add(data);
 
@@ -648,11 +635,7 @@ fn csis_data_add(data: CsisData) {
     if !csis_config.sirk.iter().all(|&b| b == 0) {
         // Build the encrypt function for SIRK distribution.
         let encrypt_func: Option<EncryptFunc> =
-            if csis_config.encrypt {
-                Some(Arc::new(csis_encrypt))
-            } else {
-                None
-            };
+            if csis_config.encrypt { Some(Arc::new(csis_encrypt)) } else { None };
 
         data.csip.set_sirk(
             csis_config.encrypt,
@@ -674,9 +657,7 @@ fn csis_data_add(data: CsisData) {
 /// local GATT database for the given adapter.
 ///
 /// Replaces the C `csis_server_probe()` function.
-fn csis_server_probe(
-    adapter: &Arc<tokio::sync::Mutex<BtdAdapter>>,
-) -> Result<(), BtdError> {
+fn csis_server_probe(adapter: &Arc<tokio::sync::Mutex<BtdAdapter>>) -> Result<(), BtdError> {
     debug!("CSIP: server probe");
 
     let adapter = Arc::clone(adapter);
@@ -707,10 +688,7 @@ fn csis_server_probe(
     // Create the BtCsip engine with only the local GATT database (server mode).
     let csip = BtCsip::new((*ldb).clone(), None);
 
-    let data = CsisData {
-        adapter: Arc::clone(&adapter),
-        csip,
-    };
+    let data = CsisData { adapter: Arc::clone(&adapter), csip };
 
     csis_data_add(data);
 

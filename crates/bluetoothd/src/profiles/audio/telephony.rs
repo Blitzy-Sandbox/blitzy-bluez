@@ -244,10 +244,7 @@ impl Call1Interface {
     /// telephony instance.
     async fn answer(&self) -> Result<(), BtdError> {
         let call = self.inner.lock().await;
-        let call_data = CallData {
-            idx: call.idx,
-            path: call.path.clone(),
-        };
+        let call_data = CallData { idx: call.idx, path: call.path.clone() };
         let cbs = Arc::clone(&call.telephony);
         drop(call);
         cbs.call_answer(&call_data)
@@ -259,10 +256,7 @@ impl Call1Interface {
     /// telephony instance.
     async fn hangup(&self) -> Result<(), BtdError> {
         let call = self.inner.lock().await;
-        let call_data = CallData {
-            idx: call.idx,
-            path: call.path.clone(),
-        };
+        let call_data = CallData { idx: call.idx, path: call.path.clone() };
         let cbs = Arc::clone(&call.telephony);
         drop(call);
         cbs.call_hangup(&call_data)
@@ -539,9 +533,7 @@ impl Telephony {
         // Extract device reference from the service.
         let device = {
             let svc = service.lock().expect("service lock poisoned");
-            svc.btd_service_get_device()
-                .expect("telephony_new: service has no device")
-                .clone()
+            svc.btd_service_get_device().expect("telephony_new: service has no device").clone()
         };
 
         // Get the device path and address.
@@ -590,10 +582,7 @@ impl Telephony {
         // This is a best-effort operation — if the connection is already
         // closed or the path is not registered, we silently ignore errors.
         let conn = btd_get_dbus_connection();
-        let _ = conn
-            .object_server()
-            .remove::<Telephony1Interface, _>(self.path.as_str())
-            .await;
+        let _ = conn.object_server().remove::<Telephony1Interface, _>(self.path.as_str()).await;
         debug!("Unregistered interface {} on path {}", TELEPHONY_INTERFACE, self.path);
     }
 
@@ -611,14 +600,9 @@ impl Telephony {
             tel.path.clone()
         };
 
-        let iface = Telephony1Interface {
-            inner: Arc::clone(telephony),
-        };
+        let iface = Telephony1Interface { inner: Arc::clone(telephony) };
 
-        conn.object_server()
-            .at(path.as_str(), iface)
-            .await
-            .map_err(|_| -libc::EINVAL)?;
+        conn.object_server().at(path.as_str(), iface).await.map_err(|_| -libc::EINVAL)?;
 
         debug!("Registered interface {} on path {}", TELEPHONY_INTERFACE, path);
         Ok(())
@@ -634,10 +618,7 @@ impl Telephony {
             tel.path.clone()
         };
 
-        let _ = conn
-            .object_server()
-            .remove::<Telephony1Interface, _>(path.as_str())
-            .await;
+        let _ = conn.object_server().remove::<Telephony1Interface, _>(path.as_str()).await;
 
         debug!("Unregistered interface {} on path {}", TELEPHONY_INTERFACE, path);
     }
@@ -709,11 +690,7 @@ impl Telephony {
     pub async fn remove_uri_scheme(telephony: &Arc<Mutex<Telephony>>, scheme: &str) {
         {
             let mut tel = telephony.lock().await;
-            if let Some(pos) = tel
-                .uri_schemes
-                .iter()
-                .position(|s| s.eq_ignore_ascii_case(scheme))
-            {
+            if let Some(pos) = tel.uri_schemes.iter().position(|s| s.eq_ignore_ascii_case(scheme)) {
                 tel.uri_schemes.remove(pos);
             } else {
                 return;
@@ -736,10 +713,7 @@ impl Telephony {
                 return;
             }
             let address = tel.dst.ba2str();
-            debug!(
-                "device {} state {} -> {}",
-                address, tel.state, state
-            );
+            debug!("device {} state {} -> {}", address, tel.state, state);
             tel.state = state;
         }
 
@@ -790,10 +764,7 @@ impl Telephony {
                 return;
             }
             let address = tel.dst.ba2str();
-            debug!(
-                "device {} signal {} -> {}",
-                address, tel.signal, signal
-            );
+            debug!("device {} signal {} -> {}", address, tel.signal, signal);
             tel.signal = signal;
         }
 
@@ -817,10 +788,7 @@ impl Telephony {
                 return;
             }
             let address = tel.dst.ba2str();
-            debug!(
-                "device {} roaming {} -> {}",
-                address, tel.roaming as u8, roaming as u8
-            );
+            debug!("device {} roaming {} -> {}", address, tel.roaming as u8, roaming as u8);
             tel.roaming = roaming;
         }
 
@@ -844,10 +812,7 @@ impl Telephony {
                 return;
             }
             let address = tel.dst.ba2str();
-            debug!(
-                "device {} battchg {} -> {}",
-                address, tel.battchg, battchg
-            );
+            debug!("device {} battchg {} -> {}", address, tel.battchg, battchg);
             tel.battchg = battchg;
         }
 
@@ -957,10 +922,7 @@ impl Telephony {
         };
 
         let conn = btd_get_dbus_connection();
-        let _ = conn
-            .object_server()
-            .remove::<Call1Interface, _>(path.as_str())
-            .await;
+        let _ = conn.object_server().remove::<Call1Interface, _>(path.as_str()).await;
 
         debug!("Unregistered interface {} on path {}", TELEPHONY_CALL_INTERFACE, path);
     }
@@ -991,9 +953,7 @@ impl Telephony {
         // notifications are automatically dispatched by zbus when a
         // property getter returns a different value from the cached one.
         let object_server = conn.object_server();
-        let _ = object_server
-            .interface::<_, Telephony1Interface>(path.as_str())
-            .await;
+        let _ = object_server.interface::<_, Telephony1Interface>(path.as_str()).await;
     }
 }
 
@@ -1010,15 +970,10 @@ pub async fn telephony_call_register_interface(call: &Arc<Mutex<Call>>) -> Resul
         c.path.clone()
     };
 
-    let iface = Call1Interface {
-        inner: Arc::clone(call),
-    };
+    let iface = Call1Interface { inner: Arc::clone(call) };
 
     let conn = btd_get_dbus_connection();
-    conn.object_server()
-        .at(path.as_str(), iface)
-        .await
-        .map_err(|_| -libc::EINVAL)?;
+    conn.object_server().at(path.as_str(), iface).await.map_err(|_| -libc::EINVAL)?;
 
     debug!("Registered interface {} on path {}", TELEPHONY_CALL_INTERFACE, path);
     Ok(())
@@ -1034,10 +989,7 @@ pub async fn telephony_call_unregister_interface(call: &Arc<Mutex<Call>>) {
     };
 
     let conn = btd_get_dbus_connection();
-    let _ = conn
-        .object_server()
-        .remove::<Call1Interface, _>(path.as_str())
-        .await;
+    let _ = conn.object_server().remove::<Call1Interface, _>(path.as_str()).await;
 
     debug!("Unregistered interface {} on path {}", TELEPHONY_CALL_INTERFACE, path);
 }
@@ -1051,12 +1003,7 @@ pub async fn telephony_call_set_state(call: &Arc<Mutex<Call>>, state: CallState)
         if c.state == state {
             return;
         }
-        debug!(
-            "{} state {} -> {}",
-            c.path,
-            c.state,
-            state
-        );
+        debug!("{} state {} -> {}", c.path, c.state, state);
         c.state = state;
         c.path.clone()
     };
@@ -1064,9 +1011,7 @@ pub async fn telephony_call_set_state(call: &Arc<Mutex<Call>>, state: CallState)
     // Best-effort property-changed notification.
     let conn = btd_get_dbus_connection();
     let object_server = conn.object_server();
-    let _ = object_server
-        .interface::<_, Call1Interface>(path.as_str())
-        .await;
+    let _ = object_server.interface::<_, Call1Interface>(path.as_str()).await;
 }
 
 /// Update the line identification of a call and emit a property-changed signal.
@@ -1086,7 +1031,5 @@ pub async fn telephony_call_set_line_id(call: &Arc<Mutex<Call>>, line_id: &str) 
     // Best-effort property-changed notification.
     let conn = btd_get_dbus_connection();
     let object_server = conn.object_server();
-    let _ = object_server
-        .interface::<_, Call1Interface>(path.as_str())
-        .await;
+    let _ = object_server.interface::<_, Call1Interface>(path.as_str()).await;
 }

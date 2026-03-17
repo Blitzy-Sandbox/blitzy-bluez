@@ -35,7 +35,7 @@ use bluez_shared::gatt::db::{GattDb, GattDbAttribute};
 use bluez_shared::socket::{BluetoothListener, SecLevel, SocketBuilder};
 use bluez_shared::sys::bluetooth::BdAddr;
 use bluez_shared::sys::hidp::{
-    hidp_connadd_req, hidp_conndel_req, HIDPCONNADD, HIDPCONNDEL, HIDP_VIRTUAL_CABLE_UNPLUG,
+    HIDP_VIRTUAL_CABLE_UNPLUG, HIDPCONNADD, HIDPCONNDEL, hidp_connadd_req, hidp_conndel_req,
 };
 use bluez_shared::util::uuid::{BtUuid, HID_UUID};
 
@@ -44,8 +44,8 @@ use crate::device::BtdDevice;
 use crate::error::BtdError;
 use crate::log::{btd_error, btd_info, btd_warn};
 use crate::profile::{
-    btd_profile_register, btd_profile_unregister, BTD_PROFILE_BEARER_BREDR,
-    BTD_PROFILE_BEARER_LE, BtdProfile,
+    BTD_PROFILE_BEARER_BREDR, BTD_PROFILE_BEARER_LE, BtdProfile, btd_profile_register,
+    btd_profile_unregister,
 };
 
 // ===========================================================================
@@ -232,9 +232,7 @@ static CABLE_PAIRING_DEVICES: &[CablePairing] = &[
 
 /// Look up a cable-pairing entry by USB VID/PID.
 pub fn get_pairing(vid: u16, pid: u16) -> Option<&'static CablePairing> {
-    CABLE_PAIRING_DEVICES
-        .iter()
-        .find(|e| e.vid == vid && e.pid == pid)
+    CABLE_PAIRING_DEVICES.iter().find(|e| e.vid == vid && e.pid == pid)
 }
 
 // ===========================================================================
@@ -340,10 +338,7 @@ impl InputConfig {
                     "true" => true,
                     "false" => false,
                     _ => {
-                        btd_warn(
-                            0,
-                            &format!("input: invalid ClassicBondedOnly '{}'", val),
-                        );
+                        btd_warn(0, &format!("input: invalid ClassicBondedOnly '{}'", val));
                         true
                     }
                 };
@@ -370,11 +365,9 @@ impl InputConfig {
 static INPUT_CONFIG: LazyLock<StdMutex<InputConfig>> =
     LazyLock::new(|| StdMutex::new(InputConfig::default()));
 
-static HID_PROFILE: LazyLock<StdMutex<Option<BtdProfile>>> =
-    LazyLock::new(|| StdMutex::new(None));
+static HID_PROFILE: LazyLock<StdMutex<Option<BtdProfile>>> = LazyLock::new(|| StdMutex::new(None));
 
-static HOG_PROFILE: LazyLock<StdMutex<Option<BtdProfile>>> =
-    LazyLock::new(|| StdMutex::new(None));
+static HOG_PROFILE: LazyLock<StdMutex<Option<BtdProfile>>> = LazyLock::new(|| StdMutex::new(None));
 
 static HID_SERVERS: LazyLock<StdMutex<HashMap<BdAddr, HidServer>>> =
     LazyLock::new(|| StdMutex::new(HashMap::new()));
@@ -450,12 +443,7 @@ struct InputDevice {
 }
 
 impl InputDevice {
-    fn new(
-        path: String,
-        src: BdAddr,
-        dst: BdAddr,
-        config: &InputConfig,
-    ) -> Self {
+    fn new(path: String, src: BdAddr, dst: BdAddr, config: &InputConfig) -> Self {
         Self {
             path,
             src,
@@ -573,8 +561,7 @@ impl InputDevice {
         // SAFETY: ctrl_fd and intr_fd are valid, connected L2CAP socket fds.
         // req is fully initialized with valid rd_data pointing into
         // self.descriptor (or null).  HIDPCONNADD is the correct ioctl number.
-        let ret =
-            unsafe { libc::ioctl(ctrl_fd.as_raw_fd(), HIDPCONNADD as libc::c_ulong, &req) };
+        let ret = unsafe { libc::ioctl(ctrl_fd.as_raw_fd(), HIDPCONNADD as libc::c_ulong, &req) };
 
         if ret < 0 {
             let err = std::io::Error::last_os_error();
@@ -600,8 +587,7 @@ impl InputDevice {
 
         // SAFETY: ctrl_fd is a valid L2CAP socket fd.  req is properly
         // initialized with a valid BD_ADDR.  HIDPCONNDEL is correct ioctl.
-        let ret =
-            unsafe { libc::ioctl(ctrl_fd.as_raw_fd(), HIDPCONNDEL as libc::c_ulong, &req) };
+        let ret = unsafe { libc::ioctl(ctrl_fd.as_raw_fd(), HIDPCONNDEL as libc::c_ulong, &req) };
 
         if ret < 0 {
             let err = std::io::Error::last_os_error();
@@ -613,10 +599,7 @@ impl InputDevice {
 
     /// Create UHID virtual device (userspace HID path).
     fn create_uhid(&mut self) -> Result<(), InputError> {
-        let name = self
-            .app_name
-            .clone()
-            .unwrap_or_else(|| "Bluetooth HID".to_owned());
+        let name = self.app_name.clone().unwrap_or_else(|| "Bluetooth HID".to_owned());
 
         let icon = Self::sub_class_to_icon(self.sub_class);
         let device_type = UhidDeviceType::from_icon(Some(icon.as_str()));
@@ -658,12 +641,9 @@ impl InputDevice {
     }
 
     fn uhid_input(&mut self, report_number: u8, data: &[u8]) -> Result<(), InputError> {
-        let uhid = self
-            .uhid
-            .as_mut()
-            .ok_or_else(|| InputError::UhidError("no UHID device".into()))?;
-        uhid.input(report_number, data)
-            .map_err(|e| InputError::UhidError(format!("input: {}", e)))
+        let uhid =
+            self.uhid.as_mut().ok_or_else(|| InputError::UhidError("no UHID device".into()))?;
+        uhid.input(report_number, data).map_err(|e| InputError::UhidError(format!("input: {}", e)))
     }
 
     /// Handle data received on HIDP interrupt channel.
@@ -708,9 +688,8 @@ impl InputDevice {
         buf.push(header);
         buf.extend_from_slice(data);
 
-        let written = nix::unistd::write(fd, &buf).map_err(|e| {
-            InputError::Io(std::io::Error::from_raw_os_error(e as i32))
-        })?;
+        let written = nix::unistd::write(fd, &buf)
+            .map_err(|e| InputError::Io(std::io::Error::from_raw_os_error(e as i32)))?;
         if written != buf.len() {
             return Err(InputError::ProtocolError(format!(
                 "partial write: {}/{}",
@@ -732,9 +711,8 @@ impl InputDevice {
         buf.push(header);
         buf.extend_from_slice(data);
 
-        let written = nix::unistd::write(fd, &buf).map_err(|e| {
-            InputError::Io(std::io::Error::from_raw_os_error(e as i32))
-        })?;
+        let written = nix::unistd::write(fd, &buf)
+            .map_err(|e| InputError::Io(std::io::Error::from_raw_os_error(e as i32)))?;
         if written != buf.len() {
             return Err(InputError::ProtocolError(format!(
                 "partial intr write: {}/{}",
@@ -805,11 +783,7 @@ struct HidServer {
 
 impl HidServer {
     async fn new_async(address: BdAddr, cable_pairing: bool) -> Result<Self, InputError> {
-        let sec = if cable_pairing {
-            SecLevel::Low
-        } else {
-            SecLevel::Medium
-        };
+        let sec = if cable_pairing { SecLevel::Low } else { SecLevel::Medium };
 
         debug!(
             "input: starting HID server on {} (cable_pairing={})",
@@ -880,10 +854,7 @@ fn hid_server_start(adapter: &Arc<TokioMutex<BtdAdapter>>) -> Result<(), BtdErro
             Ok(server) => {
                 let mut servers = HID_SERVERS.lock().unwrap_or_else(|e| e.into_inner());
                 servers.insert(address, server);
-                btd_info(
-                    0,
-                    &format!("input: HID server started on {}", address.ba2str()),
-                );
+                btd_info(0, &format!("input: HID server started on {}", address.ba2str()));
             }
             Err(e) => {
                 btd_error(0, &format!("input: failed to start HID server: {}", e));
@@ -1012,10 +983,7 @@ impl BtHog {
                 if success {
                     debug!("input/hog: GATT client ready, discovery will proceed");
                 } else {
-                    error!(
-                        "input/hog: GATT client not ready, att_ecode={:#x}",
-                        att_ecode
-                    );
+                    error!("input/hog: GATT client not ready, att_ecode={:#x}", att_ecode);
                 }
             }));
             self.ready_id = ready_id;
@@ -1111,10 +1079,7 @@ impl BtHog {
             return;
         }
 
-        debug!(
-            "input/hog: found {} HID Service instance(s)",
-            service_handles.len()
-        );
+        debug!("input/hog: found {} HID Service instance(s)", service_handles.len());
 
         for &svc_handle in &service_handles {
             self.process_hid_service(svc_handle);
@@ -1142,10 +1107,15 @@ impl BtHog {
         let end_handle = svc_handle.saturating_add(0xFFFF);
 
         let mut found_chars: Vec<(u16, BtUuid)> = Vec::new();
-        db.foreach_in_range(None, |attr: GattDbAttribute| {
-            // Process each attribute in the service handle range.
-            let _ = attr;
-        }, svc_handle, end_handle);
+        db.foreach_in_range(
+            None,
+            |attr: GattDbAttribute| {
+                // Process each attribute in the service handle range.
+                let _ = attr;
+            },
+            svc_handle,
+            end_handle,
+        );
 
         // Use get_attribute to probe handles sequentially within service.
         for handle in svc_handle..=svc_handle.saturating_add(200) {
@@ -1187,10 +1157,7 @@ impl BtHog {
                 if success {
                     debug!("input/hog: Report Map read: {} bytes", data.len());
                 } else {
-                    error!(
-                        "input/hog: Report Map read failed, att_ecode={:#x}",
-                        att_ecode
-                    );
+                    error!("input/hog: Report Map read failed, att_ecode={:#x}", att_ecode);
                 }
             }),
         );
@@ -1215,10 +1182,7 @@ impl BtHog {
                         bcd_hid, country, flags
                     );
                 } else if !success {
-                    error!(
-                        "input/hog: HID Info read failed, att_ecode={:#x}",
-                        att_ecode
-                    );
+                    error!("input/hog: HID Info read failed, att_ecode={:#x}", att_ecode);
                 }
             }),
         );
@@ -1399,11 +1363,7 @@ impl BtHog {
                     }
                 }),
                 Box::new(move |handle, data| {
-                    trace!(
-                        "input/hog: notification handle={} len={}",
-                        handle,
-                        data.len()
-                    );
+                    trace!("input/hog: notification handle={} len={}", handle, data.len());
                 }),
             );
             report.notify_id = notify_id;
@@ -1566,11 +1526,7 @@ fn hog_accept(
     Box::pin(async move {
         let (path, gatt_client, gatt_db) = {
             let d = device.lock().await;
-            (
-                d.path.clone(),
-                d.get_gatt_client().cloned(),
-                d.get_gatt_db().cloned(),
-            )
+            (d.path.clone(), d.get_gatt_client().cloned(), d.get_gatt_db().cloned())
         };
 
         let devices = HOG_DEVICES.lock().unwrap_or_else(|e| e.into_inner());
@@ -1882,8 +1838,7 @@ mod tests {
 
     #[test]
     fn test_input_plugin_name() {
-        let found = inventory::iter::<crate::plugin::PluginDesc>()
-            .any(|desc| desc.name == "input");
+        let found = inventory::iter::<crate::plugin::PluginDesc>().any(|desc| desc.name == "input");
         assert!(found, "input plugin should be registered via inventory");
     }
 }

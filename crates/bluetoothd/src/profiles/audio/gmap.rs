@@ -94,9 +94,7 @@ fn find_session_by_device(
     device: &Arc<tokio::sync::Mutex<BtdDevice>>,
 ) -> Option<usize> {
     let dev_ptr = Arc::as_ptr(device);
-    sessions
-        .iter()
-        .position(|s| Arc::as_ptr(&s.device) == dev_ptr)
+    sessions.iter().position(|s| Arc::as_ptr(&s.device) == dev_ptr)
 }
 
 /// Add a new GMAP session, guarding against duplicates for the same device.
@@ -124,10 +122,7 @@ fn gmap_data_add(gmap: &Arc<BtGmap>, device: &Arc<tokio::sync::Mutex<BtdDevice>>
     // Configure debug callback on the GMAP engine.
     gmap.set_debug(Some(Box::new(gmap_debug)));
 
-    sessions.push(GmapData {
-        device: Arc::clone(device),
-        gmap: Arc::clone(gmap),
-    });
+    sessions.push(GmapData { device: Arc::clone(device), gmap: Arc::clone(gmap) });
 }
 
 /// Remove a GMAP session by device pointer comparison and detach the GMAP
@@ -222,9 +217,7 @@ fn gmap_accept(
         // Check if a session already exists for this device (equivalent to
         // the C check: `if (btd_service_get_user_data(service)) return gmap`).
         {
-            let sessions = SESSIONS
-                .lock()
-                .map_err(|_| BtdError::failed("lock sessions"))?;
+            let sessions = SESSIONS.lock().map_err(|_| BtdError::failed("lock sessions"))?;
             let dev_ptr = Arc::as_ptr(&device);
             if sessions.iter().any(|s| Arc::as_ptr(&s.device) == dev_ptr) {
                 debug!("GMAP: session already exists for {}", addr);
@@ -245,10 +238,7 @@ fn gmap_accept(
         let ldb = match gatt_db {
             Some(db) => db,
             None => {
-                btd_error(
-                    0xffff,
-                    &format!("GMAP: no local GATT DB for {}", addr),
-                );
+                btd_error(0xffff, &format!("GMAP: no local GATT DB for {}", addr));
                 return Err(BtdError::not_available());
             }
         };
@@ -258,10 +248,7 @@ fn gmap_accept(
         let gmap = match BtGmap::attach(ldb, client) {
             Some(g) => g,
             None => {
-                btd_error(
-                    0xffff,
-                    &format!("GMAP: client unable to attach for {}", addr),
-                );
+                btd_error(0xffff, &format!("GMAP: client unable to attach for {}", addr));
                 return Err(BtdError::not_available());
             }
         };
@@ -347,10 +334,7 @@ fn gmap_server_probe(adapter: &Arc<tokio::sync::Mutex<BtdAdapter>>) -> Result<()
                             );
                         }
                     } else {
-                        btd_error(
-                            0xffff,
-                            &format!("GMAP: no GATT database on adapter {}", path),
-                        );
+                        btd_error(0xffff, &format!("GMAP: no GATT database on adapter {}", path));
                     }
                 });
             });
@@ -516,20 +500,14 @@ mod tests {
     fn has_session_for(device: &Arc<tokio::sync::Mutex<BtdDevice>>) -> bool {
         let sessions = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
         let dev_ptr = Arc::as_ptr(device);
-        sessions
-            .iter()
-            .any(|s| Arc::as_ptr(&s.device) == dev_ptr)
+        sessions.iter().any(|s| Arc::as_ptr(&s.device) == dev_ptr)
     }
 
     /// Helper: create a minimal test BtdDevice for use in unit tests.
     fn make_test_device() -> Arc<tokio::sync::Mutex<BtdDevice>> {
         let adapter = Arc::new(tokio::sync::Mutex::new(BtdAdapter::new_for_test(0)));
-        let device = BtdDevice::new(
-            adapter,
-            BdAddr::default(),
-            AddressType::Bredr,
-            "/org/bluez/hci0",
-        );
+        let device =
+            BtdDevice::new(adapter, BdAddr::default(), AddressType::Bredr, "/org/bluez/hci0");
         Arc::new(tokio::sync::Mutex::new(device))
     }
 

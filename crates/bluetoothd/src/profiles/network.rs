@@ -37,21 +37,19 @@ use crate::error::BtdError;
 use crate::log::{btd_debug, btd_error, btd_info, btd_warn};
 use crate::plugin::PluginPriority;
 use crate::profile::{
-    btd_profile_register, btd_profile_unregister, BtdProfile, BTD_PROFILE_BEARER_BREDR,
+    BTD_PROFILE_BEARER_BREDR, BtdProfile, btd_profile_register, btd_profile_unregister,
 };
 use crate::sdp::{
-    add_record_to_server, remove_record_from_server, SdpData, SdpRecord,
     SDP_ATTR_BROWSE_GRP_LIST, SDP_ATTR_PFILE_DESC_LIST, SDP_ATTR_PROTO_DESC_LIST,
-    SDP_ATTR_SVCLASS_ID_LIST,
+    SDP_ATTR_SVCLASS_ID_LIST, SdpData, SdpRecord, add_record_to_server, remove_record_from_server,
 };
 
-
-use bluez_shared::sys::bluetooth::{BdAddr, BTPROTO_BNEP, BTPROTO_L2CAP, PF_BLUETOOTH};
+use bluez_shared::sys::bluetooth::{BTPROTO_BNEP, BTPROTO_L2CAP, BdAddr, PF_BLUETOOTH};
 use bluez_shared::sys::bnep::{
-    bnep_connadd_req, bnep_conndel_req, BNEPCONNADD, BNEPCONNDEL, BNEPGETSUPPFEAT,
-    BNEP_CONNECT_TO, BNEP_CONN_INVALID_DST, BNEP_CONN_INVALID_SRC, BNEP_CONN_INVALID_SVC,
-    BNEP_CONN_NOT_ALLOWED, BNEP_MTU, BNEP_PSM, BNEP_SETUP_CONN_REQ, BNEP_SETUP_CONN_RSP,
-    BNEP_SUCCESS, BNEP_SVC_GN, BNEP_SVC_NAP, BNEP_SVC_PANU,
+    BNEP_CONN_INVALID_DST, BNEP_CONN_INVALID_SRC, BNEP_CONN_INVALID_SVC, BNEP_CONN_NOT_ALLOWED,
+    BNEP_CONNECT_TO, BNEP_MTU, BNEP_PSM, BNEP_SETUP_CONN_REQ, BNEP_SETUP_CONN_RSP, BNEP_SUCCESS,
+    BNEP_SVC_GN, BNEP_SVC_NAP, BNEP_SVC_PANU, BNEPCONNADD, BNEPCONNDEL, BNEPGETSUPPFEAT,
+    bnep_connadd_req, bnep_conndel_req,
 };
 use bluez_shared::util::uuid::BtUuid;
 
@@ -92,9 +90,8 @@ const CON_SETUP_TO: u64 = 9;
 const BNEP_SETUP_RESPONSE: u32 = 0x01;
 
 /// BNEP base UUID bytes [4..16] used for UUID128 validation.
-const BNEP_BASE_UUID_TAIL: [u8; 12] = [
-    0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB,
-];
+const BNEP_BASE_UUID_TAIL: [u8; 12] =
+    [0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0x80, 0x5F, 0x9B, 0x34, 0xFB];
 
 /// Linux bridge ioctl: add interface to bridge (not in libc crate for Linux).
 const SIOCBRADDIF: libc::c_ulong = 0x89a2;
@@ -159,12 +156,10 @@ static BNEP_CTL_SOCK: std::sync::LazyLock<std::sync::Mutex<Option<OwnedFd>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(None));
 
 /// Global configuration: whether security is enabled for PAN connections.
-static CONF_SECURITY: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(true);
+static CONF_SECURITY: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
 
 /// Global counter for bnep interface names.
-static BNEP_IF_COUNTER: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(0);
+static BNEP_IF_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 /// BNEP session representing a single kernel bnep network interface.
 ///
@@ -230,9 +225,8 @@ impl BnepSession {
         // Send BNEP setup connection request.
         let req = self.build_setup_req();
         // SAFETY: Writing to a valid socket fd with a properly-formed buffer.
-        let written = unsafe {
-            libc::write(raw_fd, req.as_ptr() as *const libc::c_void, req.len())
-        };
+        let written =
+            unsafe { libc::write(raw_fd, req.as_ptr() as *const libc::c_void, req.len()) };
         if written < 0 {
             let err = std::io::Error::last_os_error();
             btd_error(0xFFFF, &format!("BNEP setup write failed: {}", err));
@@ -250,10 +244,7 @@ impl BnepSession {
         // Read setup response with timeout.
         let resp = self.read_setup_response().await?;
         if resp != BNEP_SUCCESS {
-            btd_error(
-                0xFFFF,
-                &format!("BNEP setup rejected with response code {:#06x}", resp),
-            );
+            btd_error(0xFFFF, &format!("BNEP setup rejected with response code {:#06x}", resp));
             self.state = ConnState::Disconnected;
             return Err(BtdError::failed(&format!(
                 "BNEP connection not allowed (response: {:#06x})",
@@ -406,9 +397,8 @@ impl BnepSession {
             let mut buf = [0u8; 16];
             loop {
                 // SAFETY: Reading from a valid socket fd into a stack buffer.
-                let n = unsafe {
-                    libc::read(raw_fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len())
-                };
+                let n =
+                    unsafe { libc::read(raw_fd, buf.as_mut_ptr() as *mut libc::c_void, buf.len()) };
                 if n <= 0 {
                     let err = std::io::Error::last_os_error();
                     return Err(BtdError::failed(&format!("BNEP read failed: {}", err)));
@@ -440,15 +430,14 @@ impl BnepSession {
     fn send_setup_response(&self, response: u16) -> Result<(), BtdError> {
         let raw_fd = self.fd.as_ref().unwrap().as_raw_fd();
         let buf = [
-            0x01u8,                        // BNEP_CONTROL
-            BNEP_SETUP_CONN_RSP,           // SETUP_CONN_RSP
+            0x01u8,              // BNEP_CONTROL
+            BNEP_SETUP_CONN_RSP, // SETUP_CONN_RSP
             (response >> 8) as u8,
             (response & 0xFF) as u8,
         ];
         // SAFETY: Writing to a valid socket fd with a properly-formed buffer.
-        let written = unsafe {
-            libc::write(raw_fd, buf.as_ptr() as *const libc::c_void, buf.len())
-        };
+        let written =
+            unsafe { libc::write(raw_fd, buf.as_ptr() as *const libc::c_void, buf.len()) };
         if written < 0 {
             let err = std::io::Error::last_os_error();
             return Err(BtdError::failed(&format!("BNEP send response failed: {}", err)));
@@ -490,10 +479,7 @@ impl BnepSession {
         let ret = unsafe { libc::ioctl(ctl_fd, BNEPCONNADD as libc::c_ulong, &req) };
         if ret < 0 {
             let err = std::io::Error::last_os_error();
-            btd_error(
-                0xFFFF,
-                &format!("BNEPCONNADD ioctl failed: {}", err),
-            );
+            btd_error(0xFFFF, &format!("BNEPCONNADD ioctl failed: {}", err));
             return Err(BtdError::failed(&format!("BNEPCONNADD: {}", err)));
         }
 
@@ -694,11 +680,7 @@ fn bridge_ioctl(bridge: &str, ifindex: i32, add: bool) -> Result<(), BtdError> {
     // Set the interface index to add/remove (writing union field is safe in Rust).
     ifr.ifr_ifru.ifru_ifindex = ifindex;
 
-    let ioctl_cmd = if add {
-        SIOCBRADDIF
-    } else {
-        SIOCBRDELIF
-    };
+    let ioctl_cmd = if add { SIOCBRADDIF } else { SIOCBRDELIF };
 
     // SAFETY: SIOCBRADDIF/SIOCBRDELIF ioctl on a valid socket with the
     // bridge name in ifr_name and the interface index in ifr_ifru.ifru_ifindex.
@@ -738,9 +720,7 @@ fn bnep_get_supp_feat() -> u32 {
     let mut supp_feat: u32 = 0;
     // SAFETY: BNEPGETSUPPFEAT ioctl on a valid BNEP control socket,
     // writing the feature bitmask to a stack u32.
-    let ret = unsafe {
-        libc::ioctl(ctl_fd, BNEPGETSUPPFEAT as libc::c_ulong, &mut supp_feat)
-    };
+    let ret = unsafe { libc::ioctl(ctl_fd, BNEPGETSUPPFEAT as libc::c_ulong, &mut supp_feat) };
     if ret < 0 {
         return 0;
     }
@@ -859,10 +839,7 @@ fn bnep_setup_decode(data: &[u8]) -> Result<(u16, u16), u16> {
         }
         BNEP_SVC_PANU => {
             // PANU can accept PANU, GN, or NAP as source.
-            if src_role != BNEP_SVC_PANU
-                && src_role != BNEP_SVC_GN
-                && src_role != BNEP_SVC_NAP
-            {
+            if src_role != BNEP_SVC_PANU && src_role != BNEP_SVC_GN && src_role != BNEP_SVC_NAP {
                 return Err(BNEP_CONN_INVALID_SRC);
             }
         }
@@ -918,10 +895,7 @@ fn uuid_to_bnep_svc(uuid_str: &str) -> Result<u16, BtdError> {
         }
     }
 
-    Err(BtdError::invalid_args_str(&format!(
-        "Invalid PAN UUID: {}",
-        uuid_str
-    )))
+    Err(BtdError::invalid_args_str(&format!("Invalid PAN UUID: {}", uuid_str)))
 }
 
 /// Convert a BNEP service class ID to its UUID string representation.
@@ -994,10 +968,7 @@ pub struct NetworkPeer {
 
 impl NetworkPeer {
     pub fn new(device: Arc<tokio::sync::Mutex<BtdDevice>>) -> Self {
-        NetworkPeer {
-            device,
-            connections: Vec::new(),
-        }
+        NetworkPeer { device, connections: Vec::new() }
     }
 
     /// Find the first active connection, if any.
@@ -1037,9 +1008,8 @@ impl NetworkInterface {
     /// Returns the network interface name (e.g., "bnep0") on success.
     /// Errors: InvalidArguments, InProgress, AlreadyConnected, Failed.
     async fn connect(&self, uuid: String) -> Result<String, zbus::fdo::Error> {
-        let svc_id = uuid_to_bnep_svc(&uuid).map_err(|e| {
-            zbus::fdo::Error::InvalidArgs(format!("{}", e))
-        })?;
+        let svc_id =
+            uuid_to_bnep_svc(&uuid).map_err(|e| zbus::fdo::Error::InvalidArgs(format!("{}", e)))?;
 
         let mut peer = self.peer.lock().await;
 
@@ -1056,14 +1026,10 @@ impl NetworkInterface {
         }
 
         // Find or create the connection entry for this service.
-        let conn_idx = peer
-            .connections
-            .iter()
-            .position(|c| c.id == svc_id)
-            .unwrap_or_else(|| {
-                peer.connections.push(NetworkConn::new(svc_id));
-                peer.connections.len() - 1
-            });
+        let conn_idx = peer.connections.iter().position(|c| c.id == svc_id).unwrap_or_else(|| {
+            peer.connections.push(NetworkConn::new(svc_id));
+            peer.connections.len() - 1
+        });
 
         let conn = &mut peer.connections[conn_idx];
         conn.state = ConnState::Connecting;
@@ -1091,11 +1057,7 @@ impl NetworkInterface {
         // Create L2CAP connection to BNEP PSM.
         // SAFETY: Creating an L2CAP socket for BNEP connection.
         let sock_fd = unsafe {
-            libc::socket(
-                PF_BLUETOOTH,
-                libc::SOCK_SEQPACKET,
-                BTPROTO_L2CAP as libc::c_int,
-            )
+            libc::socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_L2CAP as libc::c_int)
         };
         if sock_fd < 0 {
             let mut peer = self.peer.lock().await;
@@ -1189,9 +1151,9 @@ impl NetworkInterface {
                 btd_info(0xFFFF, &format!("PAN disconnected: {}", dst_str));
                 Ok(())
             }
-            None => Err(zbus::fdo::Error::Failed(
-                "org.bluez.Error.NotConnected: Not connected".into(),
-            )),
+            None => {
+                Err(zbus::fdo::Error::Failed("org.bluez.Error.NotConnected: Not connected".into()))
+            }
         }
     }
 
@@ -1206,11 +1168,7 @@ impl NetworkInterface {
     #[zbus(property, name = "Interface")]
     async fn interface(&self) -> String {
         let peer = self.peer.lock().await;
-        if let Some(conn) = peer.find_connected() {
-            conn.dev.clone()
-        } else {
-            String::new()
-        }
+        if let Some(conn) = peer.find_connected() { conn.dev.clone() } else { String::new() }
     }
 
     /// The UUID of the connected PAN service, or empty if not connected.
@@ -1350,12 +1308,7 @@ pub struct PanServer {
 
 impl PanServer {
     pub fn new(id: u16, bridge: String) -> Self {
-        PanServer {
-            id,
-            record_handle: 0,
-            bridge,
-            sessions: Vec::new(),
-        }
+        PanServer { id, record_handle: 0, bridge, sessions: Vec::new() }
     }
 }
 
@@ -1377,12 +1330,7 @@ pub struct NetworkServer {
 
 impl NetworkServer {
     pub fn new(adapter: Arc<tokio::sync::Mutex<BtdAdapter>>) -> Self {
-        NetworkServer {
-            adapter,
-            listener: None,
-            servers: Vec::new(),
-            listener_task: None,
-        }
+        NetworkServer { adapter, listener: None, servers: Vec::new(), listener_task: None }
     }
 
     /// Check if a specific PAN role is registered.
@@ -1417,19 +1365,13 @@ fn create_pan_sdp_record(svc_id: u16, name: &str, desc: &str, security: bool) ->
     let mut rec = SdpRecord::new(0);
 
     // Service Class ID List.
-    rec.attrs.insert(
-        SDP_ATTR_SVCLASS_ID_LIST,
-        SdpData::Sequence(vec![SdpData::Uuid16(svc_id)]),
-    );
+    rec.attrs.insert(SDP_ATTR_SVCLASS_ID_LIST, SdpData::Sequence(vec![SdpData::Uuid16(svc_id)]));
 
     // Protocol Descriptor List: L2CAP(PSM=BNEP_PSM) + BNEP(version, types).
     rec.attrs.insert(
         SDP_ATTR_PROTO_DESC_LIST,
         SdpData::Sequence(vec![
-            SdpData::Sequence(vec![
-                SdpData::Uuid16(L2CAP_UUID_VAL),
-                SdpData::UInt16(BNEP_PSM),
-            ]),
+            SdpData::Sequence(vec![SdpData::Uuid16(L2CAP_UUID_VAL), SdpData::UInt16(BNEP_PSM)]),
             SdpData::Sequence(vec![
                 SdpData::Uuid16(BNEP_UUID_VAL),
                 SdpData::UInt16(BNEP_VERSION),
@@ -1458,28 +1400,23 @@ fn create_pan_sdp_record(svc_id: u16, name: &str, desc: &str, security: bool) ->
 
     // Service Name.
     if !name.is_empty() {
-        rec.attrs
-            .insert(SDP_ATTR_SVCNAME_PRIMARY, SdpData::Text(name.as_bytes().to_vec()));
+        rec.attrs.insert(SDP_ATTR_SVCNAME_PRIMARY, SdpData::Text(name.as_bytes().to_vec()));
     }
 
     // Service Description.
     if !desc.is_empty() {
-        rec.attrs
-            .insert(SDP_ATTR_SVCDESC_PRIMARY, SdpData::Text(desc.as_bytes().to_vec()));
+        rec.attrs.insert(SDP_ATTR_SVCDESC_PRIMARY, SdpData::Text(desc.as_bytes().to_vec()));
     }
 
     // NAP-specific attributes.
     if svc_id == BNEP_SVC_NAP {
         // Security description: 0=none, 1=service-level enforced.
         let sec_val: u16 = if security { 1 } else { 0 };
-        rec.attrs
-            .insert(SDP_ATTR_SECURITY_DESC, SdpData::UInt16(sec_val));
+        rec.attrs.insert(SDP_ATTR_SECURITY_DESC, SdpData::UInt16(sec_val));
         // Network access type: Ethernet (5).
-        rec.attrs
-            .insert(SDP_ATTR_NET_ACCESS_TYPE, SdpData::UInt16(5));
+        rec.attrs.insert(SDP_ATTR_NET_ACCESS_TYPE, SdpData::UInt16(5));
         // Max net access rate: 10 Mbps.
-        rec.attrs
-            .insert(SDP_ATTR_MAX_NET_ACCESS_RATE, SdpData::UInt32(10_000_000));
+        rec.attrs.insert(SDP_ATTR_MAX_NET_ACCESS_RATE, SdpData::UInt32(10_000_000));
     }
 
     rec
@@ -1516,14 +1453,9 @@ impl NetworkServerInterface {
     /// - `InvalidArguments` if the UUID does not correspond to a valid PAN role
     /// - `AlreadyExists` if the specified role is already registered
     /// - `Failed` if the listener socket cannot be created
-    pub async fn register(
-        &self,
-        uuid: String,
-        bridge: String,
-    ) -> Result<(), zbus::fdo::Error> {
-        let svc_id = uuid_to_bnep_svc(&uuid).map_err(|e| {
-            zbus::fdo::Error::InvalidArgs(format!("{}", e))
-        })?;
+    pub async fn register(&self, uuid: String, bridge: String) -> Result<(), zbus::fdo::Error> {
+        let svc_id =
+            uuid_to_bnep_svc(&uuid).map_err(|e| zbus::fdo::Error::InvalidArgs(format!("{}", e)))?;
 
         let mut server = self.server.lock().await;
 
@@ -1581,11 +1513,7 @@ impl NetworkServerInterface {
 
         btd_info(
             0xFFFF,
-            &format!(
-                "NetworkServer1.Register: {} (bridge={})",
-                bnep_svc_name(svc_id),
-                bridge
-            ),
+            &format!("NetworkServer1.Register: {} (bridge={})", bnep_svc_name(svc_id), bridge),
         );
 
         Ok(())
@@ -1601,9 +1529,8 @@ impl NetworkServerInterface {
     /// - `InvalidArguments` if the UUID does not correspond to a valid PAN role
     /// - `DoesNotExist` if the specified role is not currently registered
     pub async fn unregister(&self, uuid: String) -> Result<(), zbus::fdo::Error> {
-        let svc_id = uuid_to_bnep_svc(&uuid).map_err(|e| {
-            zbus::fdo::Error::InvalidArgs(format!("{}", e))
-        })?;
+        let svc_id =
+            uuid_to_bnep_svc(&uuid).map_err(|e| zbus::fdo::Error::InvalidArgs(format!("{}", e)))?;
 
         let mut server = self.server.lock().await;
 
@@ -1631,10 +1558,7 @@ impl NetworkServerInterface {
                     }
                 }
 
-                btd_info(
-                    0xFFFF,
-                    &format!("NetworkServer1.Unregister: {}", bnep_svc_name(svc_id)),
-                );
+                btd_info(0xFFFF, &format!("NetworkServer1.Unregister: {}", bnep_svc_name(svc_id)));
                 Ok(())
             }
             None => Err(zbus::fdo::Error::Failed(
@@ -1756,10 +1680,7 @@ fn read_config() -> bool {
         Err(e) => {
             btd_debug(
                 0xFFFF,
-                &format!(
-                    "Could not load {}: {} (using defaults)",
-                    NETWORK_CONF_PATH, e
-                ),
+                &format!("Could not load {}: {} (using defaults)", NETWORK_CONF_PATH, e),
             );
             true // Default: security enabled.
         }
@@ -1780,9 +1701,7 @@ pub fn network_init() -> Result<(), Box<dyn std::error::Error>> {
     CONF_SECURITY.store(security, std::sync::atomic::Ordering::Relaxed);
 
     bnep_init().map_err(|e| -> Box<dyn std::error::Error> {
-        Box::new(std::io::Error::other(
-            format!("{}", e),
-        ))
+        Box::new(std::io::Error::other(format!("{}", e)))
     })?;
 
     // Register profiles asynchronously (btd_profile_register is async).
@@ -1879,7 +1798,7 @@ mod tests {
     fn test_bnep_setup_decode_uuid16() {
         // Valid: dst=NAP, src=PANU (UUID16 format).
         let data = [
-            2u8,        // UUID16 size
+            2u8, // UUID16 size
             0x11, 0x16, // dst = BNEP_SVC_NAP
             0x11, 0x15, // src = BNEP_SVC_PANU
         ];
@@ -1891,8 +1810,7 @@ mod tests {
     fn test_bnep_setup_decode_invalid_src() {
         // Invalid: dst=NAP, src=GN (only PANU allowed as src for NAP).
         let data = [
-            2u8,
-            0x11, 0x16, // dst = NAP
+            2u8, 0x11, 0x16, // dst = NAP
             0x11, 0x17, // src = GN (invalid for NAP dst)
         ];
         let result = bnep_setup_decode(&data);
@@ -1903,8 +1821,7 @@ mod tests {
     fn test_bnep_setup_decode_panu_dst() {
         // Valid: dst=PANU, src=NAP.
         let data = [
-            2u8,
-            0x11, 0x15, // dst = PANU
+            2u8, 0x11, 0x15, // dst = PANU
             0x11, 0x16, // src = NAP
         ];
         let result = bnep_setup_decode(&data);
@@ -1915,8 +1832,7 @@ mod tests {
     fn test_bnep_setup_decode_invalid_dst() {
         // Invalid dst service.
         let data = [
-            2u8,
-            0x00, 0x01, // dst = invalid
+            2u8, 0x00, 0x01, // dst = invalid
             0x11, 0x15, // src = PANU
         ];
         let result = bnep_setup_decode(&data);
@@ -1927,8 +1843,7 @@ mod tests {
     fn test_bnep_setup_decode_uuid32() {
         // Valid UUID32 format: dst=NAP, src=PANU.
         let data = [
-            4u8,
-            0x00, 0x00, 0x11, 0x16, // dst = NAP (UUID32)
+            4u8, 0x00, 0x00, 0x11, 0x16, // dst = NAP (UUID32)
             0x00, 0x00, 0x11, 0x15, // src = PANU (UUID32)
         ];
         let result = bnep_setup_decode(&data);
@@ -1939,8 +1854,7 @@ mod tests {
     fn test_bnep_setup_decode_uuid32_overflow() {
         // Invalid UUID32: value doesn't fit in u16.
         let data = [
-            4u8,
-            0x01, 0x00, 0x11, 0x16, // dst > 0xFFFF
+            4u8, 0x01, 0x00, 0x11, 0x16, // dst > 0xFFFF
             0x00, 0x00, 0x11, 0x15,
         ];
         let result = bnep_setup_decode(&data);

@@ -23,19 +23,19 @@ use std::sync::{Arc, Mutex};
 
 use tracing::{debug, error};
 
-use bluez_shared::audio::micp::{bt_micp_add_db, bt_micp_register, bt_micp_unregister, BtMicp};
+use bluez_shared::audio::micp::{BtMicp, bt_micp_add_db, bt_micp_register, bt_micp_unregister};
 use bluez_shared::gatt::db::GattDb;
 
 use crate::adapter::{
-    adapter_get_path, btd_adapter_find_device_by_fd, btd_adapter_get_database,
-    btd_adapter_get_default, BtdAdapter,
+    BtdAdapter, adapter_get_path, btd_adapter_find_device_by_fd, btd_adapter_get_database,
+    btd_adapter_get_default,
 };
 use crate::device::BtdDevice;
 use crate::error::BtdError;
 use crate::plugin::{PluginDesc, PluginPriority};
 use crate::profile::{
-    btd_profile_register, btd_profile_unregister, BtdProfile, BTD_PROFILE_BEARER_LE,
-    BTD_PROFILE_PRIORITY_MEDIUM,
+    BTD_PROFILE_BEARER_LE, BTD_PROFILE_PRIORITY_MEDIUM, BtdProfile, btd_profile_register,
+    btd_profile_unregister,
 };
 // ===========================================================================
 // Constants
@@ -98,28 +98,20 @@ fn find_session_by_device(
     device: &Arc<tokio::sync::Mutex<BtdDevice>>,
 ) -> Option<usize> {
     let dev_ptr = Arc::as_ptr(device);
-    sessions
-        .iter()
-        .position(|s| Arc::as_ptr(&s.device) == dev_ptr)
+    sessions.iter().position(|s| Arc::as_ptr(&s.device) == dev_ptr)
 }
 
 /// Find a session index by `BtMicp` raw pointer comparison.
 fn find_session_by_micp(sessions: &[MicpData], micp: &BtMicp) -> Option<usize> {
     let target = micp as *const BtMicp;
-    sessions
-        .iter()
-        .position(|s| Arc::as_ptr(&s.micp) == target)
+    sessions.iter().position(|s| Arc::as_ptr(&s.micp) == target)
 }
 
 /// Add a new MICP session, guarding against duplicates for the same device.
 ///
 /// Configures the debug callback on the MICP engine and stores the session
 /// in the global sessions list.
-fn micp_data_add(
-    micp: &Arc<BtMicp>,
-    device: &Arc<tokio::sync::Mutex<BtdDevice>>,
-    ready_id: u32,
-) {
+fn micp_data_add(micp: &Arc<BtMicp>, device: &Arc<tokio::sync::Mutex<BtdDevice>>, ready_id: u32) {
     let mut sessions = match SESSIONS.lock() {
         Ok(s) => s,
         Err(_) => {
@@ -140,11 +132,7 @@ fn micp_data_add(
     // Configure debug callback on the MICP engine.
     micp.set_debug(micp_debug);
 
-    sessions.push(MicpData {
-        device: Arc::clone(device),
-        micp: Arc::clone(micp),
-        ready_id,
-    });
+    sessions.push(MicpData { device: Arc::clone(device), micp: Arc::clone(micp), ready_id });
 }
 
 /// Remove a MICP session by matching the `BtMicp` engine instance pointer.
@@ -418,10 +406,8 @@ fn micp_remove(device: &Arc<tokio::sync::Mutex<BtdDevice>>) {
     };
 
     let dev_ptr = Arc::as_ptr(device);
-    let micp_opt = sessions
-        .iter()
-        .find(|s| Arc::as_ptr(&s.device) == dev_ptr)
-        .map(|s| Arc::clone(&s.micp));
+    let micp_opt =
+        sessions.iter().find(|s| Arc::as_ptr(&s.device) == dev_ptr).map(|s| Arc::clone(&s.micp));
 
     drop(sessions);
 
@@ -451,9 +437,7 @@ fn micp_accept(
         // Look up the MICP session for this device.  Drop the
         // std::sync::MutexGuard before any .await to satisfy Send.
         let micp = {
-            let sessions = SESSIONS
-                .lock()
-                .map_err(|_| BtdError::failed("lock sessions"))?;
+            let sessions = SESSIONS.lock().map_err(|_| BtdError::failed("lock sessions"))?;
             let dev_ptr = Arc::as_ptr(&device);
             let micp_opt = sessions
                 .iter()
@@ -496,14 +480,9 @@ fn micp_disconnect(
 
         // Look up and detach the MICP session.
         let micp_opt = {
-            let sessions = SESSIONS
-                .lock()
-                .map_err(|_| BtdError::failed("lock sessions"))?;
+            let sessions = SESSIONS.lock().map_err(|_| BtdError::failed("lock sessions"))?;
             let dev_ptr = Arc::as_ptr(&device);
-            sessions
-                .iter()
-                .find(|s| Arc::as_ptr(&s.device) == dev_ptr)
-                .map(|s| Arc::clone(&s.micp))
+            sessions.iter().find(|s| Arc::as_ptr(&s.device) == dev_ptr).map(|s| Arc::clone(&s.micp))
         };
 
         if let Some(micp) = micp_opt {

@@ -31,20 +31,20 @@ use std::sync::{Arc, Mutex};
 use tracing::{debug, error};
 
 use bluez_shared::att::transport::BtAtt;
-use bluez_shared::audio::ccp::{bt_ccp_register, BtCcp};
+use bluez_shared::audio::ccp::{BtCcp, bt_ccp_register};
 use bluez_shared::gatt::client::BtGattClient;
 use bluez_shared::gatt::db::GattDb;
 
 use crate::adapter::{
-    adapter_get_path, btd_adapter_find_device_by_fd, btd_adapter_get_database, BtdAdapter,
+    BtdAdapter, adapter_get_path, btd_adapter_find_device_by_fd, btd_adapter_get_database,
 };
 use crate::device::BtdDevice;
 use crate::error::BtdError;
 use crate::gatt::database::BtdGattDatabase;
 use crate::plugin::{BluetoothPlugin, PluginDesc, PluginPriority};
 use crate::profile::{
-    btd_profile_register, btd_profile_unregister, BtdProfile, BTD_PROFILE_BEARER_LE,
-    BTD_PROFILE_PRIORITY_MEDIUM,
+    BTD_PROFILE_BEARER_LE, BTD_PROFILE_PRIORITY_MEDIUM, BtdProfile, btd_profile_register,
+    btd_profile_unregister,
 };
 use crate::service::BtdService;
 
@@ -130,10 +130,7 @@ fn ccp_data_add(ccp: &Arc<BtCcp>, device: &Arc<tokio::sync::Mutex<BtdDevice>>) {
     // the C pattern where ccp_data is associated with the bt_ccp instance.
     ccp.set_user_data(Arc::clone(device) as Arc<dyn Any + Send + Sync>);
 
-    sessions.push(CcpData {
-        device: Arc::clone(device),
-        ccp: Arc::clone(ccp),
-    });
+    sessions.push(CcpData { device: Arc::clone(device), ccp: Arc::clone(ccp) });
 }
 
 /// Remove a CCP session for a given device and clean up the CCP engine's
@@ -387,10 +384,7 @@ fn ccp_disconnect(
         let ccp_opt = {
             let sessions = SESSIONS.lock().map_err(|_| BtdError::failed("lock sessions"))?;
             let dev_ptr = Arc::as_ptr(&device);
-            sessions
-                .iter()
-                .find(|s| Arc::as_ptr(&s.device) == dev_ptr)
-                .map(|s| Arc::clone(&s.ccp))
+            sessions.iter().find(|s| Arc::as_ptr(&s.device) == dev_ptr).map(|s| Arc::clone(&s.ccp))
         };
 
         if let Some(ccp) = ccp_opt {

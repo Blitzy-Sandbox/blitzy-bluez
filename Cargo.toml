@@ -123,6 +123,8 @@ ccm = { workspace = true }
 p256 = { workspace = true }
 # Random number generation for fuzz/shuffle test cases
 rand = { workspace = true }
+# ALSA sequencer types for BLE-MIDI test event construction
+alsa = { workspace = true }
 # Temporary directories for isolated test file I/O
 tempfile = { workspace = true }
 # Raw C types for low-level test operations
@@ -315,6 +317,10 @@ path = "tests/unit/test_gdbus_client.rs"
 [[test]]
 name = "test_lib"
 path = "tests/unit/test_lib.rs"
+
+[[test]]
+name = "test_midi"
+path = "tests/unit/test_midi.rs"
 
 [[test]]
 name = "test_profile"

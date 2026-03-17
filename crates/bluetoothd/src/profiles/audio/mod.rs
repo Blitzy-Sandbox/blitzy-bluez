@@ -22,4 +22,5 @@ pub mod sink;
 pub mod source;
 pub mod telephony;
 pub mod tmap;
+pub mod transport;
 pub mod vcp;

@@ -1065,17 +1065,50 @@ async fn writer_loop(
             // Destructure to take ownership of each field independently
             let QueuedRequest { id, opcode, index, buf, sender, timeout_secs } = request;
 
+            // Create the optional timeout task before pushing to pending.
+            let timeout_handle = if timeout_secs > 0 {
+                let inner_clone = Arc::clone(&inner);
+                let wn = Arc::clone(&write_notify);
+                Some(tokio::spawn(async move {
+                    tokio::time::sleep(Duration::from_secs(timeout_secs)).await;
+                    let mut st = inner_clone.lock().await;
+                    if let Some(pos) = st.pending.iter().position(|p| p.id == id) {
+                        let cmd = st.pending.remove(pos);
+                        let response = MgmtResponse {
+                            status: crate::sys::mgmt::MGMT_STATUS_TIMEOUT,
+                            opcode: cmd.opcode,
+                            index: cmd.index,
+                            data: Vec::new(),
+                        };
+                        let _ = cmd.sender.send(response);
+                        drop(st);
+                        wn.notify_one();
+                    }
+                }))
+            } else {
+                None
+            };
+
+            // Register the command as pending BEFORE writing to the socket.
+            // This prevents a race where the reader_loop processes the kernel
+            // response (via request_complete) before the writer has registered
+            // the command in the pending list.  Without this ordering, the
+            // reader silently drops the response and send_command() hangs
+            // indefinitely on the oneshot channel.  The C reference
+            // (`can_write_data`, mgmt.c lines 240-278) also moves the request
+            // from the request queue to the pending list before calling write().
+            {
+                let mut state = inner.lock().await;
+                state.pending.push(PendingCommand {
+                    id,
+                    opcode,
+                    index,
+                    sender,
+                    timeout_handle,
+                });
+            }
+
             match try_write_fd(&fd, &buf).await {
-                Err(e) => {
-                    tracing::error!("mgmt write failed for opcode 0x{:04x}: {}", opcode, e);
-                    let response = MgmtResponse {
-                        status: MGMT_STATUS_FAILED,
-                        opcode,
-                        index,
-                        data: Vec::new(),
-                    };
-                    let _ = sender.send(response);
-                }
                 Ok(()) => {
                     tracing::debug!(
                         "[0x{:04x}] command 0x{:04x} ({})",
@@ -1083,39 +1116,25 @@ async fn writer_loop(
                         opcode,
                         mgmt_opstr(opcode)
                     );
-
+                }
+                Err(e) => {
+                    tracing::error!("mgmt write failed for opcode 0x{:04x}: {}", opcode, e);
+                    // Remove from pending and deliver the error via the
+                    // oneshot channel so send_command() does not hang.
                     let mut state = inner.lock().await;
-
-                    let timeout_handle = if timeout_secs > 0 {
-                        let inner_clone = Arc::clone(&inner);
-                        let wn = Arc::clone(&write_notify);
-                        Some(tokio::spawn(async move {
-                            tokio::time::sleep(Duration::from_secs(timeout_secs)).await;
-                            let mut st = inner_clone.lock().await;
-                            if let Some(pos) = st.pending.iter().position(|p| p.id == id) {
-                                let cmd = st.pending.remove(pos);
-                                let response = MgmtResponse {
-                                    status: crate::sys::mgmt::MGMT_STATUS_TIMEOUT,
-                                    opcode: cmd.opcode,
-                                    index: cmd.index,
-                                    data: Vec::new(),
-                                };
-                                let _ = cmd.sender.send(response);
-                                drop(st);
-                                wn.notify_one();
-                            }
-                        }))
-                    } else {
-                        None
-                    };
-
-                    state.pending.push(PendingCommand {
-                        id,
-                        opcode,
-                        index,
-                        sender,
-                        timeout_handle,
-                    });
+                    if let Some(pos) = state.pending.iter().position(|p| p.id == id) {
+                        let cmd = state.pending.remove(pos);
+                        if let Some(handle) = cmd.timeout_handle {
+                            handle.abort();
+                        }
+                        let response = MgmtResponse {
+                            status: MGMT_STATUS_FAILED,
+                            opcode,
+                            index,
+                            data: Vec::new(),
+                        };
+                        let _ = cmd.sender.send(response);
+                    }
                 }
             }
         }

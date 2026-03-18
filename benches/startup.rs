@@ -75,6 +75,7 @@ use tokio::runtime::Runtime;
 
 use bluetoothd::adapter::{adapter_cleanup, adapter_init};
 use bluetoothd::config::{BtdOpts, init_defaults, load_config, parse_config};
+use bluetoothd::dbus_common::set_dbus_connection;
 use bluetoothd::plugin::{
     PluginDesc, PluginPriority, plugin_cleanup, plugin_get_list, plugin_init,
 };
@@ -84,6 +85,97 @@ use bluez_shared::mgmt::client::MgmtSocket;
 // ---------------------------------------------------------------------------
 // Test Fixture Helpers
 // ---------------------------------------------------------------------------
+
+/// Ensure a D-Bus session connection is available for plugin initialisation.
+///
+/// Several plugins (audio, input, battery, MIDI, etc.) register D-Bus
+/// interfaces during `plugin_init()` by calling
+/// [`btd_get_dbus_connection()`][bluetoothd::dbus_common::btd_get_dbus_connection],
+/// which panics if no connection has been cached via
+/// [`set_dbus_connection()`].
+///
+/// This helper establishes a session bus connection in two steps:
+///
+/// 1. **Existing bus** — attempt `zbus::Connection::session()`.  This
+///    succeeds when `DBUS_SESSION_BUS_ADDRESS` points to a live daemon.
+/// 2. **Private daemon** — if step 1 fails (e.g. CI environments with
+///    `DBUS_SESSION_BUS_ADDRESS=/dev/null`), a private `dbus-daemon
+///    --session` is started and the connection is established via the
+///    address it prints.
+///
+/// The connection is cached in the global `OnceLock` via
+/// `set_dbus_connection()` — subsequent calls are no-ops.
+///
+/// The private `dbus-daemon` (if started) runs until the benchmark process
+/// exits; no explicit cleanup is required in ephemeral CI environments.
+fn ensure_dbus_for_benchmarks(rt: &Runtime) {
+    // Fast path: if the OnceLock is already populated, nothing to do.
+    // Attempt a session bus connection which will only succeed if a live
+    // daemon is reachable.
+    let session_result = rt.block_on(async { zbus::Connection::session().await });
+    if let Ok(conn) = session_result {
+        set_dbus_connection(conn);
+        return;
+    }
+
+    // Fallback: start a private dbus-daemon and connect to it.
+    // --fork:  daemonise so .output() returns immediately.
+    // --print-address=1: emit the bus address on stdout (fd 1).
+    // --nopidfile: skip writing a PID file.
+    let output = match std::process::Command::new("dbus-daemon")
+        .args(["--session", "--fork", "--print-address=1", "--nopidfile"])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+    {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!(
+                "bench: cannot start private dbus-daemon: {e}; \
+                 plugin benchmarks requiring D-Bus will be skipped"
+            );
+            return;
+        }
+    };
+
+    let addr = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if addr.is_empty() {
+        eprintln!(
+            "bench: dbus-daemon returned empty address; \
+             plugin benchmarks requiring D-Bus will be skipped"
+        );
+        return;
+    }
+
+    // Connect to the private bus using the explicit address (avoids needing
+    // to call the unsafe std::env::set_var in Rust 2024 edition).
+    let conn_result = rt.block_on(async {
+        zbus::connection::Builder::address(addr.as_str())
+            .map_err(|e| format!("invalid dbus address: {e}"))
+            .and_then(|b| {
+                // The build() call is async — map the outer Result through
+                Ok(b)
+            })
+    });
+
+    let builder = match conn_result {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("bench: failed to create dbus connection builder: {e}");
+            return;
+        }
+    };
+
+    let conn = match rt.block_on(async { builder.build().await }) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("bench: failed to connect to private dbus-daemon: {e}");
+            return;
+        }
+    };
+
+    set_dbus_connection(conn);
+}
 
 /// Create a temporary `main.conf` configuration file with standard defaults.
 ///
@@ -253,6 +345,23 @@ fn bench_plugin_discovery(c: &mut Criterion) {
     let config_path = create_test_config();
     let config_path_str = config_path.to_str().expect("non-UTF8 temp path");
 
+    // Create a tokio runtime — several plugins (e.g. MIDI) call
+    // tokio::spawn() during init, which requires an active reactor on the
+    // current thread.  Without this the benchmark panics with "there is no
+    // reactor running, must be called from the context of a Tokio 1.x
+    // runtime" at midi.rs plugin_init → tokio::spawn.
+    let rt = match Runtime::new() {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("bench_plugin_discovery: failed to create tokio runtime: {e}");
+            return;
+        }
+    };
+
+    // Ensure a D-Bus session connection is available — plugins register
+    // D-Bus interfaces during init and call btd_get_dbus_connection().
+    ensure_dbus_for_benchmarks(&rt);
+
     let mut group = c.benchmark_group("startup/plugin_discovery");
     group.measurement_time(Duration::from_secs(5));
     group.sample_size(200);
@@ -268,6 +377,10 @@ fn bench_plugin_discovery(c: &mut Criterion) {
 
     group.bench_function("inventory_collect_and_sort", |b| {
         b.iter(|| {
+            // Enter the tokio runtime context so that plugins calling
+            // tokio::spawn() during init have an active reactor available.
+            let _guard = rt.enter();
+
             // Initialise defaults needed for plugin_init
             let opts: BtdOpts = init_defaults();
 
@@ -401,6 +514,10 @@ fn bench_full_daemon_startup(c: &mut Criterion) {
         }
     };
 
+    // Ensure a D-Bus session connection is available — plugins register
+    // D-Bus interfaces during init and call btd_get_dbus_connection().
+    ensure_dbus_for_benchmarks(&rt);
+
     // Set up emulator (optional — benchmark will still run config + plugin
     // phases without it)
     let _emu = setup_emulator();
@@ -411,22 +528,26 @@ fn bench_full_daemon_startup(c: &mut Criterion) {
 
     group.bench_function("config_plugin_adapter_startup", |b| {
         b.iter(|| {
-            // ── Phase 1: Configuration parsing ──
-            let mut opts = init_defaults();
-            if let Some(ini) = load_config(Some(&config_path_str)) {
-                parse_config(&ini, &mut opts);
-            }
-            black_box(&opts);
-
-            // ── Phase 2: Plugin discovery and initialisation ──
-            let plugin_result = plugin_init(None, None, &opts);
-            black_box(plugin_result);
-
-            let plugin_list = plugin_get_list();
-            black_box(&plugin_list);
-
-            // ── Phase 3: MGMT socket + adapter init ──
+            // Run the entire iteration inside rt.block_on() so that the
+            // tokio runtime context is active for all phases.  Plugin init
+            // (Phase 2) requires an active reactor because several plugins
+            // (e.g. MIDI) call tokio::spawn() during initialisation.
             rt.block_on(async {
+                // ── Phase 1: Configuration parsing ──
+                let mut opts = init_defaults();
+                if let Some(ini) = load_config(Some(&config_path_str)) {
+                    parse_config(&ini, &mut opts);
+                }
+                black_box(&opts);
+
+                // ── Phase 2: Plugin discovery and initialisation ──
+                let plugin_result = plugin_init(None, None, &opts);
+                black_box(plugin_result);
+
+                let plugin_list = plugin_get_list();
+                black_box(&plugin_list);
+
+                // ── Phase 3: MGMT socket + adapter init ──
                 // Create MGMT socket (may fail without AF_BLUETOOTH)
                 let mgmt_result = MgmtSocket::new_default();
 
@@ -440,10 +561,10 @@ fn bench_full_daemon_startup(c: &mut Criterion) {
                     // Clean up adapter state for next iteration
                     adapter_cleanup().await;
                 }
-            });
 
-            // ── Phase 4: Plugin cleanup ──
-            plugin_cleanup();
+                // ── Phase 4: Plugin cleanup ──
+                plugin_cleanup();
+            });
         });
     });
 

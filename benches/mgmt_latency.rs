@@ -204,9 +204,17 @@ fn spawn_mock_responder(mock_fd: OwnedFd) -> std::thread::JoinHandle<()> {
         let mut buf = [0u8; 4096];
 
         loop {
+            // The mock fd is non-blocking (SOCK_NONBLOCK set at socketpair
+            // creation).  Handle WouldBlock by yielding and retrying — data
+            // arrives within microseconds in benchmark scenarios because the
+            // writer_loop sends the command before the responder reads.
             let n = match file.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => n,
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                    std::thread::yield_now();
+                    continue;
+                }
                 Err(_) => break,
             };
 
@@ -227,8 +235,15 @@ fn spawn_mock_responder(mock_fd: OwnedFd) -> std::thread::JoinHandle<()> {
             };
 
             let response = build_cmd_complete(opcode, index, &rp);
-            if file.write_all(&response).is_err() {
-                break;
+            // SEQPACKET writes are atomic — retry on WouldBlock (buffer full).
+            loop {
+                match file.write_all(&response) {
+                    Ok(()) => break,
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        std::thread::yield_now();
+                    }
+                    Err(_) => return,
+                }
             }
         }
     })
@@ -243,9 +258,22 @@ fn spawn_mock_responder(mock_fd: OwnedFd) -> std::thread::JoinHandle<()> {
 /// Uses `SOCK_SEQPACKET` to preserve message boundaries, matching the
 /// datagram semantics of the real `HCI_CHANNEL_CONTROL` MGMT socket.
 fn create_mgmt_socketpair() -> (MgmtSocket, OwnedFd) {
-    let (fd_mgmt, fd_mock) =
-        socketpair(AddressFamily::Unix, SockType::SeqPacket, None, SockFlag::SOCK_CLOEXEC)
-            .expect("socketpair creation failed");
+    // Create both fds as non-blocking (SOCK_NONBLOCK) so that the mgmt fd
+    // works correctly with tokio::io::unix::AsyncFd.  AsyncFd requires the
+    // underlying fd to be O_NONBLOCK — without it, the reader_loop's
+    // guard.try_io(|fd| nix::unistd::read(..)) issues a blocking read that
+    // never returns WouldBlock, stalling the tokio runtime thread and causing
+    // an indefinite hang in send_command().
+    //
+    // Both fds receive SOCK_NONBLOCK; the mock responder thread handles
+    // WouldBlock via yield_now() spin-wait (see spawn_mock_responder).
+    let (fd_mgmt, fd_mock) = socketpair(
+        AddressFamily::Unix,
+        SockType::SeqPacket,
+        None,
+        SockFlag::SOCK_CLOEXEC | SockFlag::SOCK_NONBLOCK,
+    )
+    .expect("socketpair creation failed");
 
     let mgmt = MgmtSocket::new(fd_mgmt).expect("MgmtSocket creation failed");
     (mgmt, fd_mock)

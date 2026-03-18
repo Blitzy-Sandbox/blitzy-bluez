@@ -28,10 +28,10 @@ use crate::keyring::{
 };
 use crate::mesh::{
     APP_IDX_DEV_LOCAL, APP_IDX_DEV_REMOTE, DEFAULT_TTL, KEY_REFRESH_PHASE_NONE,
-    KEY_REFRESH_PHASE_TWO, MESH_MODE_DISABLED,
-    MESH_MODE_ENABLED, MESH_MODE_UNSUPPORTED, OP_APPKEY_ADD, OP_APPKEY_UPDATE, OP_NETKEY_ADD, OP_NETKEY_UPDATE,
-    PROV_FLAG_IVU, PROV_FLAG_KR, UNASSIGNED_ADDRESS, is_unassigned, mesh_friendship_supported,
-    mesh_get_crpl, mesh_get_storage_dir, mesh_relay_supported,
+    KEY_REFRESH_PHASE_TWO, MESH_MODE_DISABLED, MESH_MODE_ENABLED, MESH_MODE_UNSUPPORTED,
+    OP_APPKEY_ADD, OP_APPKEY_UPDATE, OP_NETKEY_ADD, OP_NETKEY_UPDATE, PROV_FLAG_IVU, PROV_FLAG_KR,
+    UNASSIGNED_ADDRESS, is_unassigned, mesh_friendship_supported, mesh_get_crpl,
+    mesh_get_storage_dir, mesh_relay_supported,
 };
 use crate::model::{
     MeshElement, MeshModel, SIG_VENDOR, mesh_model_add_from_storage, mesh_model_app_key_delete,
@@ -1625,22 +1625,19 @@ impl NodeInterface {
         if modes.relay != MESH_MODE_UNSUPPORTED {
             dict.insert(
                 "Relay".to_owned(),
-                OwnedValue::try_from(Value::Bool(modes.relay == MESH_MODE_ENABLED))
-                    .unwrap(),
+                OwnedValue::try_from(Value::Bool(modes.relay == MESH_MODE_ENABLED)).unwrap(),
             );
         }
         if modes.proxy != MESH_MODE_UNSUPPORTED {
             dict.insert(
                 "Proxy".to_owned(),
-                OwnedValue::try_from(Value::Bool(modes.proxy == MESH_MODE_ENABLED))
-                    .unwrap(),
+                OwnedValue::try_from(Value::Bool(modes.proxy == MESH_MODE_ENABLED)).unwrap(),
             );
         }
         if modes.friend != MESH_MODE_UNSUPPORTED {
             dict.insert(
                 "Friend".to_owned(),
-                OwnedValue::try_from(Value::Bool(modes.friend == MESH_MODE_ENABLED))
-                    .unwrap(),
+                OwnedValue::try_from(Value::Bool(modes.friend == MESH_MODE_ENABLED)).unwrap(),
             );
         }
 
@@ -1648,8 +1645,7 @@ impl NodeInterface {
         if lpn != MESH_MODE_UNSUPPORTED {
             dict.insert(
                 "LowPower".to_owned(),
-                OwnedValue::try_from(Value::Bool(lpn == MESH_MODE_ENABLED))
-                    .unwrap(),
+                OwnedValue::try_from(Value::Bool(lpn == MESH_MODE_ENABLED)).unwrap(),
             );
         }
 

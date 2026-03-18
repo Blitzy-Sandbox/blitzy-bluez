@@ -16,7 +16,6 @@
 //   4. Ready notification handling via `BtMicp::ready_register()`
 //   5. Plugin registration via `inventory::submit!`
 
-
 use std::any::Any;
 use std::sync::{Arc, Mutex};
 

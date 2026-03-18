@@ -245,7 +245,7 @@ pub fn jlink_init() -> io::Result<()> {
     let emu_getproductname: JlinkEmuGetProductName =
         *unsafe { lib.get::<JlinkEmuGetProductName>(b"JLINK_EMU_GetProductName\0") }
             .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
- // SAFETY: Loading a known symbol from a validated shared library.
+    // SAFETY: Loading a known symbol from a validated shared library.
 
     let rtterminal_control: JlinkRtTerminalControl =
         *unsafe { lib.get::<JlinkRtTerminalControl>(b"JLINK_RTTERMINAL_Control\0") }

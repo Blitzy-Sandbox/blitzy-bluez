@@ -557,8 +557,11 @@ impl InputDevice {
         };
 
         let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_ref(
-            ctrl_fd.as_raw_fd(), HIDPCONNADD as libc::c_ulong, &req,
-        ).unwrap_or(-1);
+            ctrl_fd.as_raw_fd(),
+            HIDPCONNADD as libc::c_ulong,
+            &req,
+        )
+        .unwrap_or(-1);
 
         if ret < 0 {
             let err = std::io::Error::last_os_error();
@@ -583,8 +586,11 @@ impl InputDevice {
         let req = hidp_conndel_req::new(self.dst, flags);
 
         let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_ref(
-            ctrl_fd.as_raw_fd(), HIDPCONNDEL as libc::c_ulong, &req,
-        ).unwrap_or(-1);
+            ctrl_fd.as_raw_fd(),
+            HIDPCONNDEL as libc::c_ulong,
+            &req,
+        )
+        .unwrap_or(-1);
 
         if ret < 0 {
             let err = std::io::Error::last_os_error();

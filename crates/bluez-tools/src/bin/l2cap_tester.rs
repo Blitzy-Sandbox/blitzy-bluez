@@ -28,6 +28,7 @@ use bluez_shared::sys::bluetooth::{
     BT_RCVMTU, BT_SECURITY, BT_SECURITY_HIGH, BT_SECURITY_LOW, BT_SECURITY_MEDIUM, BT_SNDMTU,
     BTPROTO_L2CAP, PF_BLUETOOTH, SOL_BLUETOOTH, bdaddr_t, bt_security, htobs,
 };
+use bluez_shared::sys::ffi_helpers as ffi;
 use bluez_shared::sys::hci::{
     OCF_LE_CREATE_CONN, OCF_LE_CREATE_CONN_CANCEL, OCF_LE_SET_ADVERTISE_ENABLE,
     OCF_LE_SET_ADVERTISING_PARAMETERS, OCF_LE_SET_EXT_ADV_ENABLE, OCF_LE_SET_SCAN_ENABLE,
@@ -51,7 +52,6 @@ use bluez_shared::tester::{
     tester_use_debug, tester_warn,
 };
 use bluez_shared::util::endian::IoBuf;
-use bluez_shared::sys::ffi_helpers as ffi;
 use bluez_tools::{
     SOF_TIMESTAMPING_OPT_ID, SOF_TIMESTAMPING_RX_SOFTWARE, SOF_TIMESTAMPING_SOFTWARE,
     SOF_TIMESTAMPING_TX_COMPLETION, SOF_TIMESTAMPING_TX_SOFTWARE, TxTstampData, recv_tstamp,
@@ -1135,8 +1135,7 @@ fn create_l2cap_sock(local_addr: &bdaddr_t, l2data: &L2capData, addr_type: u8) -
         if l2data.sock_type != 0 { l2data.sock_type } else { libc::SOCK_SEQPACKET };
 
     // SAFETY: Creating a Bluetooth L2CAP socket with validated constants.
-    let sk =
-        ffi::raw_socket(PF_BLUETOOTH, sock_type_flag | libc::SOCK_NONBLOCK, BTPROTO_L2CAP);
+    let sk = ffi::raw_socket(PF_BLUETOOTH, sock_type_flag | libc::SOCK_NONBLOCK, BTPROTO_L2CAP);
     if sk < 0 {
         return Err(errno());
     }
@@ -1235,7 +1234,11 @@ fn get_socket_error(sk: i32) -> i32 {
 fn poll_socket(sk: i32, events: i16, timeout_ms: i32) -> i16 {
     let mut pfd = libc::pollfd { fd: sk, events, revents: 0 };
     // SAFETY: Polling a single fd with properly initialized pollfd.
-    let ret = { let (_pr, _rv) = ffi::raw_poll_single(pfd.fd, pfd.events, timeout_ms); pfd.revents = _rv; _pr };
+    let ret = {
+        let (_pr, _rv) = ffi::raw_poll_single(pfd.fd, pfd.events, timeout_ms);
+        pfd.revents = _rv;
+        _pr
+    };
     if ret < 0 {
         return -(errno() as i16);
     }

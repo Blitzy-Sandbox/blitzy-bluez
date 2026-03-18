@@ -17,7 +17,6 @@
 //   3. Client-side GMAS attach/detach via `BtGmap::attach()`
 //   4. Plugin registration via `inventory::submit!`
 
-
 use std::sync::{Arc, Mutex};
 
 use tracing::debug;

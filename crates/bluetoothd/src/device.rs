@@ -1990,9 +1990,7 @@ impl DeviceInterface {
                 self.preferred_bearer_str = bearer;
                 Ok(())
             }
-            _ => Err(zbus::fdo::Error::InvalidArgs(
-                "Invalid bearer value".into(),
-            )),
+            _ => Err(zbus::fdo::Error::InvalidArgs("Invalid bearer value".into())),
         }
     }
 

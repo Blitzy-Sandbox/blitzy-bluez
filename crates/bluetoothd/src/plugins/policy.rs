@@ -49,12 +49,11 @@ use bluez_shared::util::uuid::{
 };
 
 use crate::adapter::{
-    BtdAdapter, BtdAdapterDriver, KernelFeatures, adapter_find,
-    adapter_connect_list_add, adapter_connect_list_remove,
-    btd_adapter_find_device, btd_adapter_restore_powered,
-    btd_add_conn_fail_cb, btd_add_disconnect_cb, btd_has_kernel_features,
-    btd_register_adapter_driver, btd_remove_conn_fail_cb, btd_remove_disconnect_cb,
-    btd_unregister_adapter_driver,
+    BtdAdapter, BtdAdapterDriver, KernelFeatures, adapter_connect_list_add,
+    adapter_connect_list_remove, adapter_find, btd_adapter_find_device,
+    btd_adapter_restore_powered, btd_add_conn_fail_cb, btd_add_disconnect_cb,
+    btd_has_kernel_features, btd_register_adapter_driver, btd_remove_conn_fail_cb,
+    btd_remove_disconnect_cb, btd_unregister_adapter_driver,
 };
 use crate::config::{BtdOpts, init_defaults, load_config, parse_config};
 use crate::error::BtdError;
@@ -1071,10 +1070,7 @@ fn policy_connect_service(addr: &BdAddr, uuid: &str) {
                 adapter_connect_list_add(adapter_arc, &addr_copy).await;
                 btd_debug(
                     0,
-                    &format!(
-                        "policy: connect request sent for {} on {:?}",
-                        uuid_owned, addr_copy
-                    ),
+                    &format!("policy: connect request sent for {} on {:?}", uuid_owned, addr_copy),
                 );
                 return;
             }

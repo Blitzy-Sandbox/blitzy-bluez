@@ -747,7 +747,12 @@ mod tests {
 
     #[test]
     fn test_bt_log_printf_global() {
-        let _result = bt_log_printf(0xFFFF, "test", LogLevel::Debug.as_i32(), format_args!("formatted message"));
+        let _result = bt_log_printf(
+            0xFFFF,
+            "test",
+            LogLevel::Debug.as_i32(),
+            format_args!("formatted message"),
+        );
     }
 
     // -----------------------------------------------------------------------

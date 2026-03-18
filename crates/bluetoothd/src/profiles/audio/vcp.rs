@@ -16,7 +16,6 @@
 //   4. Public API: bt_audio_vcp_get_volume / bt_audio_vcp_set_volume
 //   5. Plugin registration via inventory::submit!
 
-
 use std::sync::{Arc, Mutex};
 
 use tracing::{debug, error};

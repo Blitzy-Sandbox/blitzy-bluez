@@ -1821,9 +1821,7 @@ pub async fn media_register(adapter: &Arc<Mutex<BtdAdapter>>) {
     adapters.push(ma_arc);
 
     // Register the org.bluez.Media1 D-Bus interface at the adapter path.
-    let iface = Media1Interface {
-        adapter: Arc::clone(adapter),
-    };
+    let iface = Media1Interface { adapter: Arc::clone(adapter) };
     let conn = btd_get_dbus_connection();
     match conn.object_server().at(path.as_str(), iface).await {
         Ok(_) => debug!("media: Media1 D-Bus interface registered at {}", path),
@@ -2348,7 +2346,9 @@ pub async fn find_adapter(device: &BtdDevice) -> Option<Arc<Mutex<MediaAdapter>>
 }
 
 /// Find a MediaAdapter by adapter reference.
-pub async fn find_media_adapter(adapter: &Arc<Mutex<BtdAdapter>>) -> Option<Arc<Mutex<MediaAdapter>>> {
+pub async fn find_media_adapter(
+    adapter: &Arc<Mutex<BtdAdapter>>,
+) -> Option<Arc<Mutex<MediaAdapter>>> {
     let adapters = ADAPTERS.lock().await;
     let adapter_path = adapter_get_path(adapter).await;
     for ma_arc in adapters.iter() {

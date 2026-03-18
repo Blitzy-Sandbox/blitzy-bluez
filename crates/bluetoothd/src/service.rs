@@ -655,9 +655,13 @@ impl BtdService {
                 if let Ok(adapter_guard) = adapter_arc.try_lock() {
                     return adapter_guard.powered;
                 }
-                warn!("check_adapter_powered: adapter lock contention — returning false as safe default");
+                warn!(
+                    "check_adapter_powered: adapter lock contention — returning false as safe default"
+                );
             } else {
-                warn!("check_adapter_powered: device lock contention — returning false as safe default");
+                warn!(
+                    "check_adapter_powered: device lock contention — returning false as safe default"
+                );
             }
         }
         // If we can't acquire the lock, default to false (powered-off) to

@@ -1099,13 +1099,7 @@ async fn writer_loop(
             // from the request queue to the pending list before calling write().
             {
                 let mut state = inner.lock().await;
-                state.pending.push(PendingCommand {
-                    id,
-                    opcode,
-                    index,
-                    sender,
-                    timeout_handle,
-                });
+                state.pending.push(PendingCommand { id, opcode, index, sender, timeout_handle });
             }
 
             match try_write_fd(&fd, &buf).await {

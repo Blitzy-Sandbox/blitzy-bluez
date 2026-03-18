@@ -18,8 +18,7 @@ use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 
 use bluez_shared::audio::asha::{AshaState, BtAsha};
 use bluez_shared::audio::bap::{
-    BapBcastQos, BapIoQos, BapQos, BapStreamState, BapUcastQos, BtBapStream,
-    bt_bap_stream_statestr,
+    BapBcastQos, BapIoQos, BapQos, BapStreamState, BapUcastQos, BtBapStream, bt_bap_stream_statestr,
 };
 use bluez_shared::audio::bass::BASS_BCAST_CODE_SIZE;
 use bluez_shared::socket::BluetoothSocket;
@@ -30,12 +29,11 @@ use crate::dbus_common::{btd_get_dbus_connection, dict_append_entry};
 use crate::device::BtdDevice;
 use crate::error::{BtdError, ERROR_INTERFACE};
 use crate::profiles::audio::a2dp::{
-    A2dpSep, a2dp_avdtp_get, a2dp_cancel, a2dp_resume,
-    a2dp_sep_lock, a2dp_sep_unlock, a2dp_suspend,
+    A2dpSep, a2dp_avdtp_get, a2dp_cancel, a2dp_resume, a2dp_sep_lock, a2dp_sep_unlock, a2dp_suspend,
 };
 use crate::profiles::audio::avdtp::{
-    AvdtpSession, AvdtpStream, avdtp_delay_report,
-    avdtp_stream_has_delay_reporting, avdtp_unref_session,
+    AvdtpSession, AvdtpStream, avdtp_delay_report, avdtp_stream_has_delay_reporting,
+    avdtp_unref_session,
 };
 use crate::profiles::audio::avrcp;
 use crate::profiles::audio::media::{
@@ -44,9 +42,7 @@ use crate::profiles::audio::media::{
     media_endpoint_is_broadcast,
 };
 use crate::profiles::audio::sink::{SinkState, sink_add_state_cb, sink_remove_state_cb};
-use crate::profiles::audio::source::{
-    SourceState, source_add_state_cb, source_remove_state_cb,
-};
+use crate::profiles::audio::source::{SourceState, source_add_state_cb, source_remove_state_cb};
 // VCP volume control is managed at a higher layer — the transport holds
 // Arc<BtdDevice> while VCP requires Arc<tokio::sync::Mutex<BtdDevice>>
 // for pointer-identity matching.  Volume integration is driven by
@@ -78,8 +74,7 @@ const MAX_BCAST_CODE_SIZE: usize = BASS_BCAST_CODE_SIZE;
 static TRANSPORTS: std::sync::LazyLock<std::sync::Mutex<Vec<Arc<Mutex<MediaTransport>>>>> =
     std::sync::LazyLock::new(|| std::sync::Mutex::new(Vec::new()));
 
-static TRANSPORT_COUNTER: std::sync::atomic::AtomicU64 =
-    std::sync::atomic::AtomicU64::new(0);
+static TRANSPORT_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 // ===================================================================
 // TransportState
@@ -148,7 +143,9 @@ pub trait TransportOps: Send + Sync {
     fn set_asha_engine(&self, _asha: BtAsha) {}
     /// Return the BAP stream associated with this transport, if any.
     /// Used by `update_links()` to match linked streams against transports.
-    fn get_bap_stream(&self) -> Option<BtBapStream> { None }
+    fn get_bap_stream(&self) -> Option<BtBapStream> {
+        None
+    }
 }
 
 // ===================================================================
@@ -260,9 +257,7 @@ impl MediaTransport1 {
 
 /// Safely duplicate an `OwnedFd` into a `zbus::zvariant::OwnedFd`.
 fn clone_fd_for_dbus(fd: &OwnedFd) -> Result<zbus::zvariant::OwnedFd, BtdError> {
-    let cloned = fd
-        .try_clone()
-        .map_err(|e| BtdError::failed(&format!("fd clone: {e}")))?;
+    let cloned = fd.try_clone().map_err(|e| BtdError::failed(&format!("fd clone: {e}")))?;
     Ok(zbus::zvariant::OwnedFd::from(cloned))
 }
 
@@ -270,10 +265,7 @@ fn clone_fd_for_dbus(fd: &OwnedFd) -> Result<zbus::zvariant::OwnedFd, BtdError> 
 fn active_fd_reply(
     inner: &TransportInner,
 ) -> Result<(zbus::zvariant::OwnedFd, u16, u16), BtdError> {
-    let fd = inner
-        .fd
-        .as_ref()
-        .ok_or_else(BtdError::not_available)?;
+    let fd = inner.fd.as_ref().ok_or_else(BtdError::not_available)?;
     let zfd = clone_fd_for_dbus(fd)?;
     Ok((zfd, inner.read_mtu, inner.write_mtu))
 }
@@ -304,11 +296,8 @@ impl MediaTransport1 {
         }
 
         // Set owner
-        t.inner.owner = Some(TransportOwner {
-            sender: sender.clone(),
-            acquired: true,
-            pending_reply: None,
-        });
+        t.inner.owner =
+            Some(TransportOwner { sender: sender.clone(), acquired: true, pending_reply: None });
 
         // Already active (e.g. TryAcquire succeeded earlier)
         if t.inner.state == TransportState::Active {
@@ -336,9 +325,7 @@ impl MediaTransport1 {
         drop(guard);
 
         match rx.await {
-            Ok(result) => result.map(|(fd, r, w)| {
-                (zbus::zvariant::OwnedFd::from(fd), r, w)
-            }),
+            Ok(result) => result.map(|(fd, r, w)| (zbus::zvariant::OwnedFd::from(fd), r, w)),
             Err(_) => Err(BtdError::failed("Acquire cancelled")),
         }
     }
@@ -363,11 +350,8 @@ impl MediaTransport1 {
                         return Err(BtdError::not_authorized());
                     }
                 } else {
-                    t.inner.owner = Some(TransportOwner {
-                        sender,
-                        acquired: false,
-                        pending_reply: None,
-                    });
+                    t.inner.owner =
+                        Some(TransportOwner { sender, acquired: false, pending_reply: None });
                 }
                 active_fd_reply(&t.inner)
             }
@@ -493,9 +477,7 @@ impl MediaTransport1 {
     async fn set_delay(&self, value: u16) -> Result<(), zbus::Error> {
         let mut g = self.transport.lock().await;
         let t = &mut *g;
-        t.ops
-            .set_delay(&mut t.inner, value)
-            .map_err(zbus::Error::from)
+        t.ops.set_delay(&mut t.inner, value).map_err(zbus::Error::from)
     }
 
     /// Audio location bitmask (LE Audio transports).
@@ -524,9 +506,7 @@ impl MediaTransport1 {
         let mut g = self.transport.lock().await;
         let vol = value.min(127) as u8;
         let t = &mut *g;
-        t.ops
-            .set_volume(&mut t.inner, vol)
-            .map_err(zbus::Error::from)
+        t.ops.set_volume(&mut t.inner, vol).map_err(zbus::Error::from)
     }
 
     #[zbus(property)]
@@ -556,10 +536,7 @@ fn set_state(inner: &mut TransportInner, new: TransportState) {
 
 /// Deliver fd to a pending Acquire caller.
 fn complete_pending_acquire(inner: &mut TransportInner) {
-    let tx = inner
-        .owner
-        .as_mut()
-        .and_then(|o| o.pending_reply.take());
+    let tx = inner.owner.as_mut().and_then(|o| o.pending_reply.take());
     if let Some(tx) = tx {
         match inner.fd.as_ref().and_then(|f| f.try_clone().ok()) {
             Some(dup) => {
@@ -637,7 +614,9 @@ impl TransportOps for A2dpSourceOps {
 
     fn cancel(&self, inner: &mut TransportInner) {
         let dev = Arc::clone(&inner.device);
-        tokio::spawn(async move { a2dp_cancel(&dev).await; });
+        tokio::spawn(async move {
+            a2dp_cancel(&dev).await;
+        });
     }
 
     fn set_volume(&self, inner: &mut TransportInner, volume: u8) -> Result<(), BtdError> {
@@ -647,16 +626,16 @@ impl TransportOps for A2dpSourceOps {
         inner.volume = Some(i16::from(volume));
         if old != i16::from(volume) {
             let dev = Arc::clone(&inner.device);
-            tokio::spawn(async move { avrcp::avrcp_set_volume(&dev, volume).await; });
+            tokio::spawn(async move {
+                avrcp::avrcp_set_volume(&dev, volume).await;
+            });
         }
         Ok(())
     }
 
     fn get_stream(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         let d = self.data.lock().unwrap();
-        d.sep
-            .as_ref()
-            .map(|s| Arc::clone(s) as Arc<dyn Any + Send + Sync>)
+        d.sep.as_ref().map(|s| Arc::clone(s) as Arc<dyn Any + Send + Sync>)
     }
 
     fn get_volume(&self, _inner: &TransportInner) -> Option<u8> {
@@ -706,7 +685,9 @@ impl TransportOps for A2dpSourceOps {
         }
         d.sep = None;
         if let Some(session) = d.session.take() {
-            tokio::spawn(async move { avdtp_unref_session(session).await; });
+            tokio::spawn(async move {
+                avdtp_unref_session(session).await;
+            });
         }
     }
 }
@@ -747,7 +728,9 @@ impl TransportOps for A2dpSinkOps {
 
     fn cancel(&self, inner: &mut TransportInner) {
         let dev = Arc::clone(&inner.device);
-        tokio::spawn(async move { a2dp_cancel(&dev).await; });
+        tokio::spawn(async move {
+            a2dp_cancel(&dev).await;
+        });
     }
 
     fn set_volume(&self, inner: &mut TransportInner, volume: u8) -> Result<(), BtdError> {
@@ -757,16 +740,16 @@ impl TransportOps for A2dpSinkOps {
         inner.volume = Some(i16::from(volume));
         if old != i16::from(volume) {
             let dev = Arc::clone(&inner.device);
-            tokio::spawn(async move { avrcp::avrcp_set_volume(&dev, volume).await; });
+            tokio::spawn(async move {
+                avrcp::avrcp_set_volume(&dev, volume).await;
+            });
         }
         Ok(())
     }
 
     fn get_stream(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         let d = self.data.lock().unwrap();
-        d.sep
-            .as_ref()
-            .map(|s| Arc::clone(s) as Arc<dyn Any + Send + Sync>)
+        d.sep.as_ref().map(|s| Arc::clone(s) as Arc<dyn Any + Send + Sync>)
     }
 
     fn get_volume(&self, _inner: &TransportInner) -> Option<u8> {
@@ -826,7 +809,9 @@ impl TransportOps for A2dpSinkOps {
         }
         d.sep = None;
         if let Some(session) = d.session.take() {
-            tokio::spawn(async move { avdtp_unref_session(session).await; });
+            tokio::spawn(async move {
+                avdtp_unref_session(session).await;
+            });
         }
     }
 }
@@ -862,8 +847,11 @@ impl TransportOps for BapUnicastOps {
                 Ok(())
             }
             _ => {
-                warn!("{}: BAP cannot resume from {}", inner.path,
-                    bt_bap_stream_statestr(st as u8));
+                warn!(
+                    "{}: BAP cannot resume from {}",
+                    inner.path,
+                    bt_bap_stream_statestr(st as u8)
+                );
                 Err(BtdError::not_available())
             }
         }
@@ -882,7 +870,9 @@ impl TransportOps for BapUnicastOps {
 
     fn cancel(&self, _inner: &mut TransportInner) {
         let d = self.data.lock().unwrap();
-        if let Some(ref s) = d.stream { s.cancel(0); }
+        if let Some(ref s) = d.stream {
+            s.cancel(0);
+        }
     }
 
     fn set_volume(&self, inner: &mut TransportInner, volume: u8) -> Result<(), BtdError> {
@@ -899,9 +889,7 @@ impl TransportOps for BapUnicastOps {
 
     fn get_stream(&self) -> Option<Arc<dyn Any + Send + Sync>> {
         let d = self.data.lock().unwrap();
-        d.stream.as_ref().map(|s| {
-            Arc::new(s.clone()) as Arc<dyn Any + Send + Sync>
-        })
+        d.stream.as_ref().map(|s| Arc::new(s.clone()) as Arc<dyn Any + Send + Sync>)
     }
 
     fn get_volume(&self, inner: &TransportInner) -> Option<u8> {
@@ -977,8 +965,11 @@ impl TransportOps for BapBroadcastOps {
                 Ok(())
             }
             _ => {
-                warn!("{}: BAP bcast cannot resume from {}",
-                    inner.path, bt_bap_stream_statestr(st as u8));
+                warn!(
+                    "{}: BAP bcast cannot resume from {}",
+                    inner.path,
+                    bt_bap_stream_statestr(st as u8)
+                );
                 Err(BtdError::not_available())
             }
         }
@@ -986,14 +977,18 @@ impl TransportOps for BapBroadcastOps {
 
     fn suspend(&self, inner: &mut TransportInner) -> Result<(), BtdError> {
         let d = self.data.lock().unwrap();
-        if let Some(ref s) = d.stream { s.disable(true, None); }
+        if let Some(ref s) = d.stream {
+            s.disable(true, None);
+        }
         inner.broadcasting = false;
         Ok(())
     }
 
     fn cancel(&self, inner: &mut TransportInner) {
         let d = self.data.lock().unwrap();
-        if let Some(ref s) = d.stream { s.cancel(0); }
+        if let Some(ref s) = d.stream {
+            s.cancel(0);
+        }
         inner.broadcasting = false;
     }
 
@@ -1088,24 +1083,28 @@ impl TransportOps for AshaOps {
         let d = self.data.lock().unwrap();
         let asha = d.asha.as_ref().ok_or_else(BtdError::not_available)?;
         let st = asha.state();
-        debug!("{}: ASHA resume (asha_state={:?}, transport_state={})",
-            inner.path, st, asha_to_transport_state(st));
-        asha.start()
-            .map_err(|e| BtdError::failed(&format!("ASHA start: {e}")))
+        debug!(
+            "{}: ASHA resume (asha_state={:?}, transport_state={})",
+            inner.path,
+            st,
+            asha_to_transport_state(st)
+        );
+        asha.start().map_err(|e| BtdError::failed(&format!("ASHA start: {e}")))
     }
 
     fn suspend(&self, _inner: &mut TransportInner) -> Result<(), BtdError> {
         let d = self.data.lock().unwrap();
         if let Some(ref asha) = d.asha {
-            asha.stop()
-                .map_err(|e| BtdError::failed(&format!("ASHA stop: {e}")))?;
+            asha.stop().map_err(|e| BtdError::failed(&format!("ASHA stop: {e}")))?;
         }
         Ok(())
     }
 
     fn cancel(&self, _inner: &mut TransportInner) {
         let d = self.data.lock().unwrap();
-        if let Some(ref asha) = d.asha { let _ = asha.stop(); }
+        if let Some(ref asha) = d.asha {
+            let _ = asha.stop();
+        }
     }
 
     fn set_volume(&self, inner: &mut TransportInner, volume: u8) -> Result<(), BtdError> {
@@ -1222,9 +1221,7 @@ fn find_ops(uuid: &str, ep: &MediaEndpoint) -> Option<Box<dyn TransportOps>> {
             }))
         }
     } else if u == asha {
-        Some(Box::new(AshaOps {
-            data: std::sync::Mutex::new(AshaData { asha: None }),
-        }))
+        Some(Box::new(AshaOps { data: std::sync::Mutex::new(AshaData { asha: None }) }))
     } else {
         warn!("No transport ops for UUID {uuid}");
         None
@@ -1236,10 +1233,7 @@ fn find_ops(uuid: &str, ep: &MediaEndpoint) -> Option<Box<dyn TransportOps>> {
 // ===================================================================
 
 /// Append BAP QoS data to a property dictionary.
-fn append_bap_qos(
-    d: &mut HashMap<String, OwnedValue>,
-    stream: &BtBapStream,
-) {
+fn append_bap_qos(d: &mut HashMap<String, OwnedValue>, stream: &BtBapStream) {
     let qos = stream.get_qos();
     match qos {
         BapQos::Ucast(ref uqos) => {
@@ -1375,9 +1369,7 @@ pub async fn media_transport_destroy(transport: Arc<Mutex<MediaTransport>>) {
     let conn = btd_get_dbus_connection().clone();
     let _ = conn.object_server().remove::<MediaTransport1, _>(&*path).await;
 
-    TRANSPORTS.lock().unwrap().retain(|t| {
-        t.try_lock().map_or(true, |g| g.inner.path != path)
-    });
+    TRANSPORTS.lock().unwrap().retain(|t| t.try_lock().map_or(true, |g| g.inner.path != path));
     info!("Destroyed transport {path}");
 }
 
@@ -1394,17 +1386,12 @@ pub async fn media_transport_get_stream(
 }
 
 /// Get the device associated with a transport.
-pub async fn media_transport_get_dev(
-    transport: &Arc<Mutex<MediaTransport>>,
-) -> Arc<BtdDevice> {
+pub async fn media_transport_get_dev(transport: &Arc<Mutex<MediaTransport>>) -> Arc<BtdDevice> {
     Arc::clone(&transport.lock().await.inner.device)
 }
 
 /// Update delay reporting value.
-pub async fn media_transport_update_delay(
-    transport: &Arc<Mutex<MediaTransport>>,
-    delay: u16,
-) {
+pub async fn media_transport_update_delay(transport: &Arc<Mutex<MediaTransport>>, delay: u16) {
     let mut g = transport.lock().await;
     let old = g.inner.delay;
     g.inner.delay = Some(delay);
@@ -1414,10 +1401,7 @@ pub async fn media_transport_update_delay(
 }
 
 /// Update volume on a specific transport.
-pub async fn media_transport_update_volume(
-    transport: &Arc<Mutex<MediaTransport>>,
-    volume: u8,
-) {
+pub async fn media_transport_update_volume(transport: &Arc<Mutex<MediaTransport>>, volume: u8) {
     let mut g = transport.lock().await;
     let old = g.inner.volume;
     g.inner.volume = Some(i16::from(volume));
@@ -1445,11 +1429,11 @@ pub fn media_transport_get_a2dp_volume(device: &BtdDevice) -> i8 {
     let list = TRANSPORTS.lock().unwrap();
     for t in list.iter() {
         if let Ok(g) = t.try_lock() {
-            if g.inner.device.get_path() != dpath { continue; }
+            if g.inner.device.get_path() != dpath {
+                continue;
+            }
             let uu = g.inner.uuid.to_lowercase();
-            if uu == A2DP_SOURCE_UUID.to_lowercase()
-                || uu == A2DP_SINK_UUID.to_lowercase()
-            {
+            if uu == A2DP_SOURCE_UUID.to_lowercase() || uu == A2DP_SINK_UUID.to_lowercase() {
                 if let Some(v) = g.ops.get_volume(&g.inner) {
                     return v as i8;
                 }
@@ -1465,11 +1449,11 @@ pub fn media_transport_set_a2dp_volume(device: &mut BtdDevice, volume: u8) {
     let list = TRANSPORTS.lock().unwrap();
     for t in list.iter() {
         if let Ok(mut g) = t.try_lock() {
-            if g.inner.device.get_path() != dpath { continue; }
+            if g.inner.device.get_path() != dpath {
+                continue;
+            }
             let uu = g.inner.uuid.to_lowercase();
-            if uu == A2DP_SOURCE_UUID.to_lowercase()
-                || uu == A2DP_SINK_UUID.to_lowercase()
-            {
+            if uu == A2DP_SOURCE_UUID.to_lowercase() || uu == A2DP_SINK_UUID.to_lowercase() {
                 g.inner.volume = Some(i16::from(volume));
                 debug!("Set A2DP vol {} on {}", volume, g.inner.path);
             }
@@ -1490,11 +1474,7 @@ pub async fn transport_get_properties(
     }
     dict_append_entry(&mut d, "UUID", Value::from(g.inner.uuid.clone()));
     dict_append_entry(&mut d, "Codec", Value::from(g.inner.codec));
-    dict_append_entry(
-        &mut d,
-        "Configuration",
-        Value::from(g.inner.configuration.clone()),
-    );
+    dict_append_entry(&mut d, "Configuration", Value::from(g.inner.configuration.clone()));
     dict_append_entry(&mut d, "State", Value::from(g.inner.state.as_str()));
 
     if let Some(delay) = g.inner.delay {
@@ -1561,8 +1541,7 @@ pub async fn media_transport_set_fd(
     write_mtu: u16,
 ) {
     let mut g = transport.lock().await;
-    debug!("{} fd={}, imtu={}, omtu={}",
-        g.inner.path, fd.as_raw_fd(), read_mtu, write_mtu);
+    debug!("{} fd={}, imtu={}, omtu={}", g.inner.path, fd.as_raw_fd(), read_mtu, write_mtu);
     g.inner.fd = Some(fd);
     g.inner.read_mtu = read_mtu;
     g.inner.write_mtu = write_mtu;
@@ -1590,10 +1569,7 @@ pub async fn media_transport_update_state(
 /// This allows the ASHA profile plugin to provide the `BtAsha` instance
 /// after the transport has been created (since `media_transport_create`
 /// creates ops with `asha: None`).
-pub async fn media_transport_set_asha(
-    transport: &Arc<Mutex<MediaTransport>>,
-    asha: BtAsha,
-) {
+pub async fn media_transport_set_asha(transport: &Arc<Mutex<MediaTransport>>, asha: BtAsha) {
     let g = transport.lock().await;
     g.ops.set_asha_engine(asha);
 }

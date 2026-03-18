@@ -20,7 +20,6 @@
 // - Profile matching against device UUIDs for auto-probe
 // - Custom D-Bus property support for profile-specific properties
 
-
 use std::collections::HashMap;
 use std::fmt;
 use std::os::unix::io::OwnedFd;
@@ -1976,7 +1975,10 @@ async fn ext_start_servers_on_adapter(
 
 /// Remove SDP records and stop server sockets for an external profile when
 /// an adapter is removed.
-pub async fn ext_remove_records(ext_arc: &Arc<Mutex<ExtProfile>>, adapter: &Arc<Mutex<BtdAdapter>>) {
+pub async fn ext_remove_records(
+    ext_arc: &Arc<Mutex<ExtProfile>>,
+    adapter: &Arc<Mutex<BtdAdapter>>,
+) {
     let mut ext = ext_arc.lock().await;
 
     // Remove SDP records for this adapter

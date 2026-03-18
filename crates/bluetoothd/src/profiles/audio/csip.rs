@@ -23,7 +23,6 @@
 //   - `callback + user_data` → Rust closures / `Arc<dyn Fn>`
 //   - `errno` returns → `nix::errno::Errno`
 
-
 use std::sync::{Arc, Mutex};
 
 use tracing::{debug, error, info};

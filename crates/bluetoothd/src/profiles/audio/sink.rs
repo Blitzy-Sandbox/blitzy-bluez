@@ -22,9 +22,9 @@
 //!   [`btd_debug`] / [`btd_error`] for btmon-channel logging.
 
 use std::fmt;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Weak};
-use std::sync::Mutex;
 
 use tokio::sync::Mutex as TokioMutex;
 use tracing::{debug, error, warn};
@@ -36,9 +36,8 @@ use crate::profiles::audio::a2dp::{
     a2dp_select_capabilities,
 };
 use crate::profiles::audio::avdtp::{
-    avdtp_add_state_cb, avdtp_close, avdtp_remove_state_cb, avdtp_stream_add_cb,
-    avdtp_stream_remove_cb, AvdtpSepType, AvdtpSession, AvdtpSessionState,
-    AvdtpStreamState,
+    AvdtpSepType, AvdtpSession, AvdtpSessionState, AvdtpStreamState, avdtp_add_state_cb,
+    avdtp_close, avdtp_remove_state_cb, avdtp_stream_add_cb, avdtp_stream_remove_cb,
 };
 use crate::service::BtdService;
 
@@ -118,11 +117,7 @@ static SINK_CALLBACKS: std::sync::LazyLock<Mutex<Vec<SinkStateCbEntry>>> =
 pub fn sink_add_state_cb(service_path: &str, cb: SinkStateCb) -> u32 {
     let id = NEXT_CB_ID.fetch_add(1, Ordering::Relaxed);
     if let Ok(mut cbs) = SINK_CALLBACKS.lock() {
-        cbs.push(SinkStateCbEntry {
-            id,
-            service_path: service_path.to_owned(),
-            cb,
-        });
+        cbs.push(SinkStateCbEntry { id, service_path: service_path.to_owned(), cb });
         debug!(id, path = %service_path, "sink: registered state callback");
         btd_debug(0, &format!("sink: registered state callback id={id}"));
     }
@@ -233,9 +228,7 @@ pub struct Sink {
 /// Retrieve the `Arc<std::sync::Mutex<Sink>>` stored in the service's
 /// user-data slot.
 fn get_sink(service: &BtdService) -> Option<Arc<Mutex<Sink>>> {
-    service
-        .btd_service_get_user_data::<Arc<Mutex<Sink>>>()
-        .cloned()
+    service.btd_service_get_user_data::<Arc<Mutex<Sink>>>().cloned()
 }
 
 /// Transition the sink to `new_state`, logging the change and notifying
@@ -258,10 +251,7 @@ fn sink_set_state(sink: &mut Sink, new_state: SinkState) {
     );
     btd_debug(
         0,
-        &format!(
-            "sink: State changed {}: {} -> {}",
-            sink.device_path, old_state, new_state
-        ),
+        &format!("sink: State changed {}: {} -> {}", sink.device_path, old_state, new_state),
     );
 
     // Notify all registered callbacks scoped to this device path (or global).
@@ -329,9 +319,7 @@ fn handle_stream_state_change(
         AvdtpStreamState::Streaming => {
             sink_set_state(sink, SinkState::Playing);
         }
-        AvdtpStreamState::Configured
-        | AvdtpStreamState::Closing
-        | AvdtpStreamState::Aborting => {
+        AvdtpStreamState::Configured | AvdtpStreamState::Closing | AvdtpStreamState::Aborting => {
             // No direct sink state change for these AVDTP states.
         }
     }
@@ -351,10 +339,7 @@ fn handle_stream_state_change(
 ///
 /// Replaces C `sink_init(service)`.
 pub async fn sink_init(service: &mut BtdService) -> Result<(), i32> {
-    let device_arc = service
-        .btd_service_get_device()
-        .ok_or(-libc::EINVAL)?
-        .clone();
+    let device_arc = service.btd_service_get_device().ok_or(-libc::EINVAL)?.clone();
 
     let device_path = {
         let dev = device_arc.lock().await;
@@ -535,10 +520,7 @@ pub async fn sink_connect(service: &mut BtdService) -> Result<(), i32> {
 
     if !setup_ok {
         error!(path = %device_path, "sink_connect: stream setup failed");
-        btd_debug(
-            0,
-            &format!("sink_connect: Failed to create a stream for {device_path}"),
-        );
+        btd_debug(0, &format!("sink_connect: Failed to create a stream for {device_path}"));
         {
             let mut snk = sink_arc.lock().unwrap();
             snk.connect_id = None;
@@ -558,11 +540,7 @@ pub async fn sink_connect(service: &mut BtdService) -> Result<(), i32> {
     };
 
     service.btd_service_connecting_complete(err);
-    if err == 0 {
-        Ok(())
-    } else {
-        Err(err)
-    }
+    if err == 0 { Ok(()) } else { Err(err) }
 }
 
 /// Initiate disconnection of the A2DP Sink endpoint.
@@ -587,10 +565,7 @@ pub async fn sink_disconnect(service: &mut BtdService) -> Result<(), i32> {
     };
 
     debug!(path = %device_path, state = %state, "sink_disconnect");
-    btd_debug(
-        0,
-        &format!("sink_disconnect: {device_path} (state={state})"),
-    );
+    btd_debug(0, &format!("sink_disconnect: {device_path} (state={state})"));
 
     // If already disconnected, signal completion immediately.
     if state == SinkState::Disconnected {
@@ -664,10 +639,7 @@ pub async fn sink_disconnect(service: &mut BtdService) -> Result<(), i32> {
                 error = %e,
                 "sink_disconnect: avdtp_close failed"
             );
-            btd_debug(
-                0,
-                &format!("sink_disconnect: avdtp_close failed: {e}"),
-            );
+            btd_debug(0, &format!("sink_disconnect: avdtp_close failed: {e}"));
             // Fall through — force disconnect anyway.
         }
     }
@@ -770,10 +742,7 @@ pub async fn sink_setup_stream(
                             error = %e,
                             "sink_setup_stream: a2dp_avdtp_get failed"
                         );
-                        btd_debug(
-                            0,
-                            &format!("sink_setup_stream: Unable to get a session: {e}"),
-                        );
+                        btd_debug(0, &format!("sink_setup_stream: Unable to get a session: {e}"));
                         return false;
                     }
                 },
@@ -784,9 +753,7 @@ pub async fn sink_setup_stream(
                     );
                     btd_debug(
                         0,
-                        &format!(
-                            "sink_setup_stream: Unable to get a session for {device_path}"
-                        ),
+                        &format!("sink_setup_stream: Unable to get a session for {device_path}"),
                     );
                     return false;
                 }
@@ -828,10 +795,7 @@ pub async fn sink_setup_stream(
                 path = %device_path,
                 "sink_setup_stream: no A2DP channel found"
             );
-            btd_debug(
-                0,
-                &format!("sink_setup_stream: no A2DP channel for {device_path}"),
-            );
+            btd_debug(0, &format!("sink_setup_stream: no A2DP channel for {device_path}"));
             return false;
         }
     };
@@ -845,10 +809,7 @@ pub async fn sink_setup_stream(
                 error = %e,
                 "sink_setup_stream: discovery failed"
             );
-            btd_debug(
-                0,
-                &format!("sink_setup_stream: discovery failed: {e}"),
-            );
+            btd_debug(0, &format!("sink_setup_stream: discovery failed: {e}"));
             return false;
         }
     };
@@ -860,10 +821,7 @@ pub async fn sink_setup_stream(
     );
     btd_debug(
         0,
-        &format!(
-            "sink_setup_stream: Discovery complete, {} remote SEPs",
-            remote_seps.len()
-        ),
+        &format!("sink_setup_stream: Discovery complete, {} remote SEPs", remote_seps.len()),
     );
 
     if remote_seps.is_empty() {
@@ -871,10 +829,7 @@ pub async fn sink_setup_stream(
             path = %device_path,
             "sink_setup_stream: no remote SEPs discovered"
         );
-        btd_debug(
-            0,
-            &format!("sink_setup_stream: no remote SEPs for {device_path}"),
-        );
+        btd_debug(0, &format!("sink_setup_stream: no remote SEPs for {device_path}"));
         return false;
     }
 
@@ -915,12 +870,7 @@ pub async fn sink_setup_stream(
             let sep_guard = sep_candidate.lock().await;
             let codec = sep_guard.codec;
             let ch_guard = channel.lock().await;
-            ch_guard
-                .remote_seps()
-                .iter()
-                .find(|r| r.codec == codec)
-                .map(|r| r.seid)
-                .unwrap_or(1)
+            ch_guard.remote_seps().iter().find(|r| r.codec == codec).map(|r| r.seid).unwrap_or(1)
         };
 
         debug!(
@@ -938,10 +888,7 @@ pub async fn sink_setup_stream(
                     stream_idx,
                     "sink_setup_stream: stream configured"
                 );
-                btd_debug(
-                    0,
-                    &format!("sink_setup_stream: stream configured idx={stream_idx}"),
-                );
+                btd_debug(0, &format!("sink_setup_stream: stream configured idx={stream_idx}"));
 
                 // Store the stream index.
                 {
@@ -960,9 +907,7 @@ pub async fn sink_setup_stream(
                             Box::new(move |old_st, new_st| {
                                 if let Some(snk_arc) = weak.upgrade() {
                                     if let Ok(mut snk) = snk_arc.lock() {
-                                        handle_stream_state_change(
-                                            &mut snk, old_st, new_st,
-                                        );
+                                        handle_stream_state_change(&mut snk, old_st, new_st);
                                     }
                                 }
                             }),
@@ -979,10 +924,7 @@ pub async fn sink_setup_stream(
                     error = %e,
                     "sink_setup_stream: a2dp_config failed for SEP"
                 );
-                btd_debug(
-                    0,
-                    &format!("sink_setup_stream: a2dp_config failed: {e}"),
-                );
+                btd_debug(0, &format!("sink_setup_stream: a2dp_config failed: {e}"));
                 continue; // Try next SEP.
             }
         }
@@ -993,10 +935,7 @@ pub async fn sink_setup_stream(
             path = %device_path,
             "sink_setup_stream: no SEP could be configured"
         );
-        btd_debug(
-            0,
-            &format!("sink_setup_stream: Failed to create a stream for {device_path}"),
-        );
+        btd_debug(0, &format!("sink_setup_stream: Failed to create a stream for {device_path}"));
     }
 
     configured
@@ -1034,10 +973,7 @@ pub async fn sink_new_stream(
         stream_idx,
         "sink_new_stream"
     );
-    btd_debug(
-        0,
-        &format!("sink_new_stream: {device_path} stream_idx={stream_idx}"),
-    );
+    btd_debug(0, &format!("sink_new_stream: {device_path} stream_idx={stream_idx}"));
 
     // Check if a stream is already associated.
     {
@@ -1088,10 +1024,7 @@ pub async fn sink_new_stream(
                 stream_idx,
                 "sink_new_stream: invalid stream index"
             );
-            btd_debug(
-                0,
-                &format!("sink_new_stream: invalid stream index {stream_idx}"),
-            );
+            btd_debug(0, &format!("sink_new_stream: invalid stream index {stream_idx}"));
             return false;
         }
     }

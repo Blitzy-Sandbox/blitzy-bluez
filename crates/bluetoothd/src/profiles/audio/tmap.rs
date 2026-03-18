@@ -15,7 +15,6 @@
 //   3. Client-side TMAS attach/detach via `BtTmap::attach()`
 //   4. Plugin registration via `inventory::submit!`
 
-
 use std::sync::{Arc, Mutex};
 
 use tracing::{debug, error};

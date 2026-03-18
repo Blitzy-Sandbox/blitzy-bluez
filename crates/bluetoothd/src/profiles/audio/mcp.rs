@@ -18,19 +18,20 @@
 //   5. uinput fallback for media key injection when no local player exists.
 //   6. Plugin registration via `inventory::submit!`.
 
-
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
 use tracing::debug;
 
 use bluez_shared::audio::mcp::{
-    BtMcp, BtMcs, CpOpcode, McpCallback, McpListenerCallback, McsCallback, MediaState,
-    McsPlayingOrderSupported, PlayingOrder,
+    BtMcp, BtMcs, CpOpcode, McpCallback, McpListenerCallback, McsCallback,
+    McsPlayingOrderSupported, MediaState, PlayingOrder,
 };
 use bluez_shared::device::uinput::{BtUinput, BtUinputKeyMap};
 
-use crate::adapter::{BtdAdapter, btd_adapter_get_address, btd_adapter_get_database, btd_adapter_get_name};
+use crate::adapter::{
+    BtdAdapter, btd_adapter_get_address, btd_adapter_get_database, btd_adapter_get_name,
+};
 use crate::device::BtdDevice;
 use crate::error::BtdError;
 use crate::log::{btd_debug, btd_error, btd_warn};
@@ -40,12 +41,12 @@ use crate::profile::{
     btd_profile_unregister,
 };
 use crate::profiles::audio::media::{
-    LocalPlayerCallback, MediaPlayer as LocalMediaPlayer,
-    local_player_get_metadata, local_player_get_player_name,
-    local_player_get_duration, local_player_get_position, local_player_get_setting,
-    local_player_next, local_player_pause, local_player_play, local_player_previous,
-    local_player_register_callbacks, local_player_register_watch, local_player_set_setting,
-    local_player_stop, local_player_unregister_callbacks, local_player_unregister_watch,
+    LocalPlayerCallback, MediaPlayer as LocalMediaPlayer, local_player_get_duration,
+    local_player_get_metadata, local_player_get_player_name, local_player_get_position,
+    local_player_get_setting, local_player_next, local_player_pause, local_player_play,
+    local_player_previous, local_player_register_callbacks, local_player_register_watch,
+    local_player_set_setting, local_player_stop, local_player_unregister_callbacks,
+    local_player_unregister_watch,
 };
 use crate::profiles::audio::player::{MediaPlayer, MediaPlayerCallback};
 use crate::service::BtdService;
@@ -305,18 +306,13 @@ impl McpCallback for McpClientCallback {
                 MediaPlayer::controller_create(&device_path, ccid as u32, player_type).await;
 
             // Register the MCP listener and media player callbacks.
-            let listener = Arc::new(RemotePlayerListener {
-                device: Arc::clone(&device_clone),
-                ccid,
-            });
+            let listener =
+                Arc::new(RemotePlayerListener { device: Arc::clone(&device_clone), ccid });
 
             mcp_clone.add_listener(ccid, listener);
 
             // Set up the media player command callbacks.
-            let mp_cb = Arc::new(RemotePlayerMediaCallback {
-                mcp: Arc::clone(&mcp_clone),
-                ccid,
-            });
+            let mp_cb = Arc::new(RemotePlayerMediaCallback { mcp: Arc::clone(&mcp_clone), ccid });
             player.set_callbacks(mp_cb).await;
 
             // Store the player back in the session.
@@ -325,9 +321,7 @@ impl McpCallback for McpClientCallback {
                 Err(_) => return,
             };
             let dev_ptr = Arc::as_ptr(&device_clone);
-            if let Some(session) =
-                sessions.iter_mut().find(|s| Arc::as_ptr(&s.device) == dev_ptr)
-            {
+            if let Some(session) = sessions.iter_mut().find(|s| Arc::as_ptr(&s.device) == dev_ptr) {
                 if let Some(rp) = session.remote_players.iter_mut().find(|r| r.ccid == ccid) {
                     rp.player = Some(player);
                 }
@@ -454,9 +448,7 @@ impl McpListenerCallback for RemotePlayerListener {
                 if let Some(session) =
                     sessions.iter_mut().find(|s| Arc::as_ptr(&s.device) == dev_ptr)
                 {
-                    if let Some(rp) =
-                        session.remote_players.iter_mut().find(|r| r.ccid == ccid)
-                    {
+                    if let Some(rp) = session.remote_players.iter_mut().find(|r| r.ccid == ccid) {
                         rp.playing_order = order;
                     }
                 }
@@ -603,7 +595,13 @@ impl MediaPlayerCallback for RemotePlayerMediaCallback {
         // Convert back to a playing order byte.
         let new_order = get_setting_order(repeat, shuffle);
         if new_order == 0 {
-            btd_warn(0, &format!("MCP: no matching playing order for repeat={} shuffle={}", repeat, shuffle));
+            btd_warn(
+                0,
+                &format!(
+                    "MCP: no matching playing order for repeat={} shuffle={}",
+                    repeat, shuffle
+                ),
+            );
             return Err(BtdError::invalid_args());
         }
 
@@ -680,7 +678,10 @@ impl GmcsServerCallback {
             if entry.code == opcode as u32 {
                 uinput.send_key(entry.uinput, true);
                 uinput.send_key(entry.uinput, false);
-                btd_debug(0, &format!("MCP: uinput key {} for opcode 0x{:02x}", entry.name, opcode));
+                btd_debug(
+                    0,
+                    &format!("MCP: uinput key {} for opcode 0x{:02x}", entry.name, opcode),
+                );
                 return true;
             }
         }
@@ -808,7 +809,8 @@ impl McsCallback for GmcsServerCallback {
                     Ok(handle) => tokio::task::block_in_place(|| {
                         handle.block_on(async {
                             let guard = p.lock().await;
-                            let repeat = local_player_get_setting(&guard, "Repeat").unwrap_or("off");
+                            let repeat =
+                                local_player_get_setting(&guard, "Repeat").unwrap_or("off");
                             let shuffle =
                                 local_player_get_setting(&guard, "Shuffle").unwrap_or("off");
                             get_setting_order(repeat, shuffle)
@@ -1082,21 +1084,14 @@ fn gmcs_new(adapter: &Arc<tokio::sync::Mutex<BtdAdapter>>) -> usize {
     let addr = {
         let rt = tokio::runtime::Handle::try_current();
         match rt {
-            Ok(handle) => {
-                Some(tokio::task::block_in_place(|| {
-                    handle.block_on(btd_adapter_get_address(adapter))
-                }))
-            }
+            Ok(handle) => Some(tokio::task::block_in_place(|| {
+                handle.block_on(btd_adapter_get_address(adapter))
+            })),
             Err(_) => None,
         }
     };
 
-    let mut uinput_dev = BtUinput::new(
-        Some("BlueZ"),
-        Some(" (GMCS)"),
-        addr.as_ref(),
-        None,
-    );
+    let mut uinput_dev = BtUinput::new(Some("BlueZ"), Some(" (GMCS)"), addr.as_ref(), None);
 
     let uinput = match uinput_dev.create(MCS_KEY_MAP) {
         Ok(()) => {
@@ -1127,9 +1122,9 @@ fn gmcs_new(adapter: &Arc<tokio::sync::Mutex<BtdAdapter>>) -> usize {
     let cb_id = {
         let rt = tokio::runtime::Handle::try_current();
         match rt {
-            Ok(handle) => tokio::task::block_in_place(|| {
-                handle.block_on(local_player_register_callbacks(cb))
-            }),
+            Ok(handle) => {
+                tokio::task::block_in_place(|| handle.block_on(local_player_register_callbacks(cb)))
+            }
             Err(_) => 0,
         }
     };
@@ -1172,9 +1167,7 @@ fn gmcs_remove_by_adapter(adapter: &Arc<tokio::sync::Mutex<BtdAdapter>>) {
     let mut instances = MCS_INSTANCES.lock().unwrap_or_else(|e| e.into_inner());
 
     let adapter_ptr = Arc::as_ptr(adapter);
-    let pos = instances
-        .iter()
-        .position(|inst| Arc::as_ptr(&inst.adapter) == adapter_ptr);
+    let pos = instances.iter().position(|inst| Arc::as_ptr(&inst.adapter) == adapter_ptr);
 
     if let Some(idx) = pos {
         let inst = &instances[idx];
@@ -1305,22 +1298,17 @@ fn mcp_accept(
         };
 
         // Create the MCP client callback.
-        let cb = Arc::new(McpClientCallback {
-            device: Arc::clone(&device),
-            service: service.clone(),
-        });
+        let cb =
+            Arc::new(McpClientCallback { device: Arc::clone(&device), service: service.clone() });
 
         // Attach the MCP engine (discovers GMCS services by default).
         let mcp = BtMcp::attach(gatt_client, true, cb);
 
         // Store the MCP handle in the session.
         {
-            let mut sessions =
-                SESSIONS.lock().map_err(|_| BtdError::failed("lock sessions"))?;
+            let mut sessions = SESSIONS.lock().map_err(|_| BtdError::failed("lock sessions"))?;
             let dev_ptr = Arc::as_ptr(&device);
-            if let Some(session) =
-                sessions.iter_mut().find(|s| Arc::as_ptr(&s.device) == dev_ptr)
-            {
+            if let Some(session) = sessions.iter_mut().find(|s| Arc::as_ptr(&s.device) == dev_ptr) {
                 session.mcp = Some(mcp);
             }
         }
@@ -1339,17 +1327,13 @@ fn mcp_disconnect(
         btd_debug(0, "MCP: disconnect");
 
         let (mcp_opt, players) = {
-            let mut sessions =
-                SESSIONS.lock().map_err(|_| BtdError::failed("lock sessions"))?;
+            let mut sessions = SESSIONS.lock().map_err(|_| BtdError::failed("lock sessions"))?;
             let dev_ptr = Arc::as_ptr(&device);
             match sessions.iter_mut().find(|s| Arc::as_ptr(&s.device) == dev_ptr) {
                 Some(session) => {
                     let mcp = session.mcp.take();
-                    let players: Vec<Arc<MediaPlayer>> = session
-                        .remote_players
-                        .drain(..)
-                        .filter_map(|rp| rp.player)
-                        .collect();
+                    let players: Vec<Arc<MediaPlayer>> =
+                        session.remote_players.drain(..).filter_map(|rp| rp.player).collect();
                     (mcp, players)
                 }
                 None => (None, Vec::new()),
@@ -1414,8 +1398,7 @@ fn gmcs_probe(adapter: &Arc<tokio::sync::Mutex<BtdAdapter>>) -> Result<(), BtdEr
                         let mcs = BtMcs::register((*gatt_db).clone(), true, cb);
 
                         // Store MCS handle in the instance.
-                        let mut instances =
-                            MCS_INSTANCES.lock().unwrap_or_else(|e| e.into_inner());
+                        let mut instances = MCS_INSTANCES.lock().unwrap_or_else(|e| e.into_inner());
                         if let Some(inst) = instances.get_mut(idx) {
                             inst.mcs = mcs;
                         }

@@ -1928,9 +1928,7 @@ pub async fn avctp_connect_browsing(session: &Arc<Mutex<AvctpSession>>) -> Avctp
 ///
 /// Scans all AVCTP servers for a session whose device's D-Bus path matches
 /// `device_path`.  Returns the session Arc if found.
-pub async fn avctp_find_session_by_path(
-    device_path: &str,
-) -> Option<Arc<Mutex<AvctpSession>>> {
+pub async fn avctp_find_session_by_path(device_path: &str) -> Option<Arc<Mutex<AvctpSession>>> {
     // Collect server arcs under the std::sync::Mutex, then immediately drop
     // the guard so that no non-Send MutexGuard is held across an await point.
     let server_arcs: Vec<Arc<Mutex<AvctpServerInner>>> = {

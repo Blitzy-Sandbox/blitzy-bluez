@@ -99,8 +99,7 @@ fn open_hci_dev(index: u16) -> Result<OwnedFd> {
     // unsafe FFI boundary site for kernel socket creation. The socket family
     // (AF_BLUETOOTH), type (SOCK_RAW|SOCK_CLOEXEC), and protocol (BTPROTO_HCI)
     // are all valid kernel-defined constants for Bluetooth HCI sockets.
-    let fd =
-        ffi::raw_socket(AF_BLUETOOTH, libc::SOCK_RAW | libc::SOCK_CLOEXEC, BTPROTO_HCI);
+    let fd = ffi::raw_socket(AF_BLUETOOTH, libc::SOCK_RAW | libc::SOCK_CLOEXEC, BTPROTO_HCI);
     if fd < 0 {
         error!("Failed to create HCI raw socket for hci{}", index);
         return Err(Error::last_os_error());
@@ -220,7 +219,7 @@ fn hci_recvmsg(
         if cmsg_level == SOL_HCI {
             // SAFETY: CMSG_DATA returns a pointer to the data portion of
             // a valid cmsghdr. Length is validated by cmsg_len.
-            
+
             if cmsg_type == HCI_CMSG_DIR {
                 // SAFETY: HCI_CMSG_DIR payload is a c_int (4 bytes).
                 // The kernel guarantees this size for this cmsg type.
@@ -233,7 +232,10 @@ fn hci_recvmsg(
         }
         // SAFETY: CMSG_NXTHDR advances to the next cmsghdr within the
         // control buffer bounds set by msg_controllen.
-        cmsg = match ffi::raw_cmsg_nxthdr(&mhdr, cmsg) { Some(p) => p, None => break };
+        cmsg = match ffi::raw_cmsg_nxthdr(&mhdr, cmsg) {
+            Some(p) => p,
+            None => break,
+        };
     }
 
     Ok((len, dir, tv))
@@ -420,7 +422,10 @@ fn device_list(fd: RawFd, max_dev: u16) {
         // SAFETY: i < num_devs which was bounded by max_dev, and we
         // allocated max_dev * size_of::<hci_dev_req>() bytes for the
         // device request array. read_unaligned handles packed struct access.
-        let dr: hci_dev_req = { let p = ffi::raw_ptr_add(dev_reqs_ptr, i); ffi::raw_read_unaligned_ptr::<hci_dev_req>(p as *const u8) };
+        let dr: hci_dev_req = {
+            let p = ffi::raw_ptr_add(dev_reqs_ptr, i);
+            ffi::raw_read_unaligned_ptr::<hci_dev_req>(p as *const u8)
+        };
 
         // SAFETY: addr_of! + read_unaligned for safe access to potentially
         // misaligned u16 field in packed struct hci_dev_req.
@@ -447,8 +452,7 @@ fn device_list(fd: RawFd, max_dev: u16) {
 fn open_stack_internal() -> Result<OwnedFd> {
     // SAFETY: Creating an AF_BLUETOOTH raw HCI socket for stack-internal
     // event monitoring. Same designated unsafe FFI boundary as open_hci_dev().
-    let fd =
-        ffi::raw_socket(AF_BLUETOOTH, libc::SOCK_RAW | libc::SOCK_CLOEXEC, BTPROTO_HCI);
+    let fd = ffi::raw_socket(AF_BLUETOOTH, libc::SOCK_RAW | libc::SOCK_CLOEXEC, BTPROTO_HCI);
     if fd < 0 {
         error!("Failed to create stack-internal HCI socket");
         return Err(Error::last_os_error());
@@ -531,8 +535,7 @@ fn recv_stack_internal(fd: RawFd) -> Result<()> {
     // Parse hci_event_hdr at buf[1..3]
     // SAFETY: len >= min_size (9) ensures buf[1..3] is within bounds.
     // read_unaligned handles the packed struct correctly.
-    let eh: hci_event_hdr =
-        ffi::raw_read_unaligned::<hci_event_hdr>(&buf, 1).unwrap();
+    let eh: hci_event_hdr = ffi::raw_read_unaligned::<hci_event_hdr>(&buf, 1).unwrap();
     if eh.evt != EVT_STACK_INTERNAL {
         return Ok(());
     }
@@ -552,8 +555,7 @@ fn recv_stack_internal(fd: RawFd) -> Result<()> {
     // Parse evt_si_device at buf[5..9]
     let sd_offset = si_offset + size_of::<evt_stack_internal>();
     // SAFETY: len >= min_size ensures buf[sd_offset..sd_offset+4] is valid.
-    let sd: evt_si_device =
-        ffi::raw_read_unaligned::<evt_si_device>(&buf, sd_offset).unwrap();
+    let sd: evt_si_device = ffi::raw_read_unaligned::<evt_si_device>(&buf, sd_offset).unwrap();
 
     // SAFETY: addr_of! + read_unaligned for safe access to potentially
     // misaligned u16 fields in packed struct evt_si_device.
@@ -712,8 +714,7 @@ mod tests {
         buf[1] = EVT_STACK_INTERNAL; // event code
         buf[2] = 6; // parameter total length
 
-        let hdr: hci_event_hdr =
-            ffi::raw_read_unaligned::<hci_event_hdr>(&buf, 1).unwrap();
+        let hdr: hci_event_hdr = ffi::raw_read_unaligned::<hci_event_hdr>(&buf, 1).unwrap();
         assert_eq!(hdr.evt, EVT_STACK_INTERNAL);
         assert_eq!(hdr.plen, 6);
     }
@@ -740,8 +741,7 @@ mod tests {
         buf[0..2].copy_from_slice(&event_val.to_ne_bytes());
         buf[2..4].copy_from_slice(&dev_id_val.to_ne_bytes());
 
-        let sd: evt_si_device =
-            ffi::raw_read_unaligned::<evt_si_device>(&buf, 0).unwrap();
+        let sd: evt_si_device = ffi::raw_read_unaligned::<evt_si_device>(&buf, 0).unwrap();
         let event = ffi::raw_read_packed_field_ptr(std::ptr::addr_of!(sd.event));
         let dev_id = ffi::raw_read_packed_field_ptr(std::ptr::addr_of!(sd.dev_id));
         assert_eq!(event, u16::from(HCI_DEV_REG));
@@ -787,9 +787,8 @@ mod tests {
         // Verify the minimum size calculation is correct:
         // 1 (type) + HCI_EVENT_HDR_SIZE (2) + sizeof(evt_stack_internal) (2)
         // + sizeof(evt_si_device) (4) = 9
-        let min = 1 + HCI_EVENT_HDR_SIZE
-            + size_of::<evt_stack_internal>()
-            + size_of::<evt_si_device>();
+        let min =
+            1 + HCI_EVENT_HDR_SIZE + size_of::<evt_stack_internal>() + size_of::<evt_si_device>();
         assert_eq!(min, 9, "expected minimum stack-internal packet size");
     }
 }

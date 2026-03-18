@@ -25,28 +25,23 @@ use tracing::{debug, error, info, warn};
 use zbus::zvariant::{OwnedValue, Value};
 
 use bluez_shared::audio::bap::{
-    BapPacQos, BapQos, BapStreamState, BapType, BapUcastQos,
-    BtBap, BtBapPac, BtBapStream, bt_bap_new,
-    bt_bap_register, bt_bap_unregister,
+    BapPacQos, BapQos, BapStreamState, BapType, BapUcastQos, BtBap, BtBapPac, BtBapStream,
+    bt_bap_new, bt_bap_register, bt_bap_unregister,
 };
 use bluez_shared::audio::tmap::BtTmap;
 use bluez_shared::gatt::db::GattDb;
 use bluez_shared::socket::{BluetoothSocket, BtTransport};
-use bluez_shared::sys::bluetooth::{
-    BT_ISO_QOS_CIG_UNSET, BT_ISO_QOS_CIS_UNSET,
-};
+use bluez_shared::sys::bluetooth::{BT_ISO_QOS_CIG_UNSET, BT_ISO_QOS_CIS_UNSET};
 
 use crate::adapter::{
-    BtdAdapter, ExperimentalFeatures, adapter_get_path,
-    btd_adapter_get_database, btd_adapter_has_exp_feature,
+    BtdAdapter, ExperimentalFeatures, adapter_get_path, btd_adapter_get_database,
+    btd_adapter_has_exp_feature,
 };
 use crate::device::BtdDevice;
 use crate::error::BtdError;
 use crate::plugin::{BluetoothPlugin, PluginDesc, PluginPriority};
-use crate::profile::{BtdProfile, btd_profile_register, BTD_PROFILE_BEARER_LE};
-use crate::profiles::audio::media::{
-    EndpointFeatures, media_endpoint_create,
-};
+use crate::profile::{BTD_PROFILE_BEARER_LE, BtdProfile, btd_profile_register};
+use crate::profiles::audio::media::{EndpointFeatures, media_endpoint_create};
 use crate::service::BtdService;
 
 // ---------------------------------------------------------------------------
@@ -219,12 +214,7 @@ struct BapEp {
 
 impl BapEp {
     /// Create a new endpoint.
-    fn new(
-        data: &Arc<StdMutex<BapData>>,
-        path: String,
-        uuid: String,
-        codec: u8,
-    ) -> Self {
+    fn new(data: &Arc<StdMutex<BapData>>, path: String, uuid: String, codec: u8) -> Self {
         Self {
             data: Arc::downgrade(data),
             path,
@@ -431,9 +421,7 @@ impl Drop for BapData {
 // ---------------------------------------------------------------------------
 
 /// Find session data by device (tokio Mutex).
-fn find_session_by_device(
-    device: &Arc<TokioMutex<BtdDevice>>,
-) -> Option<Arc<StdMutex<BapData>>> {
+fn find_session_by_device(device: &Arc<TokioMutex<BtdDevice>>) -> Option<Arc<StdMutex<BapData>>> {
     let sessions = SESSIONS.lock().expect("sessions lock");
     for s in sessions.iter() {
         let d = s.lock().expect("lock");
@@ -532,10 +520,7 @@ fn bap_select_local_pac(bap: &BtBap, rpac: &BtBapPac) -> Option<BtBapPac> {
 // ---------------------------------------------------------------------------
 
 /// Register a BapEp as a MediaEndpoint1 D-Bus object via the media subsystem.
-fn ep_register(
-    data_arc: &Arc<StdMutex<BapData>>,
-    ep_arc: &Arc<StdMutex<BapEp>>,
-) {
+fn ep_register(data_arc: &Arc<StdMutex<BapData>>, ep_arc: &Arc<StdMutex<BapEp>>) {
     let ep = ep_arc.lock().expect("lock ep");
     if ep.registered {
         return;
@@ -713,13 +698,9 @@ fn bap_state_changed(
     old_state_raw: u8,
     new_state_raw: u8,
 ) {
-    let new_state = BapStreamState::from_u8(new_state_raw)
-        .unwrap_or(BapStreamState::Idle);
+    let new_state = BapStreamState::from_u8(new_state_raw).unwrap_or(BapStreamState::Idle);
 
-    debug!(
-        "BAP: stream state {} -> {}",
-        old_state_raw, new_state_raw,
-    );
+    debug!("BAP: stream state {} -> {}", old_state_raw, new_state_raw,);
 
     match new_state {
         BapStreamState::Idle => {
@@ -753,9 +734,7 @@ fn bap_handle_idle(data_arc: &Arc<StdMutex<BapData>>, _stream: &BtBapStream) {
     for ep_arc in d.all_eps() {
         let mut ep = ep_arc.lock().expect("lock ep");
         ep.setups.retain(|s| {
-            !s.stream
-                .as_ref()
-                .is_some_and(|st| st.get_state() == BapStreamState::Idle)
+            !s.stream.as_ref().is_some_and(|st| st.get_state() == BapStreamState::Idle)
         });
     }
 }
@@ -802,14 +781,12 @@ fn bap_handle_enabling(_data_arc: &Arc<StdMutex<BapData>>, stream: &BtBapStream)
 
     tokio::spawn(async move {
         // Create ISO socket and attempt connection using stream QoS parameters.
-        match BluetoothSocket::builder()
-            .transport(BtTransport::Iso)
-            .connect()
-            .await
-        {
+        match BluetoothSocket::builder().transport(BtTransport::Iso).connect().await {
             Ok(socket) => {
-                debug!("BAP: ISO socket created for enabling stream (interval={})",
-                       io_qos.interval);
+                debug!(
+                    "BAP: ISO socket created for enabling stream (interval={})",
+                    io_qos.interval
+                );
 
                 // Extract an OwnedFd from the socket for the stream. We dup the
                 // fd so the stream owns an independent copy; the original socket
@@ -826,8 +803,10 @@ fn bap_handle_enabling(_data_arc: &Arc<StdMutex<BapData>>, stream: &BtBapStream)
                     }
                     None => {
                         drop(socket);
-                        warn!("BAP: failed to dup ISO fd for stream: {}",
-                              std::io::Error::last_os_error());
+                        warn!(
+                            "BAP: failed to dup ISO fd for stream: {}",
+                            std::io::Error::last_os_error()
+                        );
                         stream_clone.release(None);
                     }
                 }
@@ -853,16 +832,11 @@ fn bap_handle_streaming(data_arc: &Arc<StdMutex<BapData>>) {
     // Collect all endpoint arcs that have active setups in streaming state.
     let eps_with_setups: Vec<Arc<StdMutex<BapEp>>> = {
         let d = data_arc.lock().expect("lock");
-        d.sink_eps.iter()
+        d.sink_eps
+            .iter()
             .chain(d.source_eps.iter())
             .chain(d.bcast_eps.iter())
-            .filter(|ep_arc| {
-                if let Ok(ep) = ep_arc.lock() {
-                    !ep.setups.is_empty()
-                } else {
-                    false
-                }
-            })
+            .filter(|ep_arc| if let Ok(ep) = ep_arc.lock() { !ep.setups.is_empty() } else { false })
             .cloned()
             .collect()
     };
@@ -907,11 +881,7 @@ fn bap_pac_added(data_arc: &Arc<StdMutex<BapData>>, pac: &BtBapPac) {
         BCAST_UUID
     };
 
-    debug!(
-        "BAP: PAC added — type {:?}, codec {}",
-        pac_type,
-        pac.get_codec()
-    );
+    debug!("BAP: PAC added — type {:?}, codec {}", pac_type, pac.get_codec());
 
     let _ep = ep_create_from_pac(data_arc, pac, uuid);
 
@@ -981,11 +951,7 @@ fn bap_ready(data_arc: &Arc<StdMutex<BapData>>, bap: &BtBap) {
     let data_clone = data_arc.clone();
 
     for pac_type in &[BapType::SINK, BapType::SOURCE] {
-        let uuid = if *pac_type == BapType::SINK {
-            PAC_SINK_UUID
-        } else {
-            PAC_SOURCE_UUID
-        };
+        let uuid = if *pac_type == BapType::SINK { PAC_SINK_UUID } else { PAC_SOURCE_UUID };
 
         let pt = *pac_type;
         let dc = data_clone.clone();
@@ -1585,15 +1551,10 @@ impl BapEpInterface {
         let ep = self.ep.lock().expect("lock ep");
         let data_arc = match ep.data.upgrade() {
             Some(d) => d,
-            None => {
-                return zbus::zvariant::OwnedObjectPath::try_from("/").unwrap_or_default()
-            }
+            None => return zbus::zvariant::OwnedObjectPath::try_from("/").unwrap_or_default(),
         };
         let d = data_arc.lock().expect("lock");
-        let path = d
-            .device_path
-            .clone()
-            .unwrap_or_else(|| d.adapter_path.clone());
+        let path = d.device_path.clone().unwrap_or_else(|| d.adapter_path.clone());
         zbus::zvariant::OwnedObjectPath::try_from(path).unwrap_or_default()
     }
 
@@ -1668,16 +1629,12 @@ impl BapEpInterface {
 
         let data_arc = {
             let ep = self.ep.lock().expect("lock ep");
-            ep.data
-                .upgrade()
-                .ok_or_else(|| zbus::fdo::Error::Failed("Session expired".into()))?
+            ep.data.upgrade().ok_or_else(|| zbus::fdo::Error::Failed("Session expired".into()))?
         };
 
         let bap = {
             let d = data_arc.lock().expect("lock");
-            d.bap
-                .clone()
-                .ok_or_else(|| zbus::fdo::Error::Failed("No BAP session".into()))?
+            d.bap.clone().ok_or_else(|| zbus::fdo::Error::Failed("No BAP session".into()))?
         };
 
         // Parse capabilities and metadata from properties.
@@ -1710,8 +1667,7 @@ impl BapEpInterface {
                 return;
             }
             if let Some(lpac) = bap_select_local_pac(&bap, rpac) {
-                let stream =
-                    BtBapStream::new(&bap, lpac.clone(), rpac.clone(), &qos, &caps);
+                let stream = BtBapStream::new(&bap, lpac.clone(), rpac.clone(), &qos, &caps);
                 stream_cell.set(Some(stream));
                 found.set(true);
             }
@@ -1754,8 +1710,7 @@ impl BapEpInterface {
         let before = ep.setups.len();
 
         // Remove setups matching the transport path.
-        ep.setups
-            .retain(|s| s.transport_path.as_deref() != Some(transport_str.as_str()));
+        ep.setups.retain(|s| s.transport_path.as_deref() != Some(transport_str.as_str()));
 
         let removed = before - ep.setups.len();
         if removed == 0 {

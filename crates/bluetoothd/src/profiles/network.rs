@@ -49,8 +49,8 @@ use bluez_shared::sys::bnep::{
     BNEP_SVC_GN, BNEP_SVC_NAP, BNEP_SVC_PANU, BNEPCONNADD, BNEPCONNDEL, BNEPGETSUPPFEAT,
     bnep_connadd_req, bnep_conndel_req,
 };
-use bluez_shared::util::uuid::BtUuid;
 use bluez_shared::sys::ffi_helpers as ffi;
+use bluez_shared::util::uuid::BtUuid;
 
 // ===========================================================================
 // D-Bus Interface Names
@@ -224,8 +224,7 @@ impl BnepSession {
         // Send BNEP setup connection request.
         let req = self.build_setup_req();
         // SAFETY: Writing to a valid socket fd with a properly-formed buffer.
-        let written =
-            ffi::raw_write(raw_fd, &req);
+        let written = ffi::raw_write(raw_fd, &req);
         if written < 0 {
             let err = std::io::Error::last_os_error();
             btd_error(0xFFFF, &format!("BNEP setup write failed: {}", err));
@@ -396,8 +395,7 @@ impl BnepSession {
             let mut buf = [0u8; 16];
             loop {
                 // SAFETY: Reading from a valid socket fd into a stack buffer.
-                let n =
-                    ffi::raw_read(raw_fd, &mut buf);
+                let n = ffi::raw_read(raw_fd, &mut buf);
                 if n <= 0 {
                     let err = std::io::Error::last_os_error();
                     return Err(BtdError::failed(&format!("BNEP read failed: {}", err)));
@@ -435,8 +433,7 @@ impl BnepSession {
             (response & 0xFF) as u8,
         ];
         // SAFETY: Writing to a valid socket fd with a properly-formed buffer.
-        let written =
-            ffi::raw_write(raw_fd, &buf);
+        let written = ffi::raw_write(raw_fd, &buf);
         if written < 0 {
             let err = std::io::Error::last_os_error();
             return Err(BtdError::failed(&format!("BNEP send response failed: {}", err)));
@@ -700,7 +697,8 @@ fn bnep_init() -> Result<(), BtdError> {
     // SAFETY: Creating a PF_BLUETOOTH/SOCK_RAW/BTPROTO_BNEP socket for
     // BNEP kernel interface management. This is a privileged operation
     // requiring CAP_NET_ADMIN.
-    let fd = ffi::raw_socket(PF_BLUETOOTH as libc::c_int, libc::SOCK_RAW, BTPROTO_BNEP as libc::c_int);
+    let fd =
+        ffi::raw_socket(PF_BLUETOOTH as libc::c_int, libc::SOCK_RAW, BTPROTO_BNEP as libc::c_int);
     if fd < 0 {
         let err = std::io::Error::last_os_error();
         btd_error(0xFFFF, &format!("Failed to open BNEP control socket: {}", err));
@@ -1022,7 +1020,8 @@ impl NetworkInterface {
 
         // Create L2CAP connection to BNEP PSM.
         // SAFETY: Creating an L2CAP socket for BNEP connection.
-        let sock_fd = ffi::raw_socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_L2CAP as libc::c_int);
+        let sock_fd =
+            ffi::raw_socket(PF_BLUETOOTH, libc::SOCK_SEQPACKET, BTPROTO_L2CAP as libc::c_int);
         if sock_fd < 0 {
             let mut peer = self.peer.lock().await;
             if let Some(c) = peer.connections.iter_mut().find(|c| c.id == svc_id) {
@@ -1500,8 +1499,10 @@ impl NetworkServerInterface {
 fn create_listener_socket(src_addr: &BdAddr) -> Result<OwnedFd, BtdError> {
     // SAFETY: Creating an L2CAP SEQPACKET socket for BNEP listening.
     let fd = ffi::raw_socket(
-            PF_BLUETOOTH as libc::c_int, libc::SOCK_SEQPACKET, BTPROTO_L2CAP as libc::c_int,
-        );
+        PF_BLUETOOTH as libc::c_int,
+        libc::SOCK_SEQPACKET,
+        BTPROTO_L2CAP as libc::c_int,
+    );
     if fd < 0 {
         let err = std::io::Error::last_os_error();
         return Err(BtdError::failed(&format!("L2CAP listen socket: {}", err)));

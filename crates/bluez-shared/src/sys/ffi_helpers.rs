@@ -56,11 +56,7 @@ pub fn bt_close_fd(fd: RawFd) -> io::Result<()> {
     // SAFETY: The caller guarantees `fd` is a valid open file descriptor that
     // they own and have not yet closed.  After this call the fd is invalid.
     let ret = unsafe { libc::close(fd) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
 /// Wrap a raw file descriptor into an `OwnedFd`.
@@ -97,11 +93,7 @@ pub fn bt_dup2(src: RawFd, dst: RawFd) -> io::Result<()> {
     // SAFETY: `libc::dup2` is a POSIX syscall.  Both `src` and `dst` are
     // valid file descriptors per caller contract.
     let ret = unsafe { libc::dup2(src, dst) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
 // ===========================================================================
@@ -116,11 +108,7 @@ pub fn bt_bind_addr<T>(fd: RawFd, addr: &T) -> io::Result<()> {
     // SAFETY: `fd` is a valid socket.  `addr` is a properly-aligned, fully-
     // initialized repr(C) struct.  `len` matches the struct size.
     let ret = unsafe { libc::bind(fd, (addr as *const T).cast::<libc::sockaddr>(), len) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
 /// Initiate a connection on a socket.
@@ -146,11 +134,7 @@ pub fn bt_connect_addr<T>(fd: RawFd, addr: &T) -> io::Result<i32> {
 pub fn bt_listen(fd: RawFd, backlog: i32) -> io::Result<()> {
     // SAFETY: `fd` is a valid bound socket.  `backlog` is an integer.
     let ret = unsafe { libc::listen(fd, backlog) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
 /// Accept a connection on a listening socket.
@@ -163,13 +147,8 @@ pub fn bt_accept_addr<T: Copy>(fd: RawFd) -> io::Result<(OwnedFd, T)> {
     let mut len = mem::size_of::<T>() as libc::socklen_t;
     // SAFETY: `fd` is a valid listening socket.  `addr` is properly sized
     // and aligned.  `len` is set to the buffer size.
-    let new_fd = unsafe {
-        libc::accept(
-            fd,
-            (&raw mut addr).cast::<libc::sockaddr>(),
-            &raw mut len,
-        )
-    };
+    let new_fd =
+        unsafe { libc::accept(fd, (&raw mut addr).cast::<libc::sockaddr>(), &raw mut len) };
     if new_fd < 0 {
         return Err(io::Error::last_os_error());
     }
@@ -182,8 +161,7 @@ pub fn bt_accept_addr<T: Copy>(fd: RawFd) -> io::Result<(OwnedFd, T)> {
 pub fn bt_accept_raw(fd: RawFd) -> io::Result<OwnedFd> {
     // SAFETY: `fd` is a valid listening socket.  Passing null for addr/len
     // is valid per POSIX — the peer address is simply not returned.
-    let new_fd =
-        unsafe { libc::accept(fd, std::ptr::null_mut(), std::ptr::null_mut()) };
+    let new_fd = unsafe { libc::accept(fd, std::ptr::null_mut(), std::ptr::null_mut()) };
     if new_fd < 0 {
         return Err(io::Error::last_os_error());
     }
@@ -197,18 +175,9 @@ pub fn bt_getpeername_addr<T: Copy>(fd: RawFd) -> io::Result<T> {
     let mut addr: T = unsafe { mem::zeroed() };
     let mut len = mem::size_of::<T>() as libc::socklen_t;
     // SAFETY: `fd` is a valid connected socket.  `addr` is properly sized.
-    let ret = unsafe {
-        libc::getpeername(
-            fd,
-            (&raw mut addr).cast::<libc::sockaddr>(),
-            &raw mut len,
-        )
-    };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(addr)
-    }
+    let ret =
+        unsafe { libc::getpeername(fd, (&raw mut addr).cast::<libc::sockaddr>(), &raw mut len) };
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(addr) }
 }
 
 /// Get the local address of a socket.
@@ -217,29 +186,16 @@ pub fn bt_getsockname_addr<T: Copy>(fd: RawFd) -> io::Result<T> {
     let mut addr: T = unsafe { mem::zeroed() };
     let mut len = mem::size_of::<T>() as libc::socklen_t;
     // SAFETY: `fd` is a valid socket.  `addr` is properly sized.
-    let ret = unsafe {
-        libc::getsockname(
-            fd,
-            (&raw mut addr).cast::<libc::sockaddr>(),
-            &raw mut len,
-        )
-    };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(addr)
-    }
+    let ret =
+        unsafe { libc::getsockname(fd, (&raw mut addr).cast::<libc::sockaddr>(), &raw mut len) };
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(addr) }
 }
 
 /// Shut down part or all of a full-duplex connection.
 pub fn bt_shutdown(fd: RawFd, how: i32) -> io::Result<()> {
     // SAFETY: `fd` is a valid connected socket.  `how` is SHUT_RD/WR/RDWR.
     let ret = unsafe { libc::shutdown(fd, how) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
 // ===========================================================================
@@ -249,23 +205,14 @@ pub fn bt_shutdown(fd: RawFd, how: i32) -> io::Result<()> {
 /// Set a typed socket option.
 ///
 /// Generic over any `Copy` option value type.
-pub fn bt_setsockopt_val<T: Copy>(
-    fd: RawFd,
-    level: i32,
-    optname: i32,
-    val: &T,
-) -> io::Result<()> {
+pub fn bt_setsockopt_val<T: Copy>(fd: RawFd, level: i32, optname: i32, val: &T) -> io::Result<()> {
     let len = mem::size_of::<T>() as libc::socklen_t;
     // SAFETY: `fd` is a valid socket.  `val` is a properly-aligned value of
     // known size.  `len` matches the value size.
     let ret = unsafe {
         libc::setsockopt(fd, level, optname, (val as *const T).cast::<libc::c_void>(), len)
     };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
 /// Get a typed socket option.
@@ -277,19 +224,9 @@ pub fn bt_getsockopt_val<T: Copy>(fd: RawFd, level: i32, optname: i32) -> io::Re
     let mut len = mem::size_of::<T>() as libc::socklen_t;
     // SAFETY: `fd` is a valid socket.  `val` is properly-aligned and sized.
     let ret = unsafe {
-        libc::getsockopt(
-            fd,
-            level,
-            optname,
-            (&raw mut val).cast::<libc::c_void>(),
-            &raw mut len,
-        )
+        libc::getsockopt(fd, level, optname, (&raw mut val).cast::<libc::c_void>(), &raw mut len)
     };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(val)
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(val) }
 }
 
 // ===========================================================================
@@ -302,13 +239,8 @@ pub fn bt_getsockopt_val<T: Copy>(fd: RawFd, level: i32, optname: i32) -> io::Re
 pub fn bt_read_raw(fd: RawFd, buf: &mut [u8]) -> io::Result<isize> {
     // SAFETY: `fd` is a valid open file descriptor.  `buf` is a valid, mutable
     // byte slice with `len` bytes of capacity.
-    let ret =
-        unsafe { libc::read(fd, buf.as_mut_ptr().cast::<libc::c_void>(), buf.len()) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    let ret = unsafe { libc::read(fd, buf.as_mut_ptr().cast::<libc::c_void>(), buf.len()) };
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ret) }
 }
 
 /// Write a buffer to a raw file descriptor.
@@ -317,13 +249,8 @@ pub fn bt_read_raw(fd: RawFd, buf: &mut [u8]) -> io::Result<isize> {
 pub fn bt_write_raw(fd: RawFd, buf: &[u8]) -> io::Result<isize> {
     // SAFETY: `fd` is a valid open file descriptor.  `buf` is a valid byte
     // slice with `len` bytes of data.
-    let ret =
-        unsafe { libc::write(fd, buf.as_ptr().cast::<libc::c_void>(), buf.len()) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    let ret = unsafe { libc::write(fd, buf.as_ptr().cast::<libc::c_void>(), buf.len()) };
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ret) }
 }
 
 /// Send data on a socket.
@@ -331,13 +258,8 @@ pub fn bt_write_raw(fd: RawFd, buf: &[u8]) -> io::Result<isize> {
 /// Returns the number of bytes sent, or an error.
 pub fn bt_send_raw(fd: RawFd, buf: &[u8], flags: i32) -> io::Result<isize> {
     // SAFETY: `fd` is a valid socket.  `buf` is a valid byte slice.
-    let ret =
-        unsafe { libc::send(fd, buf.as_ptr().cast::<libc::c_void>(), buf.len(), flags) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    let ret = unsafe { libc::send(fd, buf.as_ptr().cast::<libc::c_void>(), buf.len(), flags) };
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ret) }
 }
 
 /// Receive data from a socket.
@@ -345,13 +267,8 @@ pub fn bt_send_raw(fd: RawFd, buf: &[u8], flags: i32) -> io::Result<isize> {
 /// Returns the number of bytes received, or an error.
 pub fn bt_recv_raw(fd: RawFd, buf: &mut [u8], flags: i32) -> io::Result<isize> {
     // SAFETY: `fd` is a valid socket.  `buf` is a valid mutable byte slice.
-    let ret =
-        unsafe { libc::recv(fd, buf.as_mut_ptr().cast::<libc::c_void>(), buf.len(), flags) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    let ret = unsafe { libc::recv(fd, buf.as_mut_ptr().cast::<libc::c_void>(), buf.len(), flags) };
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ret) }
 }
 
 /// Receive a message from a socket (scatter-gather with ancillary data).
@@ -362,11 +279,7 @@ pub fn bt_recvmsg_raw(fd: RawFd, msg: &mut libc::msghdr, flags: i32) -> io::Resu
     // SAFETY: `fd` is a valid socket.  `msg` is a properly initialized
     // msghdr with valid iovec and control buffers.
     let ret = unsafe { libc::recvmsg(fd, msg, flags) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ret) }
 }
 
 /// Poll a single file descriptor for events.
@@ -376,11 +289,7 @@ pub fn bt_poll_fd(fd: RawFd, events: i16, timeout_ms: i32) -> io::Result<i32> {
     let mut pfd = libc::pollfd { fd, events, revents: 0 };
     // SAFETY: `pfd` is a valid, stack-allocated pollfd struct.
     let ret = unsafe { libc::poll(&raw mut pfd, 1, timeout_ms) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ret) }
 }
 
 /// Poll a single file descriptor, returning the `revents` field.
@@ -388,11 +297,7 @@ pub fn bt_poll_revents(fd: RawFd, events: i16, timeout_ms: i32) -> io::Result<i1
     let mut pfd = libc::pollfd { fd, events, revents: 0 };
     // SAFETY: `pfd` is a valid, stack-allocated pollfd struct.
     let ret = unsafe { libc::poll(&raw mut pfd, 1, timeout_ms) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(pfd.revents)
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(pfd.revents) }
 }
 
 // ===========================================================================
@@ -407,11 +312,7 @@ pub fn bt_ioctl_with_ref<T>(fd: RawFd, cmd: libc::c_ulong, data: &T) -> io::Resu
     // fully-initialized reference to a repr(C) struct whose layout matches
     // what the kernel ioctl expects.
     let ret = unsafe { libc::ioctl(fd, cmd, data as *const T) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ret) }
 }
 
 /// Perform a typed ioctl on a file descriptor (mutable data).
@@ -420,53 +321,29 @@ pub fn bt_ioctl_with_mut<T>(fd: RawFd, cmd: libc::c_ulong, data: &mut T) -> io::
     // mutable reference to a repr(C) struct whose layout matches what the
     // kernel ioctl expects.
     let ret = unsafe { libc::ioctl(fd, cmd, data as *mut T) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ret) }
 }
 
 /// Perform an ioctl passing a raw mutable byte buffer.
-pub fn bt_ioctl_with_buf(
-    fd: RawFd,
-    cmd: libc::c_ulong,
-    buf: &mut [u8],
-) -> io::Result<i32> {
+pub fn bt_ioctl_with_buf(fd: RawFd, cmd: libc::c_ulong, buf: &mut [u8]) -> io::Result<i32> {
     // SAFETY: `fd` is a valid file descriptor.  `buf` is a valid mutable byte
     // buffer.  The kernel ioctl reads/writes within the buffer bounds.
     let ret = unsafe { libc::ioctl(fd, cmd, buf.as_mut_ptr()) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ret) }
 }
 
 /// Perform an ioctl passing a raw const byte buffer.
-pub fn bt_ioctl_with_buf_const(
-    fd: RawFd,
-    cmd: libc::c_ulong,
-    buf: &[u8],
-) -> io::Result<i32> {
+pub fn bt_ioctl_with_buf_const(fd: RawFd, cmd: libc::c_ulong, buf: &[u8]) -> io::Result<i32> {
     // SAFETY: `fd` is a valid file descriptor.  `buf` is a valid byte buffer.
     let ret = unsafe { libc::ioctl(fd, cmd, buf.as_ptr()) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ret) }
 }
 
 /// Perform a simple ioctl with an integer argument.
 pub fn bt_ioctl_int(fd: RawFd, cmd: libc::c_ulong, val: &mut i32) -> io::Result<i32> {
     // SAFETY: `fd` is a valid file descriptor.  `val` is a valid i32 pointer.
     let ret = unsafe { libc::ioctl(fd, cmd, val as *mut i32) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ret) }
 }
 
 // ===========================================================================
@@ -478,11 +355,7 @@ pub fn bt_fcntl_getfl(fd: RawFd) -> io::Result<i32> {
     // SAFETY: `fd` is a valid file descriptor.  F_GETFL takes no additional
     // argument and returns the file status flags.
     let ret = unsafe { libc::fcntl(fd, libc::F_GETFL) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ret) }
 }
 
 /// Set file descriptor flags (F_SETFL).
@@ -490,11 +363,7 @@ pub fn bt_fcntl_setfl(fd: RawFd, flags: i32) -> io::Result<()> {
     // SAFETY: `fd` is a valid file descriptor.  `flags` is a bitmask of
     // file status flags.
     let ret = unsafe { libc::fcntl(fd, libc::F_SETFL, flags) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
 // ===========================================================================
@@ -577,11 +446,7 @@ pub fn bt_open_cstr(path: &std::ffi::CStr, flags: i32) -> io::Result<OwnedFd> {
 pub fn bt_lseek(fd: RawFd, offset: i64, whence: i32) -> io::Result<i64> {
     // SAFETY: `fd` is a valid file descriptor.
     let ret = unsafe { libc::lseek(fd, offset, whence) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ret)
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ret) }
 }
 
 /// Get the current time of day.
@@ -589,11 +454,7 @@ pub fn bt_gettimeofday() -> io::Result<libc::timeval> {
     // SAFETY: `tv` is a valid, mutable stack-allocated timeval struct.
     let mut tv: libc::timeval = unsafe { mem::zeroed() };
     let ret = unsafe { libc::gettimeofday(&raw mut tv, std::ptr::null_mut()) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(tv)
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(tv) }
 }
 
 /// Set the process death signal via `prctl(PR_SET_PDEATHSIG, ...)`.
@@ -601,11 +462,7 @@ pub fn bt_prctl_set_pdeathsig(sig: i32) -> io::Result<()> {
     // SAFETY: `prctl` with `PR_SET_PDEATHSIG` sets the parent-death signal.
     // The `sig` argument is a valid signal number.
     let ret = unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, sig) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
 // ===========================================================================
@@ -618,22 +475,14 @@ pub fn bt_get_winsize(fd: RawFd) -> io::Result<libc::winsize> {
     // TIOCGWINSZ reads the terminal window size into it.
     let mut ws: libc::winsize = unsafe { mem::zeroed() };
     let ret = unsafe { libc::ioctl(fd, libc::TIOCGWINSZ, &raw mut ws) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(ws)
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(ws) }
 }
 
 /// Flush terminal I/O via tcflush.
 pub fn bt_tcflush(fd: RawFd, queue: i32) -> io::Result<()> {
     // SAFETY: `fd` is a valid terminal file descriptor.
     let ret = unsafe { libc::tcflush(fd, queue) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
 /// Initialize a termios struct with raw settings.
@@ -649,22 +498,14 @@ pub fn bt_cfmakeraw() -> libc::termios {
 pub fn bt_cfsetspeed(ti: &mut libc::termios, speed: u32) -> io::Result<()> {
     // SAFETY: `ti` is a valid mutable termios struct.
     let ret = unsafe { libc::cfsetspeed(ti, speed as libc::speed_t) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
 /// Set terminal attributes.
 pub fn bt_tcsetattr(fd: RawFd, action: i32, ti: &libc::termios) -> io::Result<()> {
     // SAFETY: `fd` is a valid terminal.  `ti` is a valid termios struct.
     let ret = unsafe { libc::tcsetattr(fd, action, ti) };
-    if ret < 0 {
-        Err(io::Error::last_os_error())
-    } else {
-        Ok(())
-    }
+    if ret < 0 { Err(io::Error::last_os_error()) } else { Ok(()) }
 }
 
 // ===========================================================================
@@ -678,11 +519,7 @@ pub fn cmsg_firsthdr(msg: &libc::msghdr) -> Option<*mut libc::cmsghdr> {
     // SAFETY: `msg` is a valid msghdr with properly set control buffer
     // fields.  CMSG_FIRSTHDR only reads msg_control and msg_controllen.
     let ptr = unsafe { libc::CMSG_FIRSTHDR(msg as *const libc::msghdr) };
-    if ptr.is_null() {
-        None
-    } else {
-        Some(ptr)
-    }
+    if ptr.is_null() { None } else { Some(ptr) }
 }
 
 /// Get the next control message header.
@@ -691,17 +528,8 @@ pub fn cmsg_firsthdr(msg: &libc::msghdr) -> Option<*mut libc::cmsghdr> {
 pub fn cmsg_nxthdr(msg: &libc::msghdr, cmsg: *const libc::cmsghdr) -> Option<*mut libc::cmsghdr> {
     // SAFETY: `msg` is a valid msghdr.  `cmsg` points to a valid cmsghdr
     // within the control buffer.
-    let ptr = unsafe {
-        libc::CMSG_NXTHDR(
-            msg as *const libc::msghdr,
-            cmsg as *mut libc::cmsghdr,
-        )
-    };
-    if ptr.is_null() {
-        None
-    } else {
-        Some(ptr)
-    }
+    let ptr = unsafe { libc::CMSG_NXTHDR(msg as *const libc::msghdr, cmsg as *mut libc::cmsghdr) };
+    if ptr.is_null() { None } else { Some(ptr) }
 }
 
 /// Get the data pointer from a control message header and read a typed value.
@@ -826,9 +654,7 @@ pub fn raw_getsockopt<T: Copy>(
     len: &mut libc::socklen_t,
 ) -> i32 {
     // SAFETY: `val` is a valid mutable reference; `len` is properly initialized.
-    unsafe {
-        libc::getsockopt(fd, level, optname, val as *mut T as *mut libc::c_void, len)
-    }
+    unsafe { libc::getsockopt(fd, level, optname, val as *mut T as *mut libc::c_void, len) }
 }
 
 /// `libc::shutdown` returning 0 or -1.
@@ -969,7 +795,9 @@ pub fn raw_dup(fd: RawFd) -> RawFd {
 /// `libc::tcflush(fd, queue)`. Discards pending terminal I/O.
 pub fn raw_tcflush(fd: RawFd, queue: i32) {
     // SAFETY: tcflush is safe on a valid terminal fd.
-    unsafe { libc::tcflush(fd, queue); }
+    unsafe {
+        libc::tcflush(fd, queue);
+    }
 }
 
 /// `libc::tcgetattr(fd, &mut termios)`. Fills `ti` with terminal attributes.
@@ -1081,7 +909,10 @@ pub fn raw_cmsg_firsthdr(mhdr: &libc::msghdr) -> Option<*mut libc::cmsghdr> {
 }
 
 /// Get the next CMSG header after `cmsg` from `mhdr`.  Returns `None` if none remain.
-pub fn raw_cmsg_nxthdr(mhdr: &libc::msghdr, cmsg: *const libc::cmsghdr) -> Option<*mut libc::cmsghdr> {
+pub fn raw_cmsg_nxthdr(
+    mhdr: &libc::msghdr,
+    cmsg: *const libc::cmsghdr,
+) -> Option<*mut libc::cmsghdr> {
     // SAFETY: CMSG_NXTHDR reads msg_control/msg_controllen from the valid msghdr ref
     // and advances the cmsg pointer which was obtained from a prior CMSG call.
     let p = unsafe { libc::CMSG_NXTHDR(mhdr as *const libc::msghdr, cmsg) };
@@ -1164,7 +995,9 @@ pub fn raw_malloc_zeroed(size: usize) -> *mut u8 {
 pub fn raw_free(ptr: *mut u8) {
     if !ptr.is_null() {
         // SAFETY: ptr was obtained from malloc and is non-null.
-        unsafe { libc::free(ptr as *mut libc::c_void); }
+        unsafe {
+            libc::free(ptr as *mut libc::c_void);
+        }
     }
 }
 
@@ -1279,9 +1112,8 @@ mod tests {
     fn test_bt_read_write_unix_socketpair() {
         let mut fds = [0i32; 2];
         // SAFETY: creating a unix socketpair for testing purposes.
-        let ret = unsafe {
-            libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr())
-        };
+        let ret =
+            unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr()) };
         assert_eq!(ret, 0);
         let _fd0 = bt_owned_fd(fds[0]).unwrap();
         let _fd1 = bt_owned_fd(fds[1]).unwrap();
@@ -1300,9 +1132,8 @@ mod tests {
     fn test_bt_send_recv_unix_socketpair() {
         let mut fds = [0i32; 2];
         // SAFETY: creating a unix socketpair for testing purposes.
-        let ret = unsafe {
-            libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr())
-        };
+        let ret =
+            unsafe { libc::socketpair(libc::AF_UNIX, libc::SOCK_STREAM, 0, fds.as_mut_ptr()) };
         assert_eq!(ret, 0);
         let _fd0 = bt_owned_fd(fds[0]).unwrap();
         let _fd1 = bt_owned_fd(fds[1]).unwrap();

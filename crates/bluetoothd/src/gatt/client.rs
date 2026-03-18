@@ -908,10 +908,7 @@ impl GattDescIface {
     /// `"authorize"`.
     #[zbus(property)]
     fn flags(&self) -> Vec<String> {
-        self.state
-            .lock()
-            .map(|s| s.flags.clone())
-            .unwrap_or_default()
+        self.state.lock().map(|s| s.flags.clone()).unwrap_or_default()
     }
 
     /// Read the descriptor value.

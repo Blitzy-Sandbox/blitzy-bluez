@@ -205,9 +205,8 @@ fn sixaxis_get_device_bdaddr(fd: RawFd) -> io::Result<BdAddr> {
     let mut buf = [0u8; 18];
     buf[0] = 0xF2;
 
-    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf(
-        fd, hidiocgfeature(18), &mut buf,
-    ).unwrap_or(-1);
+    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf(fd, hidiocgfeature(18), &mut buf)
+        .unwrap_or(-1);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("sixaxis: failed to read device address ({})", err);
@@ -227,9 +226,8 @@ fn ds4_get_device_bdaddr(fd: RawFd) -> io::Result<BdAddr> {
     let mut buf = [0u8; 7];
     buf[0] = 0x81;
 
-    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf(
-        fd, hidiocgfeature(7), &mut buf,
-    ).unwrap_or(-1);
+    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf(fd, hidiocgfeature(7), &mut buf)
+        .unwrap_or(-1);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("sixaxis: failed to read DS4 device address ({})", err);
@@ -259,9 +257,8 @@ fn sixaxis_get_central_bdaddr(fd: RawFd) -> io::Result<BdAddr> {
     let mut buf = [0u8; 8];
     buf[0] = 0xF5;
 
-    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf(
-        fd, hidiocgfeature(8), &mut buf,
-    ).unwrap_or(-1);
+    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf(fd, hidiocgfeature(8), &mut buf)
+        .unwrap_or(-1);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("sixaxis: failed to read central address ({})", err);
@@ -279,9 +276,8 @@ fn ds4_get_central_bdaddr(fd: RawFd) -> io::Result<BdAddr> {
     let mut buf = [0u8; 16];
     buf[0] = 0x12;
 
-    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf(
-        fd, hidiocgfeature(16), &mut buf,
-    ).unwrap_or(-1);
+    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf(fd, hidiocgfeature(16), &mut buf)
+        .unwrap_or(-1);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("sixaxis: failed to read DS4 central address ({})", err);
@@ -310,9 +306,8 @@ fn sixaxis_set_central_bdaddr(fd: RawFd, bdaddr: &BdAddr) -> io::Result<()> {
     let swapped = bdaddr.baswap();
     buf[2..8].copy_from_slice(&swapped.b);
 
-    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf_const(
-        fd, hidiocsfeature(8), &buf,
-    ).unwrap_or(-1);
+    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf_const(fd, hidiocsfeature(8), &buf)
+        .unwrap_or(-1);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("sixaxis: failed to write central address ({})", err);
@@ -330,9 +325,8 @@ fn ds4_set_central_bdaddr(fd: RawFd, bdaddr: &BdAddr) -> io::Result<()> {
     buf[1..7].copy_from_slice(&bdaddr.b);
     // Bytes 7..23 are zeroed (link key placeholder — cannot force re-load).
 
-    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf_const(
-        fd, hidiocsfeature(23), &buf,
-    ).unwrap_or(-1);
+    let ret = bluez_shared::sys::ffi_helpers::bt_ioctl_with_buf_const(fd, hidiocsfeature(23), &buf)
+        .unwrap_or(-1);
     if ret < 0 {
         let err = io::Error::last_os_error();
         error!("sixaxis: failed to write DS4 central address ({})", err);

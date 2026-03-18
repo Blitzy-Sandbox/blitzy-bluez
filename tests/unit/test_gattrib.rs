@@ -19,15 +19,13 @@
 //   blocking_read/write helpers with timeout for I/O
 
 use std::os::unix::io::{AsRawFd, OwnedFd};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use nix::sys::socket::{AddressFamily, SockFlag, SockType, socketpair};
 
-use bluetoothd::legacy_gatt::gattrib::{
-    GAttrib, GATTRIB_ALL_HANDLES, GATTRIB_ALL_REQS,
-};
+use bluetoothd::legacy_gatt::gattrib::{GATTRIB_ALL_HANDLES, GATTRIB_ALL_REQS, GAttrib};
 
 // ============================================================================
 // Constants — ATT opcodes used in tests
@@ -202,10 +200,7 @@ fn test_gattrib_destroy_callback() {
         // GAttrib goes out of scope here
     }
 
-    assert!(
-        destroyed.load(Ordering::SeqCst),
-        "Destroy callback should have been invoked on drop"
-    );
+    assert!(destroyed.load(Ordering::SeqCst), "Destroy callback should have been invoked on drop");
 }
 
 #[test]
@@ -227,10 +222,7 @@ fn test_gattrib_all_reqs_constant() {
 
 #[test]
 fn test_gattrib_all_handles_constant() {
-    assert_eq!(
-        GATTRIB_ALL_HANDLES, 0x0000,
-        "GATTRIB_ALL_HANDLES must be 0x0000"
-    );
+    assert_eq!(GATTRIB_ALL_HANDLES, 0x0000, "GATTRIB_ALL_HANDLES must be 0x0000");
 }
 
 // ============================================================================
@@ -373,10 +365,7 @@ fn test_gattrib_send_notify_on_cancel() {
     // Give time for cleanup
     std::thread::sleep(Duration::from_millis(50));
 
-    assert!(
-        notify_fired.load(Ordering::SeqCst),
-        "Notify/destroy callback should fire on cancel"
-    );
+    assert!(notify_fired.load(Ordering::SeqCst), "Notify/destroy callback should fire on cancel");
 }
 
 // ============================================================================
@@ -424,12 +413,8 @@ fn test_gattrib_unregister_all() {
         Box::new(|_pdu, _len| {}),
         None,
     );
-    let _id2 = gattrib.register(
-        ATT_OP_HANDLE_IND,
-        GATTRIB_ALL_HANDLES,
-        Box::new(|_pdu, _len| {}),
-        None,
-    );
+    let _id2 =
+        gattrib.register(ATT_OP_HANDLE_IND, GATTRIB_ALL_HANDLES, Box::new(|_pdu, _len| {}), None);
 
     let ok = gattrib.unregister_all();
     assert!(ok, "unregister_all() should succeed");
@@ -439,12 +424,7 @@ fn test_gattrib_unregister_all() {
 fn test_gattrib_register_specific_handle() {
     // Register for notifications on a specific handle.
     let (gattrib, _peer) = create_gattrib(64);
-    let id = gattrib.register(
-        ATT_OP_HANDLE_NOTIFY,
-        0x0010,
-        Box::new(|_pdu, _len| {}),
-        None,
-    );
+    let id = gattrib.register(ATT_OP_HANDLE_NOTIFY, 0x0010, Box::new(|_pdu, _len| {}), None);
     assert!(id > 0, "register with specific handle should succeed");
 }
 
@@ -452,12 +432,8 @@ fn test_gattrib_register_specific_handle() {
 fn test_gattrib_register_all_reqs() {
     // Register for all request opcodes using GATTRIB_ALL_REQS.
     let (gattrib, _peer) = create_gattrib(64);
-    let id = gattrib.register(
-        GATTRIB_ALL_REQS,
-        GATTRIB_ALL_HANDLES,
-        Box::new(|_pdu, _len| {}),
-        None,
-    );
+    let id =
+        gattrib.register(GATTRIB_ALL_REQS, GATTRIB_ALL_HANDLES, Box::new(|_pdu, _len| {}), None);
     assert!(id > 0, "register with GATTRIB_ALL_REQS should succeed");
 }
 
@@ -559,12 +535,8 @@ fn test_gattrib_unregister_all_then_register() {
     );
     gattrib.unregister_all();
 
-    let id = gattrib.register(
-        ATT_OP_HANDLE_IND,
-        GATTRIB_ALL_HANDLES,
-        Box::new(|_pdu, _len| {}),
-        None,
-    );
+    let id =
+        gattrib.register(ATT_OP_HANDLE_IND, GATTRIB_ALL_HANDLES, Box::new(|_pdu, _len| {}), None);
     assert!(id > 0, "register() should work after unregister_all()");
 }
 
@@ -588,18 +560,12 @@ fn test_gattrib_clone_keeps_alive() {
     drop(gattrib);
 
     // Destroy should NOT have fired — clone still holds a reference.
-    assert!(
-        !destroyed.load(Ordering::SeqCst),
-        "Destroy should not fire while clones exist"
-    );
+    assert!(!destroyed.load(Ordering::SeqCst), "Destroy should not fire while clones exist");
 
     drop(clone);
 
     // Now destroy should fire.
-    assert!(
-        destroyed.load(Ordering::SeqCst),
-        "Destroy should fire when last reference drops"
-    );
+    assert!(destroyed.load(Ordering::SeqCst), "Destroy should fire when last reference drops");
 }
 
 // ============================================================================
@@ -656,9 +622,5 @@ fn test_gattrib_set_mtu_after_send() {
 
     let ok = gattrib.set_mtu(512);
     assert!(ok, "set_mtu should succeed after send");
-    assert_eq!(
-        gattrib.get_buffer().len(),
-        512,
-        "Buffer should reflect new MTU"
-    );
+    assert_eq!(gattrib.get_buffer().len(), 512, "Buffer should reflect new MTU");
 }

@@ -41,14 +41,14 @@ use crate::device::BtdDevice;
 use crate::error::BtdError;
 use crate::log::{btd_debug, btd_error};
 use crate::plugin::{PluginDesc, PluginPriority};
-use crate::profile::{btd_profile_register, BtdProfile, BTD_PROFILE_PRIORITY_MEDIUM};
+use crate::profile::{BTD_PROFILE_PRIORITY_MEDIUM, BtdProfile, btd_profile_register};
 use crate::sdp::{SdpData, SdpRecord};
 use crate::service::BtdService;
 
 use super::telephony::{
+    Call, CallData, CallState, ConnectionState, Telephony, TelephonyCallbacks,
     telephony_call_register_interface, telephony_call_set_line_id, telephony_call_set_state,
-    telephony_call_unregister_interface, Call, CallData, CallState, ConnectionState, Telephony,
-    TelephonyCallbacks,
+    telephony_call_unregister_interface,
 };
 
 // ---------------------------------------------------------------------------
@@ -283,13 +283,9 @@ pub struct HfpTelephonyBridge {
 
 impl TelephonyCallbacks for HfpTelephonyBridge {
     fn dial(&self, number: &str) -> Result<(), BtdError> {
-        let mut guard = self
-            .hf
-            .lock()
-            .map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
-        let hf = guard
-            .as_mut()
-            .ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
+        let mut guard =
+            self.hf.lock().map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
+        let hf = guard.as_mut().ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
 
         // Strip "tel:" URI prefix if present (C original filters this).
         let stripped = number.strip_prefix("tel:").unwrap_or(number);
@@ -302,13 +298,9 @@ impl TelephonyCallbacks for HfpTelephonyBridge {
     }
 
     fn swap_calls(&self) -> Result<(), BtdError> {
-        let mut guard = self
-            .hf
-            .lock()
-            .map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
-        let hf = guard
-            .as_mut()
-            .ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
+        let mut guard =
+            self.hf.lock().map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
+        let hf = guard.as_mut().ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
 
         if !hf.swap_calls(None) {
             return Err(BtdError::Failed("Failed to send AT+CHLD=2".into()));
@@ -318,13 +310,9 @@ impl TelephonyCallbacks for HfpTelephonyBridge {
     }
 
     fn release_and_answer(&self) -> Result<(), BtdError> {
-        let mut guard = self
-            .hf
-            .lock()
-            .map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
-        let hf = guard
-            .as_mut()
-            .ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
+        let mut guard =
+            self.hf.lock().map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
+        let hf = guard.as_mut().ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
 
         if !hf.release_and_accept(None) {
             return Err(BtdError::Failed("Failed to send AT+CHLD=1".into()));
@@ -334,13 +322,9 @@ impl TelephonyCallbacks for HfpTelephonyBridge {
     }
 
     fn release_and_swap(&self) -> Result<(), BtdError> {
-        let mut guard = self
-            .hf
-            .lock()
-            .map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
-        let hf = guard
-            .as_mut()
-            .ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
+        let mut guard =
+            self.hf.lock().map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
+        let hf = guard.as_mut().ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
 
         if !hf.release_and_accept(None) {
             return Err(BtdError::Failed("Failed to send AT+CHLD=1".into()));
@@ -350,13 +334,9 @@ impl TelephonyCallbacks for HfpTelephonyBridge {
     }
 
     fn hold_and_answer(&self) -> Result<(), BtdError> {
-        let mut guard = self
-            .hf
-            .lock()
-            .map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
-        let hf = guard
-            .as_mut()
-            .ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
+        let mut guard =
+            self.hf.lock().map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
+        let hf = guard.as_mut().ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
 
         if !hf.swap_calls(None) {
             return Err(BtdError::Failed("Failed to send AT+CHLD=2".into()));
@@ -366,13 +346,9 @@ impl TelephonyCallbacks for HfpTelephonyBridge {
     }
 
     fn hangup_all(&self) -> Result<(), BtdError> {
-        let mut guard = self
-            .hf
-            .lock()
-            .map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
-        let hf = guard
-            .as_mut()
-            .ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
+        let mut guard =
+            self.hf.lock().map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
+        let hf = guard.as_mut().ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
 
         // Send AT+CHUP to terminate all calls.
         if !hf.send_command("AT+CHUP", None) {
@@ -383,13 +359,9 @@ impl TelephonyCallbacks for HfpTelephonyBridge {
     }
 
     fn create_multiparty(&self) -> Result<(), BtdError> {
-        let mut guard = self
-            .hf
-            .lock()
-            .map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
-        let hf = guard
-            .as_mut()
-            .ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
+        let mut guard =
+            self.hf.lock().map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
+        let hf = guard.as_mut().ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
 
         if !hf.send_command("AT+CHLD=3", None) {
             return Err(BtdError::Failed("Failed to send AT+CHLD=3".into()));
@@ -399,13 +371,9 @@ impl TelephonyCallbacks for HfpTelephonyBridge {
     }
 
     fn send_tones(&self, tones: &str) -> Result<(), BtdError> {
-        let mut guard = self
-            .hf
-            .lock()
-            .map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
-        let hf = guard
-            .as_mut()
-            .ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
+        let mut guard =
+            self.hf.lock().map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
+        let hf = guard.as_mut().ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
 
         // Send each DTMF digit individually via AT+VTS.
         for ch in tones.chars() {
@@ -419,13 +387,9 @@ impl TelephonyCallbacks for HfpTelephonyBridge {
     }
 
     fn call_answer(&self, call_data: &CallData) -> Result<(), BtdError> {
-        let mut guard = self
-            .hf
-            .lock()
-            .map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
-        let hf = guard
-            .as_mut()
-            .ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
+        let mut guard =
+            self.hf.lock().map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
+        let hf = guard.as_mut().ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
 
         if !hf.call_answer(call_data.idx as u32, None) {
             return Err(BtdError::Failed("Failed to answer call".into()));
@@ -435,13 +399,9 @@ impl TelephonyCallbacks for HfpTelephonyBridge {
     }
 
     fn call_hangup(&self, call_data: &CallData) -> Result<(), BtdError> {
-        let mut guard = self
-            .hf
-            .lock()
-            .map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
-        let hf = guard
-            .as_mut()
-            .ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
+        let mut guard =
+            self.hf.lock().map_err(|_| BtdError::Failed("HFP engine lock poisoned".into()))?;
+        let hf = guard.as_mut().ok_or_else(|| BtdError::Failed("HFP not connected".into()))?;
 
         if !hf.call_hangup(call_data.idx as u32, None) {
             return Err(BtdError::Failed("Failed to hang up call".into()));
@@ -527,10 +487,7 @@ pub fn build_session_callbacks(
                         Telephony::set_battchg(&tel, value as u8).await;
                     }
                     _ => {
-                        debug!(
-                            "hfp-hf: unhandled CIEV indicator {:?} = {}",
-                            indicator, value
-                        );
+                        debug!("hfp-hf: unhandled CIEV indicator {:?} = {}", indicator, value);
                     }
                 }
             });
@@ -570,11 +527,7 @@ pub fn build_session_callbacks(
                     error!("hfp-hf: failed to register call {} interface: {}", id, e);
                 }
 
-                let entry = HfpCallEntry {
-                    idx: id,
-                    status,
-                    call: Some(Arc::clone(&call)),
-                };
+                let entry = HfpCallEntry { idx: id, status, call: Some(Arc::clone(&call)) };
 
                 if let Ok(mut c) = calls.lock() {
                     c.push(entry);
@@ -685,9 +638,7 @@ pub fn hfp_probe(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdError> {
     info!("hfp-hf: probe");
 
     let dev = HfpDevice::new();
-    let mut svc = service
-        .lock()
-        .map_err(|_| BtdError::Failed("service lock poisoned".into()))?;
+    let mut svc = service.lock().map_err(|_| BtdError::Failed("service lock poisoned".into()))?;
     svc.btd_service_set_user_data(dev);
 
     Ok(())
@@ -723,26 +674,19 @@ pub async fn hfp_connect(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdE
 
     // Extract needed info from the service while holding the lock briefly.
     let (src, dst, channel, version) = {
-        let svc = service
-            .lock()
-            .map_err(|_| BtdError::Failed("service lock poisoned".into()))?;
+        let svc = service.lock().map_err(|_| BtdError::Failed("service lock poisoned".into()))?;
 
-        let device = svc
-            .btd_service_get_device()
-            .ok_or_else(|| BtdError::Failed("no device".into()))?;
+        let device =
+            svc.btd_service_get_device().ok_or_else(|| BtdError::Failed("no device".into()))?;
 
         let dev = device.blocking_lock();
 
         // Look up the HFP AG SDP record.
         let record = dev.get_record(HFP_AG_UUID);
 
-        let version = record
-            .and_then(sdp_get_profile_version)
-            .unwrap_or(HFP_VERSION_DEFAULT);
+        let version = record.and_then(sdp_get_profile_version).unwrap_or(HFP_VERSION_DEFAULT);
 
-        let channel = record
-            .and_then(sdp_get_rfcomm_channel)
-            .unwrap_or(1);
+        let channel = record.and_then(sdp_get_rfcomm_channel).unwrap_or(1);
 
         let dst = *dev.get_address();
         let src = BDADDR_ANY;
@@ -752,10 +696,7 @@ pub async fn hfp_connect(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdE
 
     btd_debug(
         DBG_IDX,
-        &format!(
-            "hfp-hf: connecting RFCOMM channel {} (version 0x{:04x})",
-            channel, version
-        ),
+        &format!("hfp-hf: connecting RFCOMM channel {} (version 0x{:04x})", channel, version),
     );
 
     // Establish the RFCOMM connection.
@@ -789,9 +730,7 @@ pub async fn hfp_connect(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdE
     // Create shared reference for the telephony bridge.
     let hf_shared: Arc<StdMutex<Option<HfpHf>>> = Arc::new(StdMutex::new(Some(hf)));
 
-    let bridge = Arc::new(HfpTelephonyBridge {
-        hf: Arc::clone(&hf_shared),
-    });
+    let bridge = Arc::new(HfpTelephonyBridge { hf: Arc::clone(&hf_shared) });
 
     // Build the telephony context.
     // Telephony::new() returns Telephony directly (not Result).
@@ -823,9 +762,8 @@ pub async fn hfp_connect(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdE
 
     // Register callbacks and start SLC.
     {
-        let mut guard = hf_shared
-            .lock()
-            .map_err(|_| BtdError::Failed("HF lock poisoned".into()))?;
+        let mut guard =
+            hf_shared.lock().map_err(|_| BtdError::Failed("HF lock poisoned".into()))?;
         if let Some(hf_inner) = guard.as_mut() {
             hf_inner.session_register(callbacks);
             if !hf_inner.session() {
@@ -843,9 +781,8 @@ pub async fn hfp_connect(service: &Arc<StdMutex<BtdService>>) -> Result<(), BtdE
 
     // Store state back into the service user data.
     {
-        let mut svc = service
-            .lock()
-            .map_err(|_| BtdError::Failed("service lock poisoned".into()))?;
+        let mut svc =
+            service.lock().map_err(|_| BtdError::Failed("service lock poisoned".into()))?;
 
         let dev = HfpDevice {
             telephony: Some(Arc::clone(&telephony)),
@@ -871,9 +808,7 @@ pub async fn hfp_disconnect(service: &Arc<StdMutex<BtdService>>) -> Result<(), B
     info!("hfp-hf: disconnect");
 
     let telephony_arc = {
-        let svc = service
-            .lock()
-            .map_err(|_| BtdError::Failed("service lock poisoned".into()))?;
+        let svc = service.lock().map_err(|_| BtdError::Failed("service lock poisoned".into()))?;
 
         let dev = svc
             .btd_service_get_user_data::<HfpDevice>()
@@ -889,9 +824,8 @@ pub async fn hfp_disconnect(service: &Arc<StdMutex<BtdService>>) -> Result<(), B
 
     // Destroy the HFP device state.
     {
-        let mut svc = service
-            .lock()
-            .map_err(|_| BtdError::Failed("service lock poisoned".into()))?;
+        let mut svc =
+            service.lock().map_err(|_| BtdError::Failed("service lock poisoned".into()))?;
 
         // Replace user data — triggers cleanup of old HfpDevice.
         svc.btd_service_set_user_data(HfpDevice::new());
@@ -960,45 +894,44 @@ fn hfp_init() -> Result<(), Box<dyn std::error::Error>> {
         },
     ));
 
-    profile.set_device_remove(Box::new(
-        |_device: &Arc<tokio::sync::Mutex<BtdDevice>>| {
-            btd_debug(DBG_IDX, "hfp-hf: device remove");
-        },
-    ));
+    profile.set_device_remove(Box::new(|_device: &Arc<tokio::sync::Mutex<BtdDevice>>| {
+        btd_debug(DBG_IDX, "hfp-hf: device remove");
+    }));
 
-    profile.set_connect(Box::new(
-        |_device: &Arc<tokio::sync::Mutex<BtdDevice>>| -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = Result<(), BtdError>> + Send>,
-        > {
-            Box::pin(async move {
-                // Connection is handled through the service framework.
-                // The actual RFCOMM connection is established via hfp_connect
-                // which is called by the service state machine.
-                btd_debug(DBG_IDX, "hfp-hf: connect via profile hook");
-                Ok(())
-            })
-        },
-    ));
+    profile.set_connect(
+        Box::new(
+            |_device: &Arc<tokio::sync::Mutex<BtdDevice>>| -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<(), BtdError>> + Send>,
+            > {
+                Box::pin(async move {
+                    // Connection is handled through the service framework.
+                    // The actual RFCOMM connection is established via hfp_connect
+                    // which is called by the service state machine.
+                    btd_debug(DBG_IDX, "hfp-hf: connect via profile hook");
+                    Ok(())
+                })
+            },
+        ),
+    );
 
-    profile.set_disconnect(Box::new(
-        |_device: &Arc<tokio::sync::Mutex<BtdDevice>>| -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = Result<(), BtdError>> + Send>,
-        > {
-            Box::pin(async move {
-                btd_debug(DBG_IDX, "hfp-hf: disconnect via profile hook");
-                Ok(())
-            })
-        },
-    ));
+    profile.set_disconnect(
+        Box::new(
+            |_device: &Arc<tokio::sync::Mutex<BtdDevice>>| -> std::pin::Pin<
+                Box<dyn std::future::Future<Output = Result<(), BtdError>> + Send>,
+            > {
+                Box::pin(async move {
+                    btd_debug(DBG_IDX, "hfp-hf: disconnect via profile hook");
+                    Ok(())
+                })
+            },
+        ),
+    );
 
     // Register the profile with the daemon.  This is an async operation, so
     // we spawn it.
     tokio::spawn(async move {
         if let Err(e) = btd_profile_register(profile).await {
-            btd_error(
-                DBG_IDX,
-                &format!("hfp-hf: profile registration failed: {}", e),
-            );
+            btd_error(DBG_IDX, &format!("hfp-hf: profile registration failed: {}", e));
         }
     });
 
@@ -1039,30 +972,12 @@ mod tests {
 
     #[test]
     fn test_call_status_mapping() {
-        assert_eq!(
-            hfp_call_status_to_call_state(HfpCallStatus::Active),
-            CallState::Active
-        );
-        assert_eq!(
-            hfp_call_status_to_call_state(HfpCallStatus::Held),
-            CallState::Held
-        );
-        assert_eq!(
-            hfp_call_status_to_call_state(HfpCallStatus::Dialing),
-            CallState::Dialing
-        );
-        assert_eq!(
-            hfp_call_status_to_call_state(HfpCallStatus::Alerting),
-            CallState::Alerting
-        );
-        assert_eq!(
-            hfp_call_status_to_call_state(HfpCallStatus::Incoming),
-            CallState::Incoming
-        );
-        assert_eq!(
-            hfp_call_status_to_call_state(HfpCallStatus::Waiting),
-            CallState::Waiting
-        );
+        assert_eq!(hfp_call_status_to_call_state(HfpCallStatus::Active), CallState::Active);
+        assert_eq!(hfp_call_status_to_call_state(HfpCallStatus::Held), CallState::Held);
+        assert_eq!(hfp_call_status_to_call_state(HfpCallStatus::Dialing), CallState::Dialing);
+        assert_eq!(hfp_call_status_to_call_state(HfpCallStatus::Alerting), CallState::Alerting);
+        assert_eq!(hfp_call_status_to_call_state(HfpCallStatus::Incoming), CallState::Incoming);
+        assert_eq!(hfp_call_status_to_call_state(HfpCallStatus::Waiting), CallState::Waiting);
         assert_eq!(
             hfp_call_status_to_call_state(HfpCallStatus::ResponseAndHold),
             CallState::ResponseAndHold

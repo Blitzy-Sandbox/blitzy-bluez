@@ -38,10 +38,10 @@ use tokio::task::{JoinHandle, spawn};
 
 use tracing::{debug, error, info};
 
-use bluez_shared::sys::ffi_helpers as ffi;
 use bluez_shared::sys::bluetooth::{
     AF_BLUETOOTH, BDADDR_ANY, BDADDR_LOCAL, BTPROTO_L2CAP, BdAddr, SOL_L2CAP, htobs,
 };
+use bluez_shared::sys::ffi_helpers as ffi;
 use bluez_shared::sys::l2cap::{
     L2CAP_LM, L2CAP_LM_MASTER, L2CAP_OPTIONS, l2cap_options, sockaddr_l2,
 };
@@ -1743,7 +1743,8 @@ fn create_l2cap_listener(mtu: u16, central: bool) -> Result<OwnedFd, BtdError> {
         let mut opts = l2cap_options::default();
         let mut optlen = std::mem::size_of::<l2cap_options>() as libc::socklen_t;
 
-        let ret = ffi::raw_getsockopt(fd.as_raw_fd(), SOL_L2CAP, L2CAP_OPTIONS, &mut opts, &mut optlen);
+        let ret =
+            ffi::raw_getsockopt(fd.as_raw_fd(), SOL_L2CAP, L2CAP_OPTIONS, &mut opts, &mut optlen);
         if ret < 0 {
             let e = std::io::Error::last_os_error();
             error!("getsockopt L2CAP_OPTIONS: {}", e);
@@ -1919,7 +1920,9 @@ async fn handle_l2cap_session(sock: RawFd) {
         // SAFETY: `async_fd.as_raw_fd()` is a valid open socket fd.
         // `buf` is a properly-sized mutable buffer.  `MSG_PEEK` does
         // not consume data so we can read the header first.
-        let peek_len = ffi::raw_recv(async_fd.as_raw_fd(), &mut buf[..SDP_PDU_HDR_SIZE], libc::MSG_PEEK,) as isize;
+        let peek_len =
+            ffi::raw_recv(async_fd.as_raw_fd(), &mut buf[..SDP_PDU_HDR_SIZE], libc::MSG_PEEK)
+                as isize;
 
         if peek_len <= 0 {
             if peek_len == 0 {
@@ -1996,8 +1999,7 @@ async fn handle_unix_session(stream: tokio::net::UnixStream) {
         // Read data from the Unix socket.
         // SAFETY: `sock` is a valid open file descriptor obtained from the
         // `UnixStream`.  `buf` is a properly-sized mutable buffer.
-        let read_len =
-            ffi::raw_recv(sock, &mut buf[..SDP_MAX_PDU_SIZE], 0);
+        let read_len = ffi::raw_recv(sock, &mut buf[..SDP_MAX_PDU_SIZE], 0);
 
         if read_len <= 0 {
             if read_len < 0 {

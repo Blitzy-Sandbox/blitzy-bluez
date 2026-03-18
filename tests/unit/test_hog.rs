@@ -28,7 +28,7 @@ use std::os::unix::io::IntoRawFd;
 use std::sync::Arc;
 use std::time::Duration;
 
-use nix::sys::socket::{socketpair, AddressFamily, SockFlag, SockType};
+use nix::sys::socket::{AddressFamily, SockFlag, SockType, socketpair};
 
 use bluez_shared::att::transport::BtAtt;
 use bluez_shared::att::types::{
@@ -112,7 +112,7 @@ const SAMPLE_KEYBOARD_REPORT_MAP: &[u8] = &[
     0x75, 0x08, //   Report Size (8)
     0x95, 0x06, //   Report Count (6)
     0x81, 0x00, //   Input (Data, Array)
-    0xC0,       // End Collection
+    0xC0, // End Collection
 ];
 
 /// A minimal mouse HID Report Map descriptor.
@@ -142,8 +142,8 @@ const SAMPLE_MOUSE_REPORT_MAP: &[u8] = &[
     0x75, 0x08, //     Report Size (8)
     0x95, 0x02, //     Report Count (2)
     0x81, 0x06, //     Input (Data, Variable, Relative)
-    0xC0,       //   End Collection
-    0xC0,       // End Collection
+    0xC0, //   End Collection
+    0xC0, // End Collection
 ];
 
 /// A long Report Map (>22 bytes, requiring Read Blob) matching the C test
@@ -212,9 +212,8 @@ fn build_single_hid_service(
     let db = GattDb::new();
     let hog_uuid = BtUuid::from_u16(HOG_UUID);
 
-    let svc = db
-        .insert_service(start_handle, &hog_uuid, true, num_handles)
-        .expect("insert HID service");
+    let svc =
+        db.insert_service(start_handle, &hog_uuid, true, num_handles).expect("insert HID service");
 
     for &(handle, uuid16, props, value) in chars {
         let uuid = BtUuid::from_u16(uuid16);
@@ -263,9 +262,7 @@ fn build_dual_hid_service_report_map() -> GattDb {
     let long_map = build_long_report_map();
 
     // Service 1: handles 0x0001..0x0004
-    let svc1 = db
-        .insert_service(0x0001, &hog_uuid, true, 4)
-        .expect("insert HID svc 1");
+    let svc1 = db.insert_service(0x0001, &hog_uuid, true, 4).expect("insert HID svc 1");
     let rm_uuid = BtUuid::from_u16(HOG_REPORT_MAP_UUID);
     let attr1 = svc1
         .insert_characteristic(
@@ -282,9 +279,7 @@ fn build_dual_hid_service_report_map() -> GattDb {
     svc1.set_active(true);
 
     // Service 2: handles 0x0005..0x0008
-    let svc2 = db
-        .insert_service(0x0005, &hog_uuid, true, 4)
-        .expect("insert HID svc 2");
+    let svc2 = db.insert_service(0x0005, &hog_uuid, true, 4).expect("insert HID svc 2");
     let attr2 = svc2
         .insert_characteristic(
             0x0007,
@@ -309,9 +304,7 @@ fn build_dual_hid_service_report_ref(report_type: u8) -> GattDb {
     let hog_uuid = BtUuid::from_u16(HOG_UUID);
 
     // Service 1: handles 0x0001..0x0005
-    let svc1 = db
-        .insert_service(0x0001, &hog_uuid, true, 5)
-        .expect("insert HID svc 1");
+    let svc1 = db.insert_service(0x0001, &hog_uuid, true, 5).expect("insert HID svc 1");
     let rpt_uuid = BtUuid::from_u16(HOG_REPORT_UUID);
     let attr1 = svc1
         .insert_characteristic(
@@ -333,9 +326,7 @@ fn build_dual_hid_service_report_ref(report_type: u8) -> GattDb {
     svc1.set_active(true);
 
     // Service 2: handles 0x0006..0x000A
-    let svc2 = db
-        .insert_service(0x0006, &hog_uuid, true, 5)
-        .expect("insert HID svc 2");
+    let svc2 = db.insert_service(0x0006, &hog_uuid, true, 5).expect("insert HID svc 2");
     let attr2 = svc2
         .insert_characteristic(
             0x0008,
@@ -363,9 +354,7 @@ fn build_dual_hid_service_hid_info() -> GattDb {
     let db = GattDb::new();
     let hog_uuid = BtUuid::from_u16(HOG_UUID);
 
-    let svc1 = db
-        .insert_service(0x0001, &hog_uuid, true, 4)
-        .expect("insert HID svc 1");
+    let svc1 = db.insert_service(0x0001, &hog_uuid, true, 4).expect("insert HID svc 1");
     let info_uuid = BtUuid::from_u16(HOG_INFO_UUID);
     let attr1 = svc1
         .insert_characteristic(
@@ -381,9 +370,7 @@ fn build_dual_hid_service_hid_info() -> GattDb {
     attr1.write(0, HID_INFO_V111, 0, None, None);
     svc1.set_active(true);
 
-    let svc2 = db
-        .insert_service(0x0005, &hog_uuid, true, 4)
-        .expect("insert HID svc 2");
+    let svc2 = db.insert_service(0x0005, &hog_uuid, true, 4).expect("insert HID svc 2");
     let attr2 = svc2
         .insert_characteristic(
             0x0007,
@@ -412,9 +399,7 @@ fn build_hid_service_with_ccc() -> GattDb {
     let props = BT_GATT_CHRC_PROP_READ | BT_GATT_CHRC_PROP_WRITE | BT_GATT_CHRC_PROP_NOTIFY;
 
     // Service 1: handles 0x0001..0x0006
-    let svc1 = db
-        .insert_service(0x0001, &hog_uuid, true, 6)
-        .expect("insert HID svc 1");
+    let svc1 = db.insert_service(0x0001, &hog_uuid, true, 6).expect("insert HID svc 1");
     let attr1 = svc1
         .insert_characteristic(
             0x0003,
@@ -445,9 +430,7 @@ fn build_hid_service_with_ccc() -> GattDb {
     svc1.set_active(true);
 
     // Service 2: handles 0x0007..0x000C
-    let svc2 = db
-        .insert_service(0x0007, &hog_uuid, true, 6)
-        .expect("insert HID svc 2");
+    let svc2 = db.insert_service(0x0007, &hog_uuid, true, 6).expect("insert HID svc 2");
     let attr2 = svc2
         .insert_characteristic(
             0x0009,
@@ -489,9 +472,7 @@ fn build_dual_hid_service_ext_report_ref() -> GattDb {
     let err_uuid = BtUuid::from_u16(HOG_EXT_RPT_REF_UUID);
 
     // Service 1: handles 0x0001..0x0005
-    let svc1 = db
-        .insert_service(0x0001, &hog_uuid, true, 5)
-        .expect("insert HID svc 1");
+    let svc1 = db.insert_service(0x0001, &hog_uuid, true, 5).expect("insert HID svc 1");
     let attr1 = svc1
         .insert_characteristic(
             0x0003,
@@ -511,9 +492,7 @@ fn build_dual_hid_service_ext_report_ref() -> GattDb {
     svc1.set_active(true);
 
     // Service 2: handles 0x0006..0x000A
-    let svc2 = db
-        .insert_service(0x0006, &hog_uuid, true, 5)
-        .expect("insert HID svc 2");
+    let svc2 = db.insert_service(0x0006, &hog_uuid, true, 5).expect("insert HID svc 2");
     let attr2 = svc2
         .insert_characteristic(
             0x0008,
@@ -552,23 +531,15 @@ fn test_hog_new() {
 /// Test BtHog construction with a descriptive device name.
 #[test]
 fn test_hog_new_with_name() {
-    let hog = BtHog::new(
-        "BlueZ HoG Keyboard",
-        BdAddr { b: [0; 6] },
-        BdAddr { b: [0; 6] },
-    );
+    let hog = BtHog::new("BlueZ HoG Keyboard", BdAddr { b: [0; 6] }, BdAddr { b: [0; 6] });
     assert!(hog.get_uhid().is_none());
 }
 
 /// Test BtHog construction with specific source and destination addresses.
 #[test]
 fn test_hog_new_with_addresses() {
-    let src = BdAddr {
-        b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66],
-    };
-    let dst = BdAddr {
-        b: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF],
-    };
+    let src = BdAddr { b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66] };
+    let dst = BdAddr { b: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF] };
     let hog = BtHog::new("addr-device", src, dst);
     assert!(hog.get_uhid().is_none());
 }
@@ -622,26 +593,11 @@ fn test_hog_set_type_none() {
 /// Verify UhidDeviceType::from_icon mapping.
 #[test]
 fn test_uhid_device_type_from_icon() {
-    assert_eq!(
-        UhidDeviceType::from_icon(Some("input-keyboard")),
-        UhidDeviceType::Keyboard
-    );
-    assert_eq!(
-        UhidDeviceType::from_icon(Some("input-mouse")),
-        UhidDeviceType::Mouse
-    );
-    assert_eq!(
-        UhidDeviceType::from_icon(Some("input-gaming")),
-        UhidDeviceType::Gaming
-    );
-    assert_eq!(
-        UhidDeviceType::from_icon(Some("input-tablet")),
-        UhidDeviceType::Tablet
-    );
-    assert_eq!(
-        UhidDeviceType::from_icon(Some("unknown")),
-        UhidDeviceType::None
-    );
+    assert_eq!(UhidDeviceType::from_icon(Some("input-keyboard")), UhidDeviceType::Keyboard);
+    assert_eq!(UhidDeviceType::from_icon(Some("input-mouse")), UhidDeviceType::Mouse);
+    assert_eq!(UhidDeviceType::from_icon(Some("input-gaming")), UhidDeviceType::Gaming);
+    assert_eq!(UhidDeviceType::from_icon(Some("input-tablet")), UhidDeviceType::Tablet);
+    assert_eq!(UhidDeviceType::from_icon(Some("unknown")), UhidDeviceType::None);
     assert_eq!(UhidDeviceType::from_icon(None), UhidDeviceType::None);
 }
 
@@ -683,10 +639,7 @@ fn test_hog_send_report_not_attached() {
 fn test_hog_send_report_empty_data_not_attached() {
     let hog = BtHog::new("rpt-empty", BdAddr { b: [0; 6] }, BdAddr { b: [0; 6] });
     let result = hog.send_report(0, &[]);
-    assert!(
-        result.is_err(),
-        "send_report with empty data should fail when not attached"
-    );
+    assert!(result.is_err(), "send_report with empty data should fail when not attached");
 }
 
 /// send_report with specific report ID when not attached.
@@ -721,11 +674,7 @@ fn test_hog_report_map_parse() {
     // Verify Report Map value in service 1 (value handle = decl_handle + 1).
     let rm_uuid = BtUuid::from_u16(HOG_REPORT_MAP_UUID);
     let attr1 = db.get_attribute(0x0004).expect("Report Map value svc1");
-    assert_eq!(
-        attr1.get_type().unwrap(),
-        rm_uuid,
-        "UUID should be Report Map"
-    );
+    assert_eq!(attr1.get_type().unwrap(), rm_uuid, "UUID should be Report Map");
     let val1 = attr1.get_value();
     assert_eq!(val1.len(), long_map.len(), "Report Map length svc1");
     assert_eq!(&val1[..], &long_map[..], "Report Map data svc1");
@@ -910,12 +859,7 @@ fn test_hog_control_point() {
     let db = build_single_hid_service(
         0x0001,
         6,
-        &[(
-            0x0003,
-            HOG_CTRL_POINT_UUID,
-            BT_GATT_CHRC_PROP_WRITE_WITHOUT_RESP,
-            &[],
-        )],
+        &[(0x0003, HOG_CTRL_POINT_UUID, BT_GATT_CHRC_PROP_WRITE_WITHOUT_RESP, &[])],
         &[],
     );
 
@@ -962,10 +906,7 @@ fn test_hog_boot_keyboard() {
 
     // Boot KB Input Report (value handle = 0x0004).
     let kb_in = db.get_attribute(0x0004).expect("Boot KB Input value");
-    assert_eq!(
-        kb_in.get_type().unwrap(),
-        BtUuid::from_u16(HOG_BOOT_KB_INPUT_UUID)
-    );
+    assert_eq!(kb_in.get_type().unwrap(), BtUuid::from_u16(HOG_BOOT_KB_INPUT_UUID));
     assert_eq!(kb_in.get_value().len(), 8, "Boot KB Input should be 8 bytes");
 
     // CCC descriptor (0x0005).
@@ -974,15 +915,8 @@ fn test_hog_boot_keyboard() {
 
     // Boot KB Output Report (value handle = 0x0007).
     let kb_out = db.get_attribute(0x0007).expect("Boot KB Output value");
-    assert_eq!(
-        kb_out.get_type().unwrap(),
-        BtUuid::from_u16(HOG_BOOT_KB_OUTPUT_UUID)
-    );
-    assert_eq!(
-        kb_out.get_value().len(),
-        1,
-        "Boot KB Output should be 1 byte"
-    );
+    assert_eq!(kb_out.get_type().unwrap(), BtUuid::from_u16(HOG_BOOT_KB_OUTPUT_UUID));
+    assert_eq!(kb_out.get_value().len(), 1, "Boot KB Output should be 1 byte");
 }
 
 // ============================================================================
@@ -1005,15 +939,8 @@ fn test_hog_boot_mouse() {
     );
 
     let mouse = db.get_attribute(0x0004).expect("Boot Mouse Input value");
-    assert_eq!(
-        mouse.get_type().unwrap(),
-        BtUuid::from_u16(HOG_BOOT_MOUSE_INPUT_UUID)
-    );
-    assert_eq!(
-        mouse.get_value().len(),
-        3,
-        "Boot Mouse Input should be 3 bytes"
-    );
+    assert_eq!(mouse.get_type().unwrap(), BtUuid::from_u16(HOG_BOOT_MOUSE_INPUT_UUID));
+    assert_eq!(mouse.get_value().len(), 3, "Boot Mouse Input should be 3 bytes");
 
     let ccc = db.get_attribute(0x0005).expect("CCC desc");
     assert_eq!(ccc.get_type().unwrap(), BtUuid::from_u16(HOG_CCC_UUID));
@@ -1092,9 +1019,7 @@ fn test_hog_discovery() {
     let db = GattDb::new();
     let hog_uuid = BtUuid::from_u16(HOG_UUID);
 
-    let svc = db
-        .insert_service(0x0001, &hog_uuid, true, 20)
-        .expect("insert HID service");
+    let svc = db.insert_service(0x0001, &hog_uuid, true, 20).expect("insert HID service");
 
     // Report Map
     let rm_uuid = BtUuid::from_u16(HOG_REPORT_MAP_UUID);
@@ -1173,14 +1098,7 @@ fn test_hog_discovery() {
     // Report Reference
     let rr_uuid = BtUuid::from_u16(HOG_RPT_REF_UUID);
     let rr = svc
-        .insert_descriptor(
-            0x000C,
-            &rr_uuid,
-            BT_ATT_PERM_READ as u32,
-            None,
-            None,
-            None,
-        )
+        .insert_descriptor(0x000C, &rr_uuid, BT_ATT_PERM_READ as u32, None, None, None)
         .expect("RR");
     rr.write(0, &[0x01, HOG_RPT_TYPE_INPUT], 0, None, None);
 
@@ -1262,9 +1180,7 @@ fn test_hog_discovery_empty_db() {
 fn test_hog_discovery_non_hid_service() {
     let db = GattDb::new();
     let gap_uuid = BtUuid::from_u16(0x1800);
-    let svc = db
-        .insert_service(0x0001, &gap_uuid, true, 4)
-        .expect("GAP svc");
+    let svc = db.insert_service(0x0001, &gap_uuid, true, 4).expect("GAP svc");
     svc.set_active(true);
 
     let hog_uuid = BtUuid::from_u16(HOG_UUID);
@@ -1287,9 +1203,7 @@ async fn test_hog_attach_detach_lifecycle() {
 
     let server_db = GattDb::new();
     let hog_uuid = BtUuid::from_u16(HOG_UUID);
-    let svc = server_db
-        .insert_service(0x0001, &hog_uuid, true, 6)
-        .expect("svc");
+    let svc = server_db.insert_service(0x0001, &hog_uuid, true, 6).expect("svc");
     let rm_uuid = BtUuid::from_u16(HOG_REPORT_MAP_UUID);
     let rm = svc
         .insert_characteristic(
@@ -1305,10 +1219,8 @@ async fn test_hog_attach_detach_lifecycle() {
     rm.write(0, SAMPLE_KEYBOARD_REPORT_MAP, 0, None, None);
     svc.set_active(true);
 
-    let server_att =
-        BtAtt::new(raw_server, false).expect("server BtAtt");
-    let client_att =
-        BtAtt::new(raw_client, false).expect("client BtAtt");
+    let server_att = BtAtt::new(raw_server, false).expect("server BtAtt");
+    let client_att = BtAtt::new(raw_client, false).expect("client BtAtt");
 
     let _server =
         BtGattServer::new(server_db.clone(), Arc::clone(&server_att), 23, 0).expect("server");
@@ -1345,12 +1257,10 @@ async fn test_hog_attach_empty_db() {
     let att_b = BtAtt::new(raw_b, false).expect("att_b");
 
     let server_db = GattDb::new();
-    let _server =
-        BtGattServer::new(server_db.clone(), Arc::clone(&att_a), 23, 0).expect("server");
+    let _server = BtGattServer::new(server_db.clone(), Arc::clone(&att_a), 23, 0).expect("server");
 
     let client_db = GattDb::new();
-    let client =
-        BtGattClient::new(client_db.clone(), Arc::clone(&att_b), 23, 0).expect("client");
+    let client = BtGattClient::new(client_db.clone(), Arc::clone(&att_b), 23, 0).expect("client");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -1371,12 +1281,10 @@ async fn test_hog_double_attach() {
     let att_b = BtAtt::new(raw_b, false).expect("att_b");
 
     let server_db = GattDb::new();
-    let _server =
-        BtGattServer::new(server_db.clone(), Arc::clone(&att_a), 23, 0).expect("server");
+    let _server = BtGattServer::new(server_db.clone(), Arc::clone(&att_a), 23, 0).expect("server");
 
     let client_db = GattDb::new();
-    let client =
-        BtGattClient::new(client_db.clone(), Arc::clone(&att_b), 23, 0).expect("client");
+    let client = BtGattClient::new(client_db.clone(), Arc::clone(&att_b), 23, 0).expect("client");
 
     tokio::time::sleep(Duration::from_millis(200)).await;
 
@@ -1411,9 +1319,7 @@ fn test_hog_comprehensive_service_structure() {
     let db = GattDb::new();
     let hog_uuid = BtUuid::from_u16(HOG_UUID);
 
-    let svc = db
-        .insert_service(0x0001, &hog_uuid, true, 40)
-        .expect("svc");
+    let svc = db.insert_service(0x0001, &hog_uuid, true, 40).expect("svc");
 
     // Report Map
     let rm = svc
@@ -1501,9 +1407,7 @@ fn test_hog_comprehensive_service_structure() {
             0x000D,
             &BtUuid::from_u16(HOG_REPORT_UUID),
             BT_ATT_PERM_READ as u32 | BT_ATT_PERM_WRITE as u32,
-            BT_GATT_CHRC_PROP_READ
-                | BT_GATT_CHRC_PROP_WRITE
-                | BT_GATT_CHRC_PROP_WRITE_WITHOUT_RESP,
+            BT_GATT_CHRC_PROP_READ | BT_GATT_CHRC_PROP_WRITE | BT_GATT_CHRC_PROP_WRITE_WITHOUT_RESP,
             None,
             None,
             None,
@@ -1641,22 +1545,13 @@ fn test_hog_ccc_no_initial_value() {
     let db = build_single_hid_service(
         0x0001,
         6,
-        &[(
-            0x0003,
-            HOG_REPORT_UUID,
-            BT_GATT_CHRC_PROP_READ | BT_GATT_CHRC_PROP_NOTIFY,
-            &[0x00],
-        )],
+        &[(0x0003, HOG_REPORT_UUID, BT_GATT_CHRC_PROP_READ | BT_GATT_CHRC_PROP_NOTIFY, &[0x00])],
         &[(0x0005, HOG_CCC_UUID, &[])],
     );
 
     let ccc = db.get_attribute(0x0005).expect("CCC desc");
     ccc.write(0, &[0x01, 0x00], 0, None, None);
-    assert_eq!(
-        ccc.get_value(),
-        &[0x01, 0x00],
-        "CCC should be writable even without initial value"
-    );
+    assert_eq!(ccc.get_value(), &[0x01, 0x00], "CCC should be writable even without initial value");
 }
 
 /// Test multiple Report characteristics with different report types.
@@ -1664,9 +1559,7 @@ fn test_hog_ccc_no_initial_value() {
 fn test_hog_multiple_report_types() {
     let db = GattDb::new();
     let hog_uuid = BtUuid::from_u16(HOG_UUID);
-    let svc = db
-        .insert_service(0x0001, &hog_uuid, true, 20)
-        .expect("svc");
+    let svc = db.insert_service(0x0001, &hog_uuid, true, 20).expect("svc");
     let rpt_uuid = BtUuid::from_u16(HOG_REPORT_UUID);
     let rr_uuid = BtUuid::from_u16(HOG_RPT_REF_UUID);
 
@@ -1691,9 +1584,7 @@ fn test_hog_multiple_report_types() {
         0x0006,
         &rpt_uuid,
         BT_ATT_PERM_READ as u32 | BT_ATT_PERM_WRITE as u32,
-        BT_GATT_CHRC_PROP_READ
-            | BT_GATT_CHRC_PROP_WRITE
-            | BT_GATT_CHRC_PROP_WRITE_WITHOUT_RESP,
+        BT_GATT_CHRC_PROP_READ | BT_GATT_CHRC_PROP_WRITE | BT_GATT_CHRC_PROP_WRITE_WITHOUT_RESP,
         None,
         None,
         None,
@@ -1739,14 +1630,10 @@ fn test_hog_service_handle_boundaries() {
     let hog_uuid = BtUuid::from_u16(HOG_UUID);
     let gap_uuid = BtUuid::from_u16(0x1800);
 
-    let gap_svc = db
-        .insert_service(0x0001, &gap_uuid, true, 4)
-        .expect("GAP");
+    let gap_svc = db.insert_service(0x0001, &gap_uuid, true, 4).expect("GAP");
     gap_svc.set_active(true);
 
-    let hid_svc = db
-        .insert_service(0x0005, &hog_uuid, true, 6)
-        .expect("HID");
+    let hid_svc = db.insert_service(0x0005, &hog_uuid, true, 6).expect("HID");
     let rm = hid_svc
         .insert_characteristic(
             0x0007,
@@ -1817,12 +1704,7 @@ fn test_hog_report_map_read_blob_simulation() {
     let db = build_single_hid_service(
         0x0001,
         4,
-        &[(
-            0x0003,
-            HOG_REPORT_MAP_UUID,
-            BT_GATT_CHRC_PROP_READ,
-            SAMPLE_KEYBOARD_REPORT_MAP,
-        )],
+        &[(0x0003, HOG_REPORT_MAP_UUID, BT_GATT_CHRC_PROP_READ, SAMPLE_KEYBOARD_REPORT_MAP)],
         &[],
     );
 
@@ -1854,12 +1736,7 @@ fn test_hog_service_data() {
     let db = build_single_hid_service(
         0x0010,
         8,
-        &[(
-            0x0012,
-            HOG_REPORT_MAP_UUID,
-            BT_GATT_CHRC_PROP_READ,
-            &[0xAB, 0xCD],
-        )],
+        &[(0x0012, HOG_REPORT_MAP_UUID, BT_GATT_CHRC_PROP_READ, &[0xAB, 0xCD])],
         &[],
     );
 
@@ -1876,12 +1753,7 @@ fn test_hog_char_data() {
     let db = build_single_hid_service(
         0x0001,
         4,
-        &[(
-            0x0003,
-            HOG_REPORT_MAP_UUID,
-            BT_GATT_CHRC_PROP_READ,
-            &[0x01],
-        )],
+        &[(0x0003, HOG_REPORT_MAP_UUID, BT_GATT_CHRC_PROP_READ, &[0x01])],
         &[],
     );
 

@@ -29,7 +29,6 @@
 //! Each `unsafe` block is a designated FFI boundary site with a `// SAFETY:`
 //! comment.
 
-
 use std::io;
 use std::mem;
 use std::os::fd::{AsFd, AsRawFd, OwnedFd, RawFd};
@@ -51,6 +50,7 @@ use bluez_shared::capture::btsnoop::{
     BTSNOOP_FLAG_PKLG_SUPPORT, BtSnoop, BtSnoopFormat, BtSnoopOpcode, MAX_PACKET_SIZE,
 };
 use bluez_shared::sys::bluetooth::{AF_BLUETOOTH, BTPROTO_HCI, bdaddr_t, bt_get_le16, bt_get_le32};
+use bluez_shared::sys::ffi_helpers as ffi;
 use bluez_shared::sys::hci::{
     HCI_CHANNEL_CONTROL, HCI_CHANNEL_MONITOR, HCI_DEV_NONE, sockaddr_hci,
 };
@@ -67,7 +67,6 @@ use bluez_shared::sys::mgmt::{
     mgmt_ev_new_irk, mgmt_ev_new_link_key, mgmt_ev_new_long_term_key, mgmt_evstr, mgmt_hdr,
     mgmt_opstr,
 };
-use bluez_shared::sys::ffi_helpers as ffi;
 
 // ─── TTY Header Structures (from monitor/tty.h) ────────────────────────────
 
@@ -789,10 +788,10 @@ fn open_socket(channel: u16) -> Result<OwnedFd, io::Error> {
     // (AF_BLUETOOTH), type (SOCK_RAW|SOCK_CLOEXEC), and protocol (BTPROTO_HCI)
     // are all valid kernel-defined constants.
     let fd = ffi::raw_socket(
-            AF_BLUETOOTH as libc::c_int,
-            libc::SOCK_RAW | libc::SOCK_CLOEXEC,
-            BTPROTO_HCI as libc::c_int,
-        );
+        AF_BLUETOOTH as libc::c_int,
+        libc::SOCK_RAW | libc::SOCK_CLOEXEC,
+        BTPROTO_HCI as libc::c_int,
+    );
     if fd < 0 {
         let err = io::Error::last_os_error();
         error!("Failed to open channel: {}", err);
@@ -1187,7 +1186,11 @@ pub fn control_server(path: &str) {
                             match guard {
                                 Ok(mut ready) => {
                                     // Receive data from connected socket.
-                                    let len = ffi::raw_recv(async_fd.as_raw_fd(), &mut buf[offset..], libc::MSG_DONTWAIT);
+                                    let len = ffi::raw_recv(
+                                        async_fd.as_raw_fd(),
+                                        &mut buf[offset..],
+                                        libc::MSG_DONTWAIT,
+                                    );
                                     if len <= 0 {
                                         if len == 0 {
                                             break; // Connection closed
@@ -1427,7 +1430,7 @@ fn process_tty_data(buf: &mut [u8], offset: &mut usize) {
 pub fn control_tty(path: &str, speed: u32) -> Result<(), io::Error> {
     // SAFETY: Opening a TTY device. This is a designated FFI boundary site.
     let cpath = std::ffi::CString::new(path)
-                .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid path"))?;
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid path"))?;
     let fd = ffi::raw_open(&cpath, libc::O_RDWR | libc::O_NOCTTY);
     if fd < 0 {
         let err = io::Error::last_os_error();

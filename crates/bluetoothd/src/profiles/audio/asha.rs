@@ -31,20 +31,22 @@ use tokio::sync::Mutex as TokioMutex;
 use tracing::{debug, error, info, warn};
 use zbus::zvariant::OwnedObjectPath;
 
-use bluez_shared::audio::asha::{AshaState, BtAsha, ASHA_PROFILE_UUID};
+use bluez_shared::audio::asha::{ASHA_PROFILE_UUID, AshaState, BtAsha};
 use bluez_shared::socket::{BluetoothSocket, L2capMode, SecLevel};
-use bluez_shared::sys::bluetooth::{BdAddr, BDADDR_LE_PUBLIC, BDADDR_LE_RANDOM};
+use bluez_shared::sys::bluetooth::{BDADDR_LE_PUBLIC, BDADDR_LE_RANDOM, BdAddr};
 
-use crate::adapter::{btd_adapter_get_address, BtdAdapter};
+use crate::adapter::{BtdAdapter, btd_adapter_get_address};
 use crate::dbus_common::btd_get_dbus_connection;
 use crate::device::{AddressType, BtdDevice};
 use crate::error::BtdError;
 use crate::plugin::{PluginDesc, PluginPriority};
-use crate::profile::{btd_profile_register, BtdProfile, BTD_PROFILE_BEARER_LE, BTD_PROFILE_PRIORITY_MEDIUM};
-use crate::profiles::audio::media::{media_endpoint_get_asha, MEDIA_ENDPOINT_INTERFACE};
+use crate::profile::{
+    BTD_PROFILE_BEARER_LE, BTD_PROFILE_PRIORITY_MEDIUM, BtdProfile, btd_profile_register,
+};
+use crate::profiles::audio::media::{MEDIA_ENDPOINT_INTERFACE, media_endpoint_get_asha};
 use crate::profiles::audio::transport::{
-    media_transport_create, media_transport_destroy, media_transport_get_path,
-    media_transport_set_asha, media_transport_set_fd, MediaTransport,
+    MediaTransport, media_transport_create, media_transport_destroy, media_transport_get_path,
+    media_transport_set_asha, media_transport_set_fd,
 };
 
 // ---------------------------------------------------------------------------
@@ -198,15 +200,10 @@ impl AshaDevice {
         }
 
         // Send ASHA Start command via GATT AudioControlPoint.
-        self.asha
-            .start()
-            .map_err(|e| BtdError::failed(&format!("ASHA start: {e}")))?;
+        self.asha.start().map_err(|e| BtdError::failed(&format!("ASHA start: {e}")))?;
 
         self.resume_id += 1;
-        info!(
-            "ASHA {}: audio started (resume_id={})",
-            self.device_path, self.resume_id
-        );
+        info!("ASHA {}: audio started (resume_id={})", self.device_path, self.resume_id);
         Ok(self.resume_id)
     }
 
@@ -358,17 +355,12 @@ impl AshaDevice {
     /// Close the LE CoC audio socket if open.
     fn close_socket(&mut self) {
         if let Some(socket) = self.socket.take() {
-            debug!(
-                "ASHA {}: closing LE CoC socket (fd={})",
-                self.device_path,
-                socket.as_raw_fd()
-            );
+            debug!("ASHA {}: closing LE CoC socket (fd={})", self.device_path, socket.as_raw_fd());
             let _ = socket.shutdown(std::net::Shutdown::Both);
         }
         self.imtu = ASHA_CONNECTION_MTU;
         self.omtu = ASHA_MIN_MTU;
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -412,11 +404,7 @@ impl AshaEndpointIface {
     /// Hearing aid side: `"right"` or `"left"`.
     #[zbus(property, name = "Side")]
     async fn side(&self) -> String {
-        if self.asha.right_side() {
-            "right".to_string()
-        } else {
-            "left".to_string()
-        }
+        if self.asha.right_side() { "right".to_string() } else { "left".to_string() }
     }
 
     /// Whether the hearing aid is part of a binaural set.
@@ -464,9 +452,7 @@ async fn asha_register_endpoint_for(
 ) -> Result<(), BtdError> {
     // Phase 1 (sync): extract everything we need from the locked device.
     let (device_path, asha_clone, adapter, adapter_path, device_addr, device_addr_type) = {
-        let asha_dev = asha_arc
-            .lock()
-            .map_err(|_| BtdError::failed("ASHA device lock"))?;
+        let asha_dev = asha_arc.lock().map_err(|_| BtdError::failed("ASHA device lock"))?;
         (
             asha_dev.device_path.clone(),
             asha_dev.asha.clone(),
@@ -503,28 +489,17 @@ async fn asha_register_endpoint_for(
 
     // Mark endpoint as registered (quick sync lock).
     {
-        let mut asha_dev = asha_arc
-            .lock()
-            .map_err(|_| BtdError::failed("ASHA device lock"))?;
+        let mut asha_dev = asha_arc.lock().map_err(|_| BtdError::failed("ASHA device lock"))?;
         asha_dev.endpoint_registered = true;
     }
 
     // Create a BtdDevice for the transport layer.
-    let device_for_transport = Arc::new(BtdDevice::new(
-        adapter,
-        device_addr,
-        device_addr_type,
-        &adapter_path,
-    ));
+    let device_for_transport =
+        Arc::new(BtdDevice::new(adapter, device_addr, device_addr_type, &adapter_path));
 
     // Create the media transport (async).
-    match media_transport_create(
-        device_for_transport,
-        Arc::clone(&asha_ep_arc),
-        Vec::new(),
-        None,
-    )
-    .await
+    match media_transport_create(device_for_transport, Arc::clone(&asha_ep_arc), Vec::new(), None)
+        .await
     {
         Some(transport) => {
             // Inject the BtAsha reference into the transport's ASHA ops.
@@ -535,10 +510,8 @@ async fn asha_register_endpoint_for(
             debug!("ASHA {}: transport created at {}", device_path, tp);
 
             // Update the D-Bus endpoint interface with the transport path.
-            if let Ok(iface_ref) = conn
-                .object_server()
-                .interface::<_, AshaEndpointIface>(&*endpoint_path)
-                .await
+            if let Ok(iface_ref) =
+                conn.object_server().interface::<_, AshaEndpointIface>(&*endpoint_path).await
             {
                 let mut iface_guard = iface_ref.get_mut().await;
                 iface_guard.transport_path = tp;
@@ -546,19 +519,15 @@ async fn asha_register_endpoint_for(
 
             // Store transport reference (quick sync lock).
             {
-                let mut asha_dev = asha_arc
-                    .lock()
-                    .map_err(|_| BtdError::failed("ASHA device lock"))?;
+                let mut asha_dev =
+                    asha_arc.lock().map_err(|_| BtdError::failed("ASHA device lock"))?;
                 asha_dev.transport = Some(transport);
             }
         }
         None => {
             error!("ASHA {}: failed to create media transport", device_path);
             // Unregister the endpoint we just registered.
-            let _ = conn
-                .object_server()
-                .remove::<AshaEndpointIface, _>(&*endpoint_path)
-                .await;
+            let _ = conn.object_server().remove::<AshaEndpointIface, _>(&*endpoint_path).await;
             if let Ok(mut asha_dev) = asha_arc.lock() {
                 asha_dev.endpoint_registered = false;
             }
@@ -588,9 +557,7 @@ fn asha_probe(device: &Arc<TokioMutex<BtdDevice>>) -> Result<(), BtdError> {
     let asha_dev = AshaDevice::new(path.clone(), addr, addr_type, adapter, adapter_path);
     let asha_arc = Arc::new(std::sync::Mutex::new(asha_dev));
 
-    let mut map = ASHA_DEVICES
-        .lock()
-        .map_err(|_| BtdError::failed("ASHA device map poisoned"))?;
+    let mut map = ASHA_DEVICES.lock().map_err(|_| BtdError::failed("ASHA device map poisoned"))?;
     map.insert(path.clone(), asha_arc);
 
     info!("ASHA: probed device {}", path);
@@ -622,12 +589,9 @@ fn asha_accept(
 
         // Look up our AshaDevice.
         let asha_arc = {
-            let map = ASHA_DEVICES
-                .lock()
-                .map_err(|_| BtdError::failed("ASHA device map poisoned"))?;
-            map.get(&path)
-                .cloned()
-                .ok_or_else(|| BtdError::failed("ASHA device not found"))?
+            let map =
+                ASHA_DEVICES.lock().map_err(|_| BtdError::failed("ASHA device map poisoned"))?;
+            map.get(&path).cloned().ok_or_else(|| BtdError::failed("ASHA device not found"))?
         };
 
         // Attach GATT client and discover ASHA service.
@@ -674,17 +638,15 @@ fn asha_disconnect(
         };
 
         let asha_arc = {
-            let map = ASHA_DEVICES
-                .lock()
-                .map_err(|_| BtdError::failed("ASHA device map poisoned"))?;
+            let map =
+                ASHA_DEVICES.lock().map_err(|_| BtdError::failed("ASHA device map poisoned"))?;
             map.get(&path).cloned()
         };
 
         if let Some(asha_arc) = asha_arc {
             // Phase 1: synchronous work under the std::sync::Mutex lock.
             let transport_to_destroy = {
-                let mut asha_dev =
-                    asha_arc.lock().map_err(|_| BtdError::failed("lock"))?;
+                let mut asha_dev = asha_arc.lock().map_err(|_| BtdError::failed("lock"))?;
 
                 // Stop streaming and close socket.
                 let _ = asha_dev.stop();
@@ -715,10 +677,7 @@ fn asha_disconnect(
             if needs_unregister {
                 let endpoint_path = format!("{}/asha", path);
                 let conn = btd_get_dbus_connection().clone();
-                let _ = conn
-                    .object_server()
-                    .remove::<AshaEndpointIface, _>(&*endpoint_path)
-                    .await;
+                let _ = conn.object_server().remove::<AshaEndpointIface, _>(&*endpoint_path).await;
 
                 // Mark endpoint unregistered (quick lock scope).
                 if let Ok(mut d) = asha_arc.lock() {
@@ -787,10 +746,7 @@ fn asha_remove(device: &Arc<TokioMutex<BtdDevice>>) {
             if was_registered {
                 let endpoint_path = format!("{}/asha", path);
                 let conn = btd_get_dbus_connection().clone();
-                let _ = conn
-                    .object_server()
-                    .remove::<AshaEndpointIface, _>(&*endpoint_path)
-                    .await;
+                let _ = conn.object_server().remove::<AshaEndpointIface, _>(&*endpoint_path).await;
                 debug!("ASHA {}: unregistered endpoint at {}", path, endpoint_path);
             }
 
@@ -879,10 +835,7 @@ fn asha_exit() {
             if was_registered {
                 let endpoint_path = format!("{path}/asha");
                 let conn = btd_get_dbus_connection().clone();
-                let _ = conn
-                    .object_server()
-                    .remove::<AshaEndpointIface, _>(&*endpoint_path)
-                    .await;
+                let _ = conn.object_server().remove::<AshaEndpointIface, _>(&*endpoint_path).await;
             }
         }
 

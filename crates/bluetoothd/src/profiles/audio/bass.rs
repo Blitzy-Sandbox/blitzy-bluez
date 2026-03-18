@@ -29,43 +29,33 @@ use tokio::sync::Mutex as TokioMutex;
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
-use bluez_shared::audio::bass::{
-    BassBigEncState, BassBcastAudioScanCpHdr, BcastSrc,
-    BtBass, BASS_ADD_SRC, BASS_BCAST_CODE_SIZE, BASS_MOD_SRC,
-    BASS_REMOVE_SRC, BASS_SET_BCAST_CODE,
-    bt_bass_add_db, bt_bass_check_bis, bt_bass_clear_bis_sync,
-    bt_bass_register, bt_bass_set_enc, bt_bass_set_pa_sync, bt_bass_unregister,
-};
 use bluez_shared::audio::bap::{
-    BapBcastQos, BapQos, BapStreamState,
-    BtBap, BtBapStream,
-    bap_qos_to_iso_qos,
-    bt_bap_parse_base, bt_bap_register, bt_bap_unregister,
+    BapBcastQos, BapQos, BapStreamState, BtBap, BtBapStream, bap_qos_to_iso_qos, bt_bap_parse_base,
+    bt_bap_register, bt_bap_unregister,
+};
+use bluez_shared::audio::bass::{
+    BASS_ADD_SRC, BASS_BCAST_CODE_SIZE, BASS_MOD_SRC, BASS_REMOVE_SRC, BASS_SET_BCAST_CODE,
+    BassBcastAudioScanCpHdr, BassBigEncState, BcastSrc, BtBass, bt_bass_add_db, bt_bass_check_bis,
+    bt_bass_clear_bis_sync, bt_bass_register, bt_bass_set_enc, bt_bass_set_pa_sync,
+    bt_bass_unregister,
 };
 // BtGattClient is used indirectly via dev.get_gatt_client().
 #[allow(unused_imports)]
 use bluez_shared::gatt::client::BtGattClient;
-use bluez_shared::socket::{
-    BluetoothListener, SocketBuilder,
-};
+use bluez_shared::socket::{BluetoothListener, SocketBuilder};
 use bluez_shared::sys::bluetooth::BdAddr;
 use bluez_shared::sys::mgmt::MgmtSettings;
 use bluez_shared::util::ad::BtAd;
 
 use crate::adapter::{
-    btd_adapter_find_device_by_fd,
-    btd_adapter_find_device_by_path, btd_adapter_get_address,
-    btd_adapter_get_address_type, btd_adapter_get_database,
-    btd_adapter_get_device, btd_adapter_has_settings,
-    btd_adapter_remove_device, BtdAdapter,
+    BtdAdapter, btd_adapter_find_device_by_fd, btd_adapter_find_device_by_path,
+    btd_adapter_get_address, btd_adapter_get_address_type, btd_adapter_get_database,
+    btd_adapter_get_device, btd_adapter_has_settings, btd_adapter_remove_device,
 };
-use crate::device::{btd_device_get_service, BtdDevice};
+use crate::device::{BtdDevice, btd_device_get_service};
 use crate::error::BtdError;
 use crate::plugin::{BluetoothPlugin, PluginDesc, PluginPriority};
-use crate::profile::{
-    btd_profile_register, BtdProfile,
-    BTD_PROFILE_BEARER_LE,
-};
+use crate::profile::{BTD_PROFILE_BEARER_LE, BtdProfile, btd_profile_register};
 use crate::profiles::audio::transport::media_transport_stream_path;
 
 // ---------------------------------------------------------------------------
@@ -193,8 +183,7 @@ static BASS_REG_ID: StdMutex<u32> = StdMutex::new(0);
 static BAP_REG_ID: StdMutex<u32> = StdMutex::new(0);
 
 /// Counter for generating unique assistant D-Bus paths.
-pub static ASSISTANT_COUNTER: std::sync::atomic::AtomicU32 =
-    std::sync::atomic::AtomicU32::new(0);
+pub static ASSISTANT_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 
 // ---------------------------------------------------------------------------
 // Helper Functions
@@ -261,13 +250,7 @@ pub fn assistant_new(
 /// Remove an assistant from the global list and unregister from D-Bus.
 pub fn assistant_remove(path: &str) {
     if let Ok(mut assistants) = ASSISTANTS.lock() {
-        assistants.retain(|a| {
-            if let Ok(inner) = a.lock() {
-                inner.path != path
-            } else {
-                true
-            }
-        });
+        assistants.retain(|a| if let Ok(inner) = a.lock() { inner.path != path } else { true });
     }
     info!("BASS: MediaAssistant1 removed at {}", path);
 }
@@ -278,12 +261,7 @@ pub fn assistant_set_state(assistant: &Arc<StdMutex<BassAssistant>>, new_state: 
         if a.state == new_state {
             return;
         }
-        debug!(
-            "BASS: assistant {} state {} -> {}",
-            a.path,
-            a.state.as_str(),
-            new_state.as_str()
-        );
+        debug!("BASS: assistant {} state {} -> {}", a.path, a.state.as_str(), new_state.as_str());
         a.state = new_state;
     }
 }
@@ -305,9 +283,8 @@ impl BassAssistantInterface {
         properties: HashMap<String, Value<'_>>,
     ) -> Result<(), zbus::fdo::Error> {
         let (data_arc, path) = {
-            let a = self.inner.lock().map_err(|_| {
-                zbus::fdo::Error::Failed("lock poisoned".into())
-            })?;
+            let a =
+                self.inner.lock().map_err(|_| zbus::fdo::Error::Failed("lock poisoned".into()))?;
             (Arc::clone(&a.data), a.path.clone())
         };
 
@@ -333,7 +310,9 @@ impl BassAssistantInterface {
         let mut bcast_qos = BapBcastQos::default();
         if let Some(Value::Dict(dict)) = properties.get("QoS") {
             let bcode_key: &str = "BCode";
-            if let Some(Value::Array(bcode_arr)) = dict.get::<&str, Value<'_>>(&bcode_key).ok().flatten() {
+            if let Some(Value::Array(bcode_arr)) =
+                dict.get::<&str, Value<'_>>(&bcode_key).ok().flatten()
+            {
                 let mut code = [0u8; BASS_BCAST_CODE_SIZE];
                 for (i, item) in bcode_arr.iter().enumerate() {
                     if i >= BASS_BCAST_CODE_SIZE {
@@ -359,9 +338,9 @@ impl BassAssistantInterface {
             let dev_path_str = dev_path.to_string();
             // Acquire lock, extract adapter, then drop lock before await.
             let adapter = {
-                let dg = data_arc.lock().map_err(|_| {
-                    zbus::fdo::Error::Failed("lock poisoned".into())
-                })?;
+                let dg = data_arc
+                    .lock()
+                    .map_err(|_| zbus::fdo::Error::Failed("lock poisoned".into()))?;
                 Arc::clone(&dg.adapter)
             };
             // Validate device path exists.
@@ -371,9 +350,7 @@ impl BassAssistantInterface {
         // Build and send ADD_SRC command.
         {
             let data_guard: std::sync::MutexGuard<'_, BassData> =
-                data_arc.lock().map_err(|_| {
-                    zbus::fdo::Error::Failed("lock poisoned".into())
-                })?;
+                data_arc.lock().map_err(|_| zbus::fdo::Error::Failed("lock poisoned".into()))?;
             let hdr = BassBcastAudioScanCpHdr { op: BASS_ADD_SRC };
             data_guard.bass.send(&hdr, &metadata);
         }
@@ -562,7 +539,12 @@ fn handle_add_src_req(src: &mut BcastSrc, data: &[u8]) -> i32 {
 
     debug!(
         "BASS: ADD_SRC addr={} type={} sid={} bid={} pa_sync={} subgroups={}",
-        addr.ba2str(), addr_type, sid, bid, pa_sync, num_subgroups
+        addr.ba2str(),
+        addr_type,
+        sid,
+        bid,
+        pa_sync,
+        num_subgroups
     );
 
     // Update source state.
@@ -592,10 +574,8 @@ fn handle_add_src_req(src: &mut BcastSrc, data: &[u8]) -> i32 {
             let session_clone = Arc::clone(session_arc);
             tokio::spawn(async move {
                 // Check PAST support.
-                let has_past = btd_adapter_has_settings(
-                    &adapter,
-                    MgmtSettings::PAST_SENDER.bits(),
-                ).await;
+                let has_past =
+                    btd_adapter_has_settings(&adapter, MgmtSettings::PAST_SENDER.bits()).await;
                 if has_past {
                     debug!("BASS: adapter supports PAST");
                     let mut dev = device.lock().await;
@@ -764,10 +744,7 @@ pub fn delegator_attach(delegator: &Arc<StdMutex<BassDelegator>>) {
         debug!("BASS: delegator attach from {} type={}", addr_str, addr_type);
 
         // Build ISO broadcast socket.
-        let builder = SocketBuilder::new()
-            .iso_bc_sid(0)
-            .iso_bc_num_bis(1)
-            .iso_bc_bis(&[1]);
+        let builder = SocketBuilder::new().iso_bc_sid(0).iso_bc_num_bis(1).iso_bc_bis(&[1]);
 
         match builder.listen().await {
             Ok(listener) => {
@@ -989,10 +966,7 @@ pub fn bass_req_bcode(stream: &BtBapStream, reply: Box<dyn FnOnce(i32) + Send>) 
     if let Ok(mut delegators) = DELEGATORS.lock() {
         for deleg_arc in delegators.iter_mut() {
             if let Ok(mut deleg) = deleg_arc.lock() {
-                deleg.bcode_reqs.push(BassBcodeReq {
-                    setup_idx: 0,
-                    timeout_handle: Some(handle),
-                });
+                deleg.bcode_reqs.push(BassBcodeReq { setup_idx: 0, timeout_handle: Some(handle) });
                 return;
             }
         }
@@ -1019,14 +993,10 @@ pub fn assistant_past(assistant: &Arc<StdMutex<BassAssistant>>) {
 
     tokio::spawn(async move {
         // Check if adapter supports PAST.
-        let has_past_send = btd_adapter_has_settings(
-            &adapter,
-            MgmtSettings::PAST_SENDER.bits(),
-        ).await;
-        let has_past_recv = btd_adapter_has_settings(
-            &adapter,
-            MgmtSettings::PAST_RECEIVER.bits(),
-        ).await;
+        let has_past_send =
+            btd_adapter_has_settings(&adapter, MgmtSettings::PAST_SENDER.bits()).await;
+        let has_past_recv =
+            btd_adapter_has_settings(&adapter, MgmtSettings::PAST_RECEIVER.bits()).await;
 
         if !has_past_send && !has_past_recv {
             debug!("BASS: adapter does not support PAST");
@@ -1147,7 +1117,8 @@ fn bass_accept(
         let has_past = btd_adapter_has_settings(
             &adapter,
             MgmtSettings::PAST_SENDER.bits() | MgmtSettings::PAST_RECEIVER.bits(),
-        ).await;
+        )
+        .await;
         if has_past {
             dev.set_past_support(true);
         }
@@ -1161,13 +1132,16 @@ fn bass_accept(
         let dev_ptr = Arc::as_ptr(&device_clone) as usize;
         let session = {
             let sessions = SESSIONS.lock().map_err(|_| BtdError::failed("lock"))?;
-            sessions.iter().find(|s| {
-                if let Ok(data) = s.lock() {
-                    (Arc::as_ptr(&data.device) as usize) == dev_ptr
-                } else {
-                    false
-                }
-            }).cloned()
+            sessions
+                .iter()
+                .find(|s| {
+                    if let Ok(data) = s.lock() {
+                        (Arc::as_ptr(&data.device) as usize) == dev_ptr
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
         };
 
         if let Some(session_arc) = session {
@@ -1210,13 +1184,17 @@ fn bass_disconnect(
         // Collect indices of sessions belonging to the disconnecting device.
         let matching_sessions: Vec<Arc<StdMutex<BassData>>> = {
             let sessions = SESSIONS.lock().map_err(|_| BtdError::failed("lock"))?;
-            sessions.iter().filter(|s| {
-                if let Ok(data) = s.lock() {
-                    (Arc::as_ptr(&data.device) as usize) == device_ptr
-                } else {
-                    false
-                }
-            }).cloned().collect()
+            sessions
+                .iter()
+                .filter(|s| {
+                    if let Ok(data) = s.lock() {
+                        (Arc::as_ptr(&data.device) as usize) == device_ptr
+                    } else {
+                        false
+                    }
+                })
+                .cloned()
+                .collect()
         };
 
         // Clean up only the matched sessions.

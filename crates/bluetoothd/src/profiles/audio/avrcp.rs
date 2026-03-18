@@ -21,19 +21,19 @@ use crate::device::BtdDevice;
 use crate::error::BtdError;
 use crate::log::btd_error;
 use crate::plugin::{PluginDesc, PluginPriority};
-use crate::profile::{btd_profile_register, btd_profile_unregister, BtdProfile};
+use crate::profile::{BtdProfile, btd_profile_register, btd_profile_unregister};
 use crate::profiles::audio::avctp::{
-    avctp_add_state_cb, avctp_connect_browsing, avctp_find_session_by_path,
-    avctp_remove_state_cb, AvctpSession, AvctpState, BrowsingPduCb, ControlPduCb,
-    PassthroughCb, AVC_CHANGED, AVC_CTYPE_CONTROL, AVC_CTYPE_NOTIFY, AVC_CTYPE_STATUS,
-    AVC_OP_VENDORDEP, AVC_SUBUNIT_PANEL, AVCTP_BROWSING_PSM, AVCTP_CONTROL_PSM,
+    AVC_CHANGED, AVC_CTYPE_CONTROL, AVC_CTYPE_NOTIFY, AVC_CTYPE_STATUS, AVC_OP_VENDORDEP,
+    AVC_SUBUNIT_PANEL, AVCTP_BROWSING_PSM, AVCTP_CONTROL_PSM, AvctpSession, AvctpState,
+    BrowsingPduCb, ControlPduCb, PassthroughCb, avctp_add_state_cb, avctp_connect_browsing,
+    avctp_find_session_by_path, avctp_remove_state_cb,
 };
 use crate::profiles::audio::control::{control_connect, control_disconnect};
 use crate::profiles::audio::player::MediaPlayer;
 use crate::sdp::{
-    add_record_to_server, remove_record_from_server, SdpData, SdpDatabase, SdpRecord,
     L2CAP_UUID, PUBLIC_BROWSE_GROUP, SDP_DEFAULT_ENCODING, SDP_DEFAULT_LANG_CODE,
-    SDP_PRIMARY_LANG_BASE,
+    SDP_PRIMARY_LANG_BASE, SdpData, SdpDatabase, SdpRecord, add_record_to_server,
+    remove_record_from_server,
 };
 use crate::service::BtdService;
 
@@ -480,17 +480,11 @@ pub fn avrcp_ct_record() -> SdpRecord {
     let mut rec = SdpRecord::new(0);
     rec.set_service_classes(&[AV_REMOTE_SVCLASS_ID, AV_REMOTE_CONTROLLER_SVCLASS_ID]);
     // Protocol descriptor: L2CAP(PSM_AVCTP) -> AVCTP(version 1.4)
-    let l2cap_proto = vec![
-        SdpData::Uuid16(L2CAP_UUID),
-        SdpData::UInt16(AVCTP_CONTROL_PSM),
-    ];
+    let l2cap_proto = vec![SdpData::Uuid16(L2CAP_UUID), SdpData::UInt16(AVCTP_CONTROL_PSM)];
     let avctp_proto = vec![SdpData::Uuid16(AVCTP_PROTO_UUID), SdpData::UInt16(0x0104)];
     rec.set_access_protos(&[l2cap_proto, avctp_proto]);
     // Additional protocol: browsing channel
-    let l2cap_browse = vec![
-        SdpData::Uuid16(L2CAP_UUID),
-        SdpData::UInt16(AVCTP_BROWSING_PSM),
-    ];
+    let l2cap_browse = vec![SdpData::Uuid16(L2CAP_UUID), SdpData::UInt16(AVCTP_BROWSING_PSM)];
     let avctp_browse = vec![SdpData::Uuid16(AVCTP_PROTO_UUID), SdpData::UInt16(0x0104)];
     rec.set_add_access_protos(&[l2cap_browse, avctp_browse]);
     // Profile descriptor: AVRCP 1.6
@@ -512,17 +506,11 @@ pub fn avrcp_tg_record() -> SdpRecord {
     let mut rec = SdpRecord::new(0);
     rec.set_service_classes(&[AV_REMOTE_TARGET_SVCLASS_ID]);
     // Protocol descriptor: L2CAP(PSM_AVCTP) -> AVCTP(version 1.4)
-    let l2cap_proto = vec![
-        SdpData::Uuid16(L2CAP_UUID),
-        SdpData::UInt16(AVCTP_CONTROL_PSM),
-    ];
+    let l2cap_proto = vec![SdpData::Uuid16(L2CAP_UUID), SdpData::UInt16(AVCTP_CONTROL_PSM)];
     let avctp_proto = vec![SdpData::Uuid16(AVCTP_PROTO_UUID), SdpData::UInt16(0x0104)];
     rec.set_access_protos(&[l2cap_proto, avctp_proto]);
     // Additional protocol: browsing channel
-    let l2cap_browse = vec![
-        SdpData::Uuid16(L2CAP_UUID),
-        SdpData::UInt16(AVCTP_BROWSING_PSM),
-    ];
+    let l2cap_browse = vec![SdpData::Uuid16(L2CAP_UUID), SdpData::UInt16(AVCTP_BROWSING_PSM)];
     let avctp_browse = vec![SdpData::Uuid16(AVCTP_PROTO_UUID), SdpData::UInt16(0x0104)];
     rec.set_add_access_protos(&[l2cap_browse, avctp_browse]);
     // Profile descriptor: AVRCP 1.6
@@ -635,14 +623,13 @@ fn init_control_handlers(
 ) {
     // Vendor-dependent PDU handler (TG role)
     let sess_clone = avrcp_session.clone();
-    let control_handler: ControlPduCb =
-        Box::new(move |transaction, ctype, _subunit, operands| {
-            if let Ok(mut sess) = sess_clone.lock() {
-                handle_vendordep_pdu(&mut sess, transaction, ctype, operands)
-            } else {
-                None
-            }
-        });
+    let control_handler: ControlPduCb = Box::new(move |transaction, ctype, _subunit, operands| {
+        if let Ok(mut sess) = sess_clone.lock() {
+            handle_vendordep_pdu(&mut sess, transaction, ctype, operands)
+        } else {
+            None
+        }
+    });
     avctp_session.register_pdu_handler(AVC_OP_VENDORDEP, control_handler);
 
     // Passthrough handler
@@ -716,7 +703,11 @@ fn handle_vendordep_pdu(
         AVRCP_SET_ADDRESSED_PLAYER => handle_set_addressed_player(session, ctype, params),
         _ => {
             warn!("AVRCP TG: unsupported PDU {:#04x}", pdu_id);
-            Some(build_vendordep_pdu(pdu_id, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_INVALID_COMMAND]))
+            Some(build_vendordep_pdu(
+                pdu_id,
+                AVRCP_PACKET_TYPE_SINGLE,
+                &[AVRCP_STATUS_INVALID_COMMAND],
+            ))
         }
     }
 }
@@ -725,14 +716,12 @@ fn handle_vendordep_pdu(
 // TG — Individual Vendor-Dependent Handlers
 // ===========================================================================
 
-fn handle_get_capabilities(
-    session: &AvrcpSession,
-    ctype: u8,
-    params: &[u8],
-) -> Option<Vec<u8>> {
+fn handle_get_capabilities(session: &AvrcpSession, ctype: u8, params: &[u8]) -> Option<Vec<u8>> {
     if ctype != AVC_CTYPE_STATUS || params.is_empty() {
         return Some(build_vendordep_pdu(
-            AVRCP_GET_CAPABILITIES, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_INVALID_PARAM],
+            AVRCP_GET_CAPABILITIES,
+            AVRCP_PACKET_TYPE_SINGLE,
+            &[AVRCP_STATUS_INVALID_PARAM],
         ));
     }
     let cap_id = params[0];
@@ -756,12 +745,15 @@ fn handle_get_capabilities(
                     events.push(ev);
                 }
             }
-            let mut resp = vec![AVRCP_STATUS_SUCCESS, AVRCP_CAP_EVENTS_SUPPORTED, events.len() as u8];
+            let mut resp =
+                vec![AVRCP_STATUS_SUCCESS, AVRCP_CAP_EVENTS_SUPPORTED, events.len() as u8];
             resp.extend_from_slice(&events);
             Some(build_vendordep_pdu(AVRCP_GET_CAPABILITIES, AVRCP_PACKET_TYPE_SINGLE, &resp))
         }
         _ => Some(build_vendordep_pdu(
-            AVRCP_GET_CAPABILITIES, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_INVALID_PARAM],
+            AVRCP_GET_CAPABILITIES,
+            AVRCP_PACKET_TYPE_SINGLE,
+            &[AVRCP_STATUS_INVALID_PARAM],
         )),
     }
 }
@@ -775,28 +767,30 @@ fn handle_list_player_attributes(_session: &AvrcpSession, ctype: u8) -> Option<V
     Some(build_vendordep_pdu(AVRCP_LIST_PLAYER_ATTRIBUTES, AVRCP_PACKET_TYPE_SINGLE, &resp))
 }
 
-fn handle_list_player_values(
-    _session: &AvrcpSession,
-    ctype: u8,
-    params: &[u8],
-) -> Option<Vec<u8>> {
+fn handle_list_player_values(_session: &AvrcpSession, ctype: u8, params: &[u8]) -> Option<Vec<u8>> {
     if ctype != AVC_CTYPE_STATUS || params.is_empty() {
         return Some(build_vendordep_pdu(
-            AVRCP_LIST_PLAYER_VALUES, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_INVALID_PARAM],
+            AVRCP_LIST_PLAYER_VALUES,
+            AVRCP_PACKET_TYPE_SINGLE,
+            &[AVRCP_STATUS_INVALID_PARAM],
         ));
     }
     let attr = params[0];
     let values: Vec<u8> = match attr {
         AVRCP_ATTRIBUTE_EQUALIZER => vec![AVRCP_EQUALIZER_OFF, AVRCP_EQUALIZER_ON],
         AVRCP_ATTRIBUTE_REPEAT_MODE => vec![
-            AVRCP_REPEAT_MODE_OFF, AVRCP_REPEAT_MODE_SINGLE,
-            AVRCP_REPEAT_MODE_ALL, AVRCP_REPEAT_MODE_GROUP,
+            AVRCP_REPEAT_MODE_OFF,
+            AVRCP_REPEAT_MODE_SINGLE,
+            AVRCP_REPEAT_MODE_ALL,
+            AVRCP_REPEAT_MODE_GROUP,
         ],
         AVRCP_ATTRIBUTE_SHUFFLE => vec![AVRCP_SHUFFLE_OFF, AVRCP_SHUFFLE_ALL, AVRCP_SHUFFLE_GROUP],
         AVRCP_ATTRIBUTE_SCAN => vec![AVRCP_SCAN_OFF, AVRCP_SCAN_ALL, AVRCP_SCAN_GROUP],
         _ => {
             return Some(build_vendordep_pdu(
-                AVRCP_LIST_PLAYER_VALUES, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_INVALID_PARAM],
+                AVRCP_LIST_PLAYER_VALUES,
+                AVRCP_PACKET_TYPE_SINGLE,
+                &[AVRCP_STATUS_INVALID_PARAM],
             ));
         }
     };
@@ -812,14 +806,16 @@ fn handle_get_current_player_value(
 ) -> Option<Vec<u8>> {
     if ctype != AVC_CTYPE_STATUS || params.is_empty() {
         return Some(build_vendordep_pdu(
-            AVRCP_GET_CURRENT_PLAYER_VALUE, AVRCP_PACKET_TYPE_SINGLE,
+            AVRCP_GET_CURRENT_PLAYER_VALUE,
+            AVRCP_PACKET_TYPE_SINGLE,
             &[AVRCP_STATUS_INVALID_PARAM],
         ));
     }
     let num_attrs = params[0] as usize;
     if params.len() < 1 + num_attrs {
         return Some(build_vendordep_pdu(
-            AVRCP_GET_CURRENT_PLAYER_VALUE, AVRCP_PACKET_TYPE_SINGLE,
+            AVRCP_GET_CURRENT_PLAYER_VALUE,
+            AVRCP_PACKET_TYPE_SINGLE,
             &[AVRCP_STATUS_INVALID_PARAM],
         ));
     }
@@ -835,25 +831,23 @@ fn handle_get_current_player_value(
         count += 1;
     }
     resp[0] = count;
-    Some(build_vendordep_pdu(
-        AVRCP_GET_CURRENT_PLAYER_VALUE, AVRCP_PACKET_TYPE_SINGLE, &resp,
-    ))
+    Some(build_vendordep_pdu(AVRCP_GET_CURRENT_PLAYER_VALUE, AVRCP_PACKET_TYPE_SINGLE, &resp))
 }
 
-fn handle_set_player_value(
-    session: &AvrcpSession,
-    ctype: u8,
-    params: &[u8],
-) -> Option<Vec<u8>> {
+fn handle_set_player_value(session: &AvrcpSession, ctype: u8, params: &[u8]) -> Option<Vec<u8>> {
     if ctype != AVC_CTYPE_CONTROL || params.is_empty() {
         return Some(build_vendordep_pdu(
-            AVRCP_SET_PLAYER_VALUE, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_INVALID_PARAM],
+            AVRCP_SET_PLAYER_VALUE,
+            AVRCP_PACKET_TYPE_SINGLE,
+            &[AVRCP_STATUS_INVALID_PARAM],
         ));
     }
     let num_attrs = params[0] as usize;
     if params.len() < 1 + num_attrs * 2 {
         return Some(build_vendordep_pdu(
-            AVRCP_SET_PLAYER_VALUE, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_INVALID_PARAM],
+            AVRCP_SET_PLAYER_VALUE,
+            AVRCP_PACKET_TYPE_SINGLE,
+            &[AVRCP_STATUS_INVALID_PARAM],
         ));
     }
     let player = session.target_player.as_ref()?;
@@ -863,7 +857,9 @@ fn handle_set_player_value(
         player.callbacks.set_setting(attr, value);
     }
     Some(build_vendordep_pdu(
-        AVRCP_SET_PLAYER_VALUE, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_SUCCESS],
+        AVRCP_SET_PLAYER_VALUE,
+        AVRCP_PACKET_TYPE_SINGLE,
+        &[AVRCP_STATUS_SUCCESS],
     ))
 }
 
@@ -897,9 +893,7 @@ fn handle_get_player_attribute_text(
         resp.push(text_bytes.len() as u8);
         resp.extend_from_slice(text_bytes);
     }
-    Some(build_vendordep_pdu(
-        AVRCP_GET_PLAYER_ATTRIBUTE_TEXT, AVRCP_PACKET_TYPE_SINGLE, &resp,
-    ))
+    Some(build_vendordep_pdu(AVRCP_GET_PLAYER_ATTRIBUTE_TEXT, AVRCP_PACKET_TYPE_SINGLE, &resp))
 }
 
 fn handle_get_player_value_text(
@@ -927,9 +921,7 @@ fn handle_get_player_value_text(
         resp.push(text_bytes.len() as u8);
         resp.extend_from_slice(text_bytes);
     }
-    Some(build_vendordep_pdu(
-        AVRCP_GET_PLAYER_VALUE_TEXT, AVRCP_PACKET_TYPE_SINGLE, &resp,
-    ))
+    Some(build_vendordep_pdu(AVRCP_GET_PLAYER_VALUE_TEXT, AVRCP_PACKET_TYPE_SINGLE, &resp))
 }
 
 fn handle_displayable_charset(_session: &AvrcpSession, ctype: u8) -> Option<Vec<u8>> {
@@ -937,7 +929,9 @@ fn handle_displayable_charset(_session: &AvrcpSession, ctype: u8) -> Option<Vec<
         return None;
     }
     Some(build_vendordep_pdu(
-        AVRCP_DISPLAYABLE_CHARSET, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_SUCCESS],
+        AVRCP_DISPLAYABLE_CHARSET,
+        AVRCP_PACKET_TYPE_SINGLE,
+        &[AVRCP_STATUS_SUCCESS],
     ))
 }
 
@@ -946,7 +940,9 @@ fn handle_battery_status(_session: &AvrcpSession, ctype: u8) -> Option<Vec<u8>> 
         return None;
     }
     Some(build_vendordep_pdu(
-        AVRCP_CT_BATTERY_STATUS, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_SUCCESS],
+        AVRCP_CT_BATTERY_STATUS,
+        AVRCP_PACKET_TYPE_SINGLE,
+        &[AVRCP_STATUS_SUCCESS],
     ))
 }
 
@@ -1012,17 +1008,18 @@ fn handle_get_element_attributes(
     if resp_params.len() > AVRCP_PDU_MTU {
         let first_chunk = &resp_params[..AVRCP_PDU_MTU];
         let remaining = resp_params[AVRCP_PDU_MTU..].to_vec();
-        session.pending_pdu = Some(PendingPdu {
-            pdu_id: AVRCP_GET_ELEMENT_ATTRIBUTES,
-            data: remaining,
-            offset: 0,
-        });
+        session.pending_pdu =
+            Some(PendingPdu { pdu_id: AVRCP_GET_ELEMENT_ATTRIBUTES, data: remaining, offset: 0 });
         Some(build_vendordep_pdu(
-            AVRCP_GET_ELEMENT_ATTRIBUTES, AVRCP_PACKET_TYPE_START, first_chunk,
+            AVRCP_GET_ELEMENT_ATTRIBUTES,
+            AVRCP_PACKET_TYPE_START,
+            first_chunk,
         ))
     } else {
         Some(build_vendordep_pdu(
-            AVRCP_GET_ELEMENT_ATTRIBUTES, AVRCP_PACKET_TYPE_SINGLE, &resp_params,
+            AVRCP_GET_ELEMENT_ATTRIBUTES,
+            AVRCP_PACKET_TYPE_SINGLE,
+            &resp_params,
         ))
     }
 }
@@ -1039,9 +1036,7 @@ fn handle_get_play_status(session: &AvrcpSession, ctype: u8) -> Option<Vec<u8>> 
     resp.extend_from_slice(&duration.to_be_bytes());
     resp.extend_from_slice(&position.to_be_bytes());
     resp.push(status);
-    Some(build_vendordep_pdu(
-        AVRCP_GET_PLAY_STATUS, AVRCP_PACKET_TYPE_SINGLE, &resp,
-    ))
+    Some(build_vendordep_pdu(AVRCP_GET_PLAY_STATUS, AVRCP_PACKET_TYPE_SINGLE, &resp))
 }
 
 fn handle_register_notification(
@@ -1051,20 +1046,23 @@ fn handle_register_notification(
 ) -> Option<Vec<u8>> {
     if ctype != AVC_CTYPE_NOTIFY || params.is_empty() {
         return Some(build_vendordep_pdu(
-            AVRCP_REGISTER_NOTIFICATION, AVRCP_PACKET_TYPE_SINGLE,
+            AVRCP_REGISTER_NOTIFICATION,
+            AVRCP_PACKET_TYPE_SINGLE,
             &[AVRCP_STATUS_INVALID_PARAM],
         ));
     }
     let event_id = params[0];
     if event_id == 0 || event_id > AVRCP_EVENT_LAST_DEFINED {
         return Some(build_vendordep_pdu(
-            AVRCP_REGISTER_NOTIFICATION, AVRCP_PACKET_TYPE_SINGLE,
+            AVRCP_REGISTER_NOTIFICATION,
+            AVRCP_PACKET_TYPE_SINGLE,
             &[AVRCP_STATUS_INVALID_PARAM],
         ));
     }
     if session.supported_events & (1u32 << event_id) == 0 {
         return Some(build_vendordep_pdu(
-            AVRCP_REGISTER_NOTIFICATION, AVRCP_PACKET_TYPE_SINGLE,
+            AVRCP_REGISTER_NOTIFICATION,
+            AVRCP_PACKET_TYPE_SINGLE,
             &[AVRCP_STATUS_INVALID_PARAM],
         ));
     }
@@ -1079,9 +1077,7 @@ fn handle_register_notification(
     resp.extend_from_slice(&interim_params);
     // Note: For interim responses, the ctype in the response should be AVC_INTERIM.
     // The return value is used by AVCTP to send with AVC_INTERIM.
-    Some(build_vendordep_pdu(
-        AVRCP_REGISTER_NOTIFICATION, AVRCP_PACKET_TYPE_SINGLE, &resp,
-    ))
+    Some(build_vendordep_pdu(AVRCP_REGISTER_NOTIFICATION, AVRCP_PACKET_TYPE_SINGLE, &resp))
 }
 
 /// Build the interim notification payload for a given event.
@@ -1129,11 +1125,7 @@ fn build_notification_interim(session: &AvrcpSession, event_id: u8) -> Vec<u8> {
             vec![0x00] // Current volume
         }
         AVRCP_EVENT_ADDRESSED_PLAYER_CHANGED => {
-            let player_id: u16 = session
-                .target_player
-                .as_ref()
-                .map(|p| p.id)
-                .unwrap_or(0);
+            let player_id: u16 = session.target_player.as_ref().map(|p| p.id).unwrap_or(0);
             let mut data = Vec::new();
             data.extend_from_slice(&player_id.to_be_bytes());
             data.extend_from_slice(&0u16.to_be_bytes()); // UID counter
@@ -1156,7 +1148,9 @@ fn handle_request_continuing(
     if pending.pdu_id != requested_pdu {
         session.pending_pdu = None;
         return Some(build_vendordep_pdu(
-            AVRCP_ABORT_CONTINUING, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_INVALID_PARAM],
+            AVRCP_ABORT_CONTINUING,
+            AVRCP_PACKET_TYPE_SINGLE,
+            &[AVRCP_STATUS_INVALID_PARAM],
         ));
     }
     let remaining = &pending.data[pending.offset..];
@@ -1185,7 +1179,9 @@ fn handle_abort_continuing(
     let _requested_pdu = params[0];
     session.pending_pdu = None;
     Some(build_vendordep_pdu(
-        AVRCP_ABORT_CONTINUING, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_SUCCESS],
+        AVRCP_ABORT_CONTINUING,
+        AVRCP_PACKET_TYPE_SINGLE,
+        &[AVRCP_STATUS_SUCCESS],
     ))
 }
 
@@ -1196,15 +1192,14 @@ fn handle_set_absolute_volume(
 ) -> Option<Vec<u8>> {
     if ctype != AVC_CTYPE_CONTROL || params.is_empty() {
         return Some(build_vendordep_pdu(
-            AVRCP_SET_ABSOLUTE_VOLUME, AVRCP_PACKET_TYPE_SINGLE,
+            AVRCP_SET_ABSOLUTE_VOLUME,
+            AVRCP_PACKET_TYPE_SINGLE,
             &[AVRCP_STATUS_INVALID_PARAM],
         ));
     }
     let volume = params[0] & 0x7F;
     info!("AVRCP: SetAbsoluteVolume = {}", volume);
-    Some(build_vendordep_pdu(
-        AVRCP_SET_ABSOLUTE_VOLUME, AVRCP_PACKET_TYPE_SINGLE, &[volume],
-    ))
+    Some(build_vendordep_pdu(AVRCP_SET_ABSOLUTE_VOLUME, AVRCP_PACKET_TYPE_SINGLE, &[volume]))
 }
 
 fn handle_set_addressed_player(
@@ -1214,13 +1209,16 @@ fn handle_set_addressed_player(
 ) -> Option<Vec<u8>> {
     if ctype != AVC_CTYPE_CONTROL || params.len() < 2 {
         return Some(build_vendordep_pdu(
-            AVRCP_SET_ADDRESSED_PLAYER, AVRCP_PACKET_TYPE_SINGLE,
+            AVRCP_SET_ADDRESSED_PLAYER,
+            AVRCP_PACKET_TYPE_SINGLE,
             &[AVRCP_STATUS_INVALID_PARAM],
         ));
     }
     let _player_id = u16::from_be_bytes([params[0], params[1]]);
     Some(build_vendordep_pdu(
-        AVRCP_SET_ADDRESSED_PLAYER, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_SUCCESS],
+        AVRCP_SET_ADDRESSED_PLAYER,
+        AVRCP_PACKET_TYPE_SINGLE,
+        &[AVRCP_STATUS_SUCCESS],
     ))
 }
 
@@ -1268,10 +1266,7 @@ fn handle_browsing_set_browsed_player(
     Some(build_browsing_pdu(AVRCP_SET_BROWSED_PLAYER, &resp))
 }
 
-fn handle_browsing_get_folder_items(
-    _session: &AvrcpSession,
-    params: &[u8],
-) -> Option<Vec<u8>> {
+fn handle_browsing_get_folder_items(_session: &AvrcpSession, params: &[u8]) -> Option<Vec<u8>> {
     if params.len() < 10 {
         return Some(build_browsing_status(AVRCP_GET_FOLDER_ITEMS, AVRCP_STATUS_INVALID_PARAM));
     }
@@ -1286,10 +1281,7 @@ fn handle_browsing_get_folder_items(
     Some(build_browsing_pdu(AVRCP_GET_FOLDER_ITEMS, &resp))
 }
 
-fn handle_browsing_change_path(
-    _session: &AvrcpSession,
-    params: &[u8],
-) -> Option<Vec<u8>> {
+fn handle_browsing_change_path(_session: &AvrcpSession, params: &[u8]) -> Option<Vec<u8>> {
     if params.len() < 11 {
         return Some(build_browsing_status(AVRCP_CHANGE_PATH, AVRCP_STATUS_INVALID_PARAM));
     }
@@ -1299,14 +1291,9 @@ fn handle_browsing_change_path(
     Some(build_browsing_pdu(AVRCP_CHANGE_PATH, &resp))
 }
 
-fn handle_browsing_get_item_attributes(
-    _session: &AvrcpSession,
-    params: &[u8],
-) -> Option<Vec<u8>> {
+fn handle_browsing_get_item_attributes(_session: &AvrcpSession, params: &[u8]) -> Option<Vec<u8>> {
     if params.len() < 12 {
-        return Some(build_browsing_status(
-            AVRCP_GET_ITEM_ATTRIBUTES, AVRCP_STATUS_INVALID_PARAM,
-        ));
+        return Some(build_browsing_status(AVRCP_GET_ITEM_ATTRIBUTES, AVRCP_STATUS_INVALID_PARAM));
     }
     // Return success with 0 attributes
     let mut resp = vec![AVRCP_STATUS_SUCCESS];
@@ -1314,20 +1301,14 @@ fn handle_browsing_get_item_attributes(
     Some(build_browsing_pdu(AVRCP_GET_ITEM_ATTRIBUTES, &resp))
 }
 
-fn handle_browsing_play_item(
-    _session: &AvrcpSession,
-    params: &[u8],
-) -> Option<Vec<u8>> {
+fn handle_browsing_play_item(_session: &AvrcpSession, params: &[u8]) -> Option<Vec<u8>> {
     if params.len() < 11 {
         return Some(build_browsing_status(AVRCP_PLAY_ITEM, AVRCP_STATUS_INVALID_PARAM));
     }
     Some(build_browsing_status(AVRCP_PLAY_ITEM, AVRCP_STATUS_SUCCESS))
 }
 
-fn handle_browsing_search(
-    _session: &AvrcpSession,
-    params: &[u8],
-) -> Option<Vec<u8>> {
+fn handle_browsing_search(_session: &AvrcpSession, params: &[u8]) -> Option<Vec<u8>> {
     if params.len() < 4 {
         return Some(build_browsing_status(AVRCP_SEARCH, AVRCP_STATUS_INVALID_PARAM));
     }
@@ -1338,14 +1319,9 @@ fn handle_browsing_search(
     Some(build_browsing_pdu(AVRCP_SEARCH, &resp))
 }
 
-fn handle_browsing_add_to_now_playing(
-    _session: &AvrcpSession,
-    params: &[u8],
-) -> Option<Vec<u8>> {
+fn handle_browsing_add_to_now_playing(_session: &AvrcpSession, params: &[u8]) -> Option<Vec<u8>> {
     if params.len() < 11 {
-        return Some(build_browsing_status(
-            AVRCP_ADD_TO_NOW_PLAYING, AVRCP_STATUS_INVALID_PARAM,
-        ));
+        return Some(build_browsing_status(AVRCP_ADD_TO_NOW_PLAYING, AVRCP_STATUS_INVALID_PARAM));
     }
     Some(build_browsing_status(AVRCP_ADD_TO_NOW_PLAYING, AVRCP_STATUS_SUCCESS))
 }
@@ -1361,23 +1337,33 @@ fn handle_passthrough(session: &AvrcpSession, op: u8, pressed: bool) -> bool {
     };
     match op {
         PASSTHROUGH_PLAY => {
-            if pressed { player.callbacks.play(); }
+            if pressed {
+                player.callbacks.play();
+            }
             true
         }
         PASSTHROUGH_STOP => {
-            if pressed { player.callbacks.stop(); }
+            if pressed {
+                player.callbacks.stop();
+            }
             true
         }
         PASSTHROUGH_PAUSE => {
-            if pressed { player.callbacks.pause(); }
+            if pressed {
+                player.callbacks.pause();
+            }
             true
         }
         PASSTHROUGH_FORWARD => {
-            if pressed { player.callbacks.next(); }
+            if pressed {
+                player.callbacks.next();
+            }
             true
         }
         PASSTHROUGH_BACKWARD => {
-            if pressed { player.callbacks.previous(); }
+            if pressed {
+                player.callbacks.previous();
+            }
             true
         }
         PASSTHROUGH_FAST_FORWARD => {
@@ -1804,7 +1790,9 @@ impl AvrcpSession {
     pub fn set_player_value_rsp(&self, _params: &[u8]) -> Option<Vec<u8>> {
         // This is a confirmation; the handler already processes the set
         Some(build_vendordep_pdu(
-            AVRCP_SET_PLAYER_VALUE, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_SUCCESS],
+            AVRCP_SET_PLAYER_VALUE,
+            AVRCP_PACKET_TYPE_SINGLE,
+            &[AVRCP_STATUS_SUCCESS],
         ))
     }
 
@@ -1830,13 +1818,17 @@ impl AvrcpSession {
 
     pub fn set_volume_rsp(&self, volume: u8) -> Option<Vec<u8>> {
         Some(build_vendordep_pdu(
-            AVRCP_SET_ABSOLUTE_VOLUME, AVRCP_PACKET_TYPE_SINGLE, &[volume & 0x7F],
+            AVRCP_SET_ABSOLUTE_VOLUME,
+            AVRCP_PACKET_TYPE_SINGLE,
+            &[volume & 0x7F],
         ))
     }
 
     pub fn set_addressed_player_rsp(&self) -> Option<Vec<u8>> {
         Some(build_vendordep_pdu(
-            AVRCP_SET_ADDRESSED_PLAYER, AVRCP_PACKET_TYPE_SINGLE, &[AVRCP_STATUS_SUCCESS],
+            AVRCP_SET_ADDRESSED_PLAYER,
+            AVRCP_PACKET_TYPE_SINGLE,
+            &[AVRCP_STATUS_SUCCESS],
         ))
     }
 
@@ -1895,10 +1887,7 @@ async fn avrcp_state_changed_async(
     old_state: AvctpState,
     new_state: AvctpState,
 ) {
-    debug!(
-        "AVRCP: state change {} -> {} for {}",
-        old_state, new_state, device_path
-    );
+    debug!("AVRCP: state change {} -> {} for {}", old_state, new_state, device_path);
 
     match new_state {
         AvctpState::Connected => {
@@ -2102,11 +2091,7 @@ pub async fn avrcp_player_event(
 
 /// Handle vendor reject from remote — used by other modules.
 pub fn avrcp_handle_vendor_reject(pdu_id: u8, params: &[u8]) {
-    warn!(
-        "AVRCP vendor reject for PDU {:#04x}, params len={}",
-        pdu_id,
-        params.len()
-    );
+    warn!("AVRCP vendor reject for PDU {:#04x}, params len={}", pdu_id, params.len());
 }
 
 /// Send a general reject on the browsing channel.
@@ -2121,9 +2106,7 @@ pub async fn avrcp_browsing_general_reject(session: &Arc<StdMutex<AvrcpSession>>
 }
 
 /// Find the AVRCP target player for a given device.
-pub fn avrcp_get_target_player_by_device(
-    device: &Arc<BtdDevice>,
-) -> Option<Arc<AvrcpPlayer>> {
+pub fn avrcp_get_target_player_by_device(device: &Arc<BtdDevice>) -> Option<Arc<AvrcpPlayer>> {
     let servers = SERVERS.lock().ok()?;
     let device_path = device.get_path();
     for server in servers.iter() {
@@ -2165,8 +2148,7 @@ pub async fn avrcp_set_volume(device: &Arc<BtdDevice>, volume: u8) {
                             let has_reg =
                                 sess.registered_events & (1u32 << AVRCP_EVENT_VOLUME_CHANGED) != 0;
                             if has_reg {
-                                sess.registered_events &=
-                                    !(1u32 << AVRCP_EVENT_VOLUME_CHANGED);
+                                sess.registered_events &= !(1u32 << AVRCP_EVENT_VOLUME_CHANGED);
                             }
                             found = Some((has_reg, sess.avctp.clone()));
                             break;
@@ -2195,10 +2177,7 @@ pub async fn avrcp_set_volume(device: &Arc<BtdDevice>, volume: u8) {
             AVRCP_PACKET_TYPE_SINGLE,
             &[AVRCP_EVENT_VOLUME_CHANGED, clamped],
         );
-        if let Err(err) = avctp
-            .send_vendordep(0, AVC_CHANGED, AVC_SUBUNIT_PANEL, &pdu)
-            .await
-        {
+        if let Err(err) = avctp.send_vendordep(0, AVC_CHANGED, AVC_SUBUNIT_PANEL, &pdu).await {
             error!("Failed to send volume notification: {:?}", err);
         }
     } else {
@@ -2224,12 +2203,8 @@ pub fn avrcp_register_player(
     callbacks: Box<dyn AvrcpPlayerCallbacks>,
 ) -> Result<Arc<AvrcpPlayer>, BtdError> {
     let player_id = next_player_id();
-    let player = Arc::new(AvrcpPlayer {
-        id: player_id,
-        callbacks,
-        server: None,
-        sessions: Vec::new(),
-    });
+    let player =
+        Arc::new(AvrcpPlayer { id: player_id, callbacks, server: None, sessions: Vec::new() });
     if let Ok(servers) = SERVERS.lock() {
         for server in servers.iter() {
             if let Ok(mut srv) = server.lock() {
@@ -2299,11 +2274,7 @@ pub fn avrcp_server_register(adapter: Arc<TokioMutex<BtdAdapter>>) -> Result<(),
         // Access adapter address synchronously via try_lock
         // In practice, this is called during adapter probe which is async,
         // but we store the address for later sync access.
-        if let Ok(a) = adapter.try_lock() {
-            a.address
-        } else {
-            BdAddr::default()
-        }
+        if let Ok(a) = adapter.try_lock() { a.address } else { BdAddr::default() }
     };
 
     let mut ct_record = avrcp_ct_record();
@@ -2311,16 +2282,14 @@ pub fn avrcp_server_register(adapter: Arc<TokioMutex<BtdAdapter>>) -> Result<(),
 
     // Register SDP records
     let mut db = SdpDatabase::new();
-    let ct_id = add_record_to_server(&mut db, &adapter_address, &mut ct_record)
-        .map_err(|e| {
-            btd_error(0xFFFF, &format!("AVRCP CT SDP record registration failed: {}", e));
-            BtdError::Failed(e)
-        })?;
-    let tg_id = add_record_to_server(&mut db, &adapter_address, &mut tg_record)
-        .map_err(|e| {
-            btd_error(0xFFFF, &format!("AVRCP TG SDP record registration failed: {}", e));
-            BtdError::Failed(e)
-        })?;
+    let ct_id = add_record_to_server(&mut db, &adapter_address, &mut ct_record).map_err(|e| {
+        btd_error(0xFFFF, &format!("AVRCP CT SDP record registration failed: {}", e));
+        BtdError::Failed(e)
+    })?;
+    let tg_id = add_record_to_server(&mut db, &adapter_address, &mut tg_record).map_err(|e| {
+        btd_error(0xFFFF, &format!("AVRCP TG SDP record registration failed: {}", e));
+        BtdError::Failed(e)
+    })?;
 
     let server = Arc::new(StdMutex::new(AvrcpServer {
         adapter,
@@ -2335,10 +2304,7 @@ pub fn avrcp_server_register(adapter: Arc<TokioMutex<BtdAdapter>>) -> Result<(),
         server_list.push(server);
     }
 
-    info!(
-        "AVRCP server registered (CT record={}, TG record={})",
-        ct_id, tg_id
-    );
+    info!("AVRCP server registered (CT record={}, TG record={})", ct_id, tg_id);
     Ok(())
 }
 
@@ -2363,10 +2329,7 @@ pub fn avrcp_server_unregister(adapter: &Arc<TokioMutex<BtdAdapter>>) {
         let mut db = SdpDatabase::new();
         let _ = remove_record_from_server(&mut db, ct_id);
         let _ = remove_record_from_server(&mut db, tg_id);
-        info!(
-            "AVRCP server unregistered (CT record={}, TG record={})",
-            ct_id, tg_id
-        );
+        info!("AVRCP server unregistered (CT record={}, TG record={})", ct_id, tg_id);
     }
 }
 

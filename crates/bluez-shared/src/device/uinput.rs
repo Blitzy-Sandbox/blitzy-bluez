@@ -469,7 +469,7 @@ impl BtUinput {
                 std::mem::size_of::<InputEvent>(),
             )
         };
- // SAFETY: write() with a valid fd and properly sized byte buffer.
+        // SAFETY: write() with a valid fd and properly sized byte buffer.
 
         let written = unsafe {
             libc::write(

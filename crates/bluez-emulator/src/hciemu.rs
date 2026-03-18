@@ -846,7 +846,13 @@ fn writev_with_eagain(fd: BorrowedFd<'_>, iov: &[IoSlice<'_>]) {
             // data has been sent.
             let mut size: libc::c_int = 0;
             let mut len: libc::socklen_t = std::mem::size_of::<libc::c_int>() as libc::socklen_t;
-            let ret = ffi::raw_getsockopt(fd.as_raw_fd(), libc::SOL_SOCKET, libc::SO_SNDBUF, &mut size, &mut len);
+            let ret = ffi::raw_getsockopt(
+                fd.as_raw_fd(),
+                libc::SOL_SOCKET,
+                libc::SO_SNDBUF,
+                &mut size,
+                &mut len,
+            );
             if ret == 0 {
                 size += data_len as libc::c_int;
                 ffi::raw_setsockopt(fd.as_raw_fd(), libc::SOL_SOCKET, libc::SO_SNDBUF, &size);

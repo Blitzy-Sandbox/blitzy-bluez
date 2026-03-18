@@ -32,6 +32,7 @@ use bluez_shared::sys::bluetooth::{
     AF_BLUETOOTH, BDADDR_BREDR, BT_CODEC, BT_DEFER_SETUP, BT_VOICE, BT_VOICE_TRANSPARENT,
     BTPROTO_SCO, PF_BLUETOOTH, SOL_BLUETOOTH, bdaddr_t, bt_codec, bt_codecs, bt_voice,
 };
+use bluez_shared::sys::ffi_helpers as ffi;
 use bluez_shared::sys::hci::{
     EVT_DISCONN_COMPLETE, OCF_SETUP_SYNC_CONN, OCF_WRITE_SCAN_ENABLE, OGF_HOST_CTL,
     OGF_LINK_CONTROL, opcode,
@@ -42,7 +43,6 @@ use bluez_shared::sys::mgmt::{
     MGMT_OP_SET_POWERED, MGMT_OP_SET_SSP, MGMT_STATUS_SUCCESS, mgmt_cp_set_exp_feature,
 };
 use bluez_shared::sys::sco::{SCO_CONNINFO, SCO_OPTIONS, sco_conninfo, sco_options, sockaddr_sco};
-use bluez_shared::sys::ffi_helpers as ffi;
 use bluez_shared::tester::{
     TestCallback, tester_add_full, tester_debug, tester_init, tester_post_teardown_complete,
     tester_pre_setup_complete, tester_pre_setup_failed, tester_print, tester_run,
@@ -1973,7 +1973,11 @@ fn sco_defer_accept(state: &SharedState, accept_sk: i32) {
     let mut pfd = libc::pollfd { fd: accept_sk, events: libc::POLLOUT, revents: 0 };
 
     // SAFETY: poll() with valid fd.
-    let rc = { let (_pr, _rv) = ffi::raw_poll_single(pfd.fd, pfd.events, 100); pfd.revents = _rv; _pr };
+    let rc = {
+        let (_pr, _rv) = ffi::raw_poll_single(pfd.fd, pfd.events, 100);
+        pfd.revents = _rv;
+        _pr
+    };
     if rc <= 0 {
         tester_warn("poll() for deferred accept timed out");
         tester_test_failed();

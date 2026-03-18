@@ -870,9 +870,7 @@ impl PbapData {
     /// the Folder Version feature bit.
     async fn update_version(&self) -> Result<(), zbus::fdo::Error> {
         if self.supported_features & FOLDER_VERSION_FEATURE == 0 {
-            return Err(zbus::fdo::Error::NotSupported(
-                "Operation is not supported".into(),
-            ));
+            return Err(zbus::fdo::Error::NotSupported("Operation is not supported".into()));
         }
         // In the C original this delegates to pbap_get_size internally
         // to trigger the server to refresh version counters via the

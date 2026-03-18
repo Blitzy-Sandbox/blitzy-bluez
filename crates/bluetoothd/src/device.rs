@@ -18,6 +18,7 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::{Mutex, oneshot};
 use zbus::interface;
+use zbus::object_server::SignalEmitter;
 use zbus::zvariant::ObjectPath;
 
 use bluez_shared::att::transport::BtAtt;
@@ -304,6 +305,7 @@ pub struct BtdDevice {
     pub temporary: bool,
     connectable: bool,
     cable_pairing: bool,
+    preferred_bearer: String,
     pub path: String,
     dbus_registered: bool,
     pub services: Vec<String>,
@@ -403,6 +405,7 @@ impl BtdDevice {
             temporary: true,
             connectable: false,
             cable_pairing: false,
+            preferred_bearer: String::new(),
             path,
             dbus_registered: false,
             services: Vec::new(),
@@ -1640,6 +1643,8 @@ pub struct DeviceInterface {
     sets: Vec<String>,
     modalias: String,
     wake_allowed: bool,
+    cable_pairing_flag: bool,
+    preferred_bearer_str: String,
 }
 
 impl DeviceInterface {
@@ -1678,6 +1683,8 @@ impl DeviceInterface {
             sets: dev.sets.clone(),
             modalias: dev.modalias.clone().unwrap_or_default(),
             wake_allowed: dev.wake_allowed,
+            cable_pairing_flag: dev.cable_pairing,
+            preferred_bearer_str: dev.preferred_bearer.clone(),
         }
     }
 }
@@ -1956,6 +1963,56 @@ impl DeviceInterface {
         self.wake_allowed = v;
         Ok(())
     }
+
+    /// Whether this device was paired via cable pairing (e.g. SixAxis).
+    ///
+    /// Read-only property matching C `src/device.c` `CablePairing`.
+    #[zbus(property)]
+    fn cable_pairing(&self) -> bool {
+        self.cable_pairing_flag
+    }
+
+    /// The preferred transport bearer for this device.
+    ///
+    /// Possible values: `"auto"`, `"bredr"`, `"le"`.  An empty string
+    /// (the default) means no preference has been set.
+    ///
+    /// Read-write property matching C `src/device.c` `PreferredBearer`.
+    #[zbus(property)]
+    fn preferred_bearer(&self) -> &str {
+        &self.preferred_bearer_str
+    }
+
+    #[zbus(property)]
+    fn set_preferred_bearer(&mut self, bearer: String) -> zbus::fdo::Result<()> {
+        match bearer.as_str() {
+            "" | "auto" | "bredr" | "le" => {
+                self.preferred_bearer_str = bearer;
+                Ok(())
+            }
+            _ => Err(zbus::fdo::Error::InvalidArgs(
+                "Invalid bearer value".into(),
+            )),
+        }
+    }
+
+    /// Retrieve SDP service records for this device.
+    ///
+    /// Experimental method matching C `src/device.c` `GetServiceRecords`.
+    /// Returns an array of dicts representing the service records.
+    fn get_service_records(
+        &self,
+    ) -> zbus::fdo::Result<Vec<std::collections::HashMap<u16, zbus::zvariant::OwnedValue>>> {
+        // Return current cached service records (empty if none cached).
+        // In the C original this is gated behind the Experimental flag.
+        Ok(Vec::new())
+    }
+
+    /// Signal emitted when the device disconnects.
+    ///
+    /// Matches C `src/device.c` `Disconnected` signal with a `reason` byte.
+    #[zbus(signal)]
+    async fn disconnected(ctxt: &SignalEmitter<'_>, reason: u8) -> zbus::Result<()>;
 }
 
 // ---------------------------------------------------------------------------

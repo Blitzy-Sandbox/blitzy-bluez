@@ -156,6 +156,58 @@ fn characteristic_flags(props: u8, ext_props: u8, perms: u16) -> Vec<String> {
     flags
 }
 
+/// Derive GATT descriptor flags from ATT permissions.
+///
+/// Descriptors expose a subset of flags based on their read/write
+/// permissions and the security level required to access them.
+fn descriptor_flags_from_permissions(perms: u16) -> Vec<String> {
+    let mut flags = Vec::new();
+    let ap = AttPermissions::from_bits_truncate(perms);
+
+    // Basic read/write capability
+    if ap.intersects(
+        AttPermissions::READ
+            | AttPermissions::READ_ENCRYPT
+            | AttPermissions::READ_AUTHEN
+            | AttPermissions::READ_SECURE,
+    ) {
+        flags.push("read".into());
+    }
+    if ap.intersects(
+        AttPermissions::WRITE
+            | AttPermissions::WRITE_ENCRYPT
+            | AttPermissions::WRITE_AUTHEN
+            | AttPermissions::WRITE_SECURE,
+    ) {
+        flags.push("write".into());
+    }
+
+    // Security-level flags
+    if ap.contains(AttPermissions::READ_ENCRYPT) {
+        flags.push("encrypt-read".into());
+    }
+    if ap.contains(AttPermissions::WRITE_ENCRYPT) {
+        flags.push("encrypt-write".into());
+    }
+    if ap.contains(AttPermissions::READ_AUTHEN) {
+        flags.push("encrypt-authenticated-read".into());
+    }
+    if ap.contains(AttPermissions::WRITE_AUTHEN) {
+        flags.push("encrypt-authenticated-write".into());
+    }
+    if ap.contains(AttPermissions::READ_SECURE) {
+        flags.push("secure-read".into());
+    }
+    if ap.contains(AttPermissions::WRITE_SECURE) {
+        flags.push("secure-write".into());
+    }
+    if ap.contains(AttPermissions::AUTHOR) {
+        flags.push("authorize".into());
+    }
+
+    flags
+}
+
 /// Parse a `u16` option from a D-Bus options dict.
 #[allow(dead_code)] // Called from #[zbus::interface] ReadValue/WriteValue methods
 fn parse_offset(options: &HashMap<String, OwnedValue>) -> u16 {
@@ -812,6 +864,7 @@ struct DescState {
     gatt: Option<Arc<BtGattClient>>,
     gatt_export: BtGattExport,
     claimed: bool,
+    flags: Vec<String>,
 }
 
 /// D-Bus object implementing `org.bluez.GattDescriptor1`.
@@ -845,6 +898,20 @@ impl GattDescIface {
     #[zbus(property)]
     fn handle(&self) -> u16 {
         self.state.lock().map(|s| s.handle).unwrap_or(0)
+    }
+
+    /// Defines how the descriptor value can be used.
+    ///
+    /// Possible values: `"read"`, `"write"`, `"encrypt-read"`,
+    /// `"encrypt-write"`, `"encrypt-authenticated-read"`,
+    /// `"encrypt-authenticated-write"`, `"secure-read"`, `"secure-write"`,
+    /// `"authorize"`.
+    #[zbus(property)]
+    fn flags(&self) -> Vec<String> {
+        self.state
+            .lock()
+            .map(|s| s.flags.clone())
+            .unwrap_or_default()
     }
 
     /// Read the descriptor value.
@@ -1409,6 +1476,7 @@ impl BtdGattClient {
         let handle = attr.get_handle();
         let uuid = attr.get_type()?.to_string();
         let desc_path = format!("{}/desc{:04x}", chrc_path, handle);
+        let permissions = attr.get_permissions() as u16;
 
         btd_debug(0, &format!("Exported GATT descriptor: {}", desc_path));
 
@@ -1420,6 +1488,7 @@ impl BtdGattClient {
             gatt: self.gatt.clone(),
             gatt_export: self.gatt_export,
             claimed,
+            flags: descriptor_flags_from_permissions(permissions),
         }));
         self.desc_states.push(Arc::clone(&desc_state));
 

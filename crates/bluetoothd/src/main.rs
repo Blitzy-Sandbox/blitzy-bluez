@@ -70,44 +70,46 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 // Command-line argument structure
 // ---------------------------------------------------------------------------
 
-/// Parsed command-line arguments matching C getopt_long in `src/main.c`.
+/// Parsed command-line arguments matching C `GOptionEntry` in `src/main.c`
+/// lines 1419-1441.
 #[derive(Default)]
 struct CliArgs {
     /// Debug filter string (empty = no debug, "*" = all).
     debug: String,
     /// Run in foreground (do not daemonize).  `-n` flag.
     no_daemon: bool,
-    /// Override plugin directory path.  `-p` flag.
-    plugin_path: Option<String>,
+    /// Comma-separated list of plugins to load.  `-p, --plugin` flag.
+    enable_plugins: Option<String>,
+    /// Comma-separated list of plugins to never load.  `-P, --noplugin` flag.
+    disable_plugins: Option<String>,
     /// Enable SDP Unix socket compatibility mode.  `-C` flag.
     compat: bool,
     /// Enable experimental features.  `-E` flag.
     experimental: bool,
+    /// Enable D-Bus testing interfaces.  `-T, --testing` flag.
+    testing: bool,
     /// Kernel experimental feature UUIDs.  `-K` flag (repeatable).
     kernel_experimental: Vec<String>,
-    /// Comma-separated list of plugins to enable.  `-P` flag (enable).
-    enable_plugins: Option<String>,
-    /// Comma-separated list of plugins to disable.  `-P` flag (disable).
-    disable_plugins: Option<String>,
     /// Override configuration file path.  `-f` flag.
     configfile: Option<String>,
-    /// Print version and exit.  `--version` flag.
+    /// Print version and exit.  `-v, --version` flag.
     show_version: bool,
 }
 
-/// Parse command-line arguments using manual iteration, replicating the C
-/// `getopt_long` behavior from `src/main.c` lines 1396-1467.
+/// Parse command-line arguments, replicating the C `GOptionEntry` table in
+/// `src/main.c` lines 1419-1441.
 ///
-/// Supported flags:
+/// Supported flags (matching C original exactly):
 ///   -d [filter]   Enable debug mode, optionally filtered
 ///   -n            Run in foreground
-///   -p <path>     Plugin directory path
+///   -p <plugins>  Comma-separated plugin enable list
+///   -P <plugins>  Comma-separated plugin disable list
+///   -f <file>     Configuration file path
 ///   -C            Enable SDP compatibility (Unix socket)
 ///   -E            Enable experimental features
+///   -T            Enable D-Bus testing interfaces
 ///   -K <uuid>     Kernel experimental UUID (repeatable)
-///   -P <plugins>  Plugin enable/disable list
-///   -f <file>     Configuration file path
-///   --version     Print version and exit
+///   -v, --version Print version and exit
 ///   -h, --help    Print usage and exit
 fn parse_args() -> CliArgs {
     let mut args = CliArgs::default();
@@ -128,12 +130,23 @@ fn parse_args() -> CliArgs {
             "-n" | "--nodetach" => {
                 args.no_daemon = true;
             }
-            "-p" | "--plugin-path" => {
+            "-p" | "--plugin" => {
+                // Comma-separated list of plugins to load (C: option_plugin)
                 i += 1;
                 if i < argv.len() {
-                    args.plugin_path = Some(argv[i].clone());
+                    args.enable_plugins = Some(argv[i].clone());
                 } else {
                     eprintln!("Error: -p requires an argument");
+                    process::exit(1);
+                }
+            }
+            "-P" | "--noplugin" => {
+                // Comma-separated list of plugins to never load (C: option_noplugin)
+                i += 1;
+                if i < argv.len() {
+                    args.disable_plugins = Some(argv[i].clone());
+                } else {
+                    eprintln!("Error: -P requires an argument");
                     process::exit(1);
                 }
             }
@@ -143,28 +156,15 @@ fn parse_args() -> CliArgs {
             "-E" | "--experimental" => {
                 args.experimental = true;
             }
+            "-T" | "--testing" => {
+                args.testing = true;
+            }
             "-K" | "--kernel" => {
                 i += 1;
                 if i < argv.len() {
                     args.kernel_experimental.push(argv[i].clone());
                 } else {
                     eprintln!("Error: -K requires a UUID argument");
-                    process::exit(1);
-                }
-            }
-            "-P" | "--plugin" => {
-                i += 1;
-                if i < argv.len() {
-                    let val = &argv[i];
-                    // If the value starts with '-', it disables those plugins;
-                    // otherwise it enables only those plugins.
-                    if let Some(stripped) = val.strip_prefix('-') {
-                        args.disable_plugins = Some(stripped.to_owned());
-                    } else {
-                        args.enable_plugins = Some(val.clone());
-                    }
-                } else {
-                    eprintln!("Error: -P requires an argument");
                     process::exit(1);
                 }
             }
@@ -177,7 +177,7 @@ fn parse_args() -> CliArgs {
                     process::exit(1);
                 }
             }
-            "--version" => {
+            "-v" | "--version" => {
                 args.show_version = true;
             }
             "-h" | "--help" => {
@@ -207,12 +207,13 @@ fn print_usage() {
     eprintln!("  -d, --debug [filter]   Enable debug output (optional filter)");
     eprintln!("  -n, --nodetach         Run in foreground");
     eprintln!("  -f, --configfile FILE  Configuration file path");
-    eprintln!("  -p, --plugin-path DIR  Plugin directory path");
-    eprintln!("  -P, --plugin LIST      Enable/disable plugins (prefix with - to disable)");
+    eprintln!("  -p, --plugin PLUGINS   Load only these plugins (comma separated)");
+    eprintln!("  -P, --noplugin PLUGINS Never load these plugins (comma separated)");
     eprintln!("  -C, --compat           Enable SDP Unix socket compatibility");
     eprintln!("  -E, --experimental     Enable experimental features");
+    eprintln!("  -T, --testing          Enable D-Bus testing interfaces");
     eprintln!("  -K, --kernel UUID      Enable kernel experimental feature UUID");
-    eprintln!("  --version              Print version information");
+    eprintln!("  -v, --version          Print version information");
     eprintln!("  -h, --help             Show this help");
 }
 
@@ -325,6 +326,9 @@ async fn main() {
 
     // Apply CLI experimental/testing flags
     if cli.experimental {
+        opts.experimental = true;
+    }
+    if cli.testing {
         opts.testing = true;
     }
 
@@ -706,9 +710,9 @@ mod tests {
         let args = CliArgs::default();
         assert!(args.debug.is_empty());
         assert!(!args.no_daemon);
-        assert!(args.plugin_path.is_none());
         assert!(!args.compat);
         assert!(!args.experimental);
+        assert!(!args.testing);
         assert!(args.kernel_experimental.is_empty());
         assert!(args.enable_plugins.is_none());
         assert!(args.disable_plugins.is_none());

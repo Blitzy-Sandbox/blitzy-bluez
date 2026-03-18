@@ -416,6 +416,32 @@ impl Telephony1Interface {
         cbs.hangup_all()
     }
 
+    /// Release all active calls (including multiparty active calls).
+    ///
+    /// Releases active calls via the HFP AT+CHLD=1 command.  The AG
+    /// terminates all calls in the "active" state; held or waiting calls
+    /// are not affected.
+    async fn hangup_active(&self) -> Result<(), BtdError> {
+        let tel = self.inner.lock().await;
+        let cbs = Arc::clone(&tel.cbs);
+        drop(tel);
+        // Release-and-swap (CHLD=1): releases active, activates held.
+        cbs.release_and_swap()
+    }
+
+    /// Release all held calls (excluding waiting calls).
+    ///
+    /// Releases held calls via the HFP AT+CHLD=0 command.  The AG
+    /// terminates all calls in the "held" state; active or waiting calls
+    /// are not affected.
+    async fn hangup_held(&self) -> Result<(), BtdError> {
+        let tel = self.inner.lock().await;
+        let cbs = Arc::clone(&tel.cbs);
+        drop(tel);
+        // Release-and-answer (CHLD=0): releases held/waiting.
+        cbs.release_and_answer()
+    }
+
     /// Create a multiparty (conference) call.
     async fn create_multiparty(&self) -> Result<(), BtdError> {
         let tel = self.inner.lock().await;

@@ -1761,6 +1761,23 @@ impl Media1Interface {
         }
         Vec::new()
     }
+
+    /// SupportedFeatures property — list of adapter-level media features.
+    ///
+    /// Currently reports `TxTimestamping` when SO_TIMESTAMPING is available
+    /// on the HCI socket.
+    #[zbus(property)]
+    async fn supported_features(&self) -> Vec<String> {
+        let adapters = ADAPTERS.lock().await;
+        let path = adapter_get_path(&self.adapter).await;
+        for ma_arc in adapters.iter() {
+            let mut ma = ma_arc.lock().await;
+            if ma.path == path {
+                return compute_supported_features(&mut ma).await;
+            }
+        }
+        Vec::new()
+    }
 }
 
 /// Convert zbus OwnedValue properties to the internal PropertyValue map.

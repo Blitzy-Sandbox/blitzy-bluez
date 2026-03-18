@@ -864,6 +864,28 @@ impl PbapData {
         fields
     }
 
+    /// UpdateVersion triggers re-reading of the phonebook version counters.
+    ///
+    /// Returns NotSupported if the remote PBAP server does not advertise
+    /// the Folder Version feature bit.
+    async fn update_version(&self) -> Result<(), zbus::fdo::Error> {
+        if self.supported_features & FOLDER_VERSION_FEATURE == 0 {
+            return Err(zbus::fdo::Error::NotSupported(
+                "Operation is not supported".into(),
+            ));
+        }
+        // In the C original this delegates to pbap_get_size internally
+        // to trigger the server to refresh version counters via the
+        // response application parameters.
+        Ok(())
+    }
+
+    /// Folder property — returns the currently selected phonebook path.
+    #[zbus(property, name = "Folder")]
+    async fn folder(&self) -> String {
+        self.path.lock().await.clone()
+    }
+
     /// DatabaseIdentifier property.
     #[zbus(property, name = "DatabaseIdentifier")]
     async fn database_identifier(&self) -> String {

@@ -190,6 +190,10 @@ pub struct TransportInner {
     pub registered: bool,
     /// The adapter for this transport (tokio mutex, matching crate convention).
     pub adapter: Option<Arc<tokio::sync::Mutex<BtdAdapter>>>,
+    /// Audio location bitmask (LE Audio).
+    pub location: u32,
+    /// LTV metadata blob (LE Audio).
+    pub metadata: Vec<u8>,
 }
 
 // ===================================================================
@@ -422,6 +426,37 @@ impl MediaTransport1 {
         Ok(())
     }
 
+    /// Select this transport for streaming.
+    ///
+    /// Selects this transport as the preferred endpoint for the associated
+    /// device.  Only applicable when multiple transports share the same
+    /// endpoint.  Returns `NotSupported` if the profile layer does not
+    /// support selection.
+    async fn select(
+        &self,
+        #[zbus(header)] _header: zbus::message::Header<'_>,
+    ) -> Result<(), BtdError> {
+        let guard = self.transport.lock().await;
+        debug!("Select {}", guard.inner.path);
+        // Selection is profile-specific; the default response is
+        // NotSupported, matching the C implementation for non-BAP
+        // transports.
+        Err(BtdError::not_supported())
+    }
+
+    /// Unselect (deselect) this transport.
+    ///
+    /// Reverts a previous `Select()` call.  Returns `NotSupported` if the
+    /// profile layer does not support selection.
+    async fn unselect(
+        &self,
+        #[zbus(header)] _header: zbus::message::Header<'_>,
+    ) -> Result<(), BtdError> {
+        let guard = self.transport.lock().await;
+        debug!("Unselect {}", guard.inner.path);
+        Err(BtdError::not_supported())
+    }
+
     // -- Properties ------------------------------------------------------
 
     #[zbus(property)]
@@ -452,6 +487,27 @@ impl MediaTransport1 {
     #[zbus(property)]
     async fn delay(&self) -> u16 {
         self.transport.lock().await.inner.delay.unwrap_or(0)
+    }
+
+    #[zbus(property)]
+    async fn set_delay(&self, value: u16) -> Result<(), zbus::Error> {
+        let mut g = self.transport.lock().await;
+        let t = &mut *g;
+        t.ops
+            .set_delay(&mut t.inner, value)
+            .map_err(zbus::Error::from)
+    }
+
+    /// Audio location bitmask (LE Audio transports).
+    #[zbus(property)]
+    async fn location(&self) -> u32 {
+        self.transport.lock().await.inner.location
+    }
+
+    /// LTV metadata blob (LE Audio transports).
+    #[zbus(property, name = "Metadata")]
+    async fn metadata(&self) -> Vec<u8> {
+        self.transport.lock().await.inner.metadata.clone()
     }
 
     #[zbus(property)]
@@ -1269,6 +1325,8 @@ pub async fn media_transport_create(
         broadcasting: false,
         registered: false,
         adapter: Some(adapter_arc),
+        location: 0,
+        metadata: Vec::new(),
     };
 
     ops.init(&mut inner);

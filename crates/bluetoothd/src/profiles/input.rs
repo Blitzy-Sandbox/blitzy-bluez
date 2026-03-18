@@ -37,6 +37,7 @@ use bluez_shared::sys::hidp::{
 use bluez_shared::util::uuid::{BtUuid, HID_UUID};
 
 use crate::adapter::BtdAdapter;
+use crate::dbus_common::btd_get_dbus_connection;
 use crate::device::BtdDevice;
 use crate::error::BtdError;
 use crate::log::{btd_error, btd_info, btd_warn};
@@ -1421,6 +1422,43 @@ struct HogDevice {
 }
 
 // ===========================================================================
+// org.bluez.Input1 D-Bus interface (from profiles/input/device.c)
+// ===========================================================================
+
+/// D-Bus interface `org.bluez.Input1` exposed on each HID device object path.
+///
+/// This interface has no methods and no signals — only the read-only
+/// `ReconnectMode` string property, matching the C original exactly.
+pub struct Input1Interface {
+    /// Object path of the device this interface is attached to.
+    device_path: String,
+}
+
+impl Input1Interface {
+    pub fn new(device_path: String) -> Self {
+        Self { device_path }
+    }
+}
+
+#[zbus::interface(name = "org.bluez.Input1")]
+impl Input1Interface {
+    /// The reconnect mode of this HID device.
+    ///
+    /// Possible values: `"none"`, `"device"`, `"host"`, `"any"`.
+    #[zbus(property)]
+    fn reconnect_mode(&self) -> String {
+        let devices = INPUT_DEVICES.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(idev_arc) = devices.get(&self.device_path) {
+            let idev = idev_arc.lock().unwrap_or_else(|e| e.into_inner());
+            idev.reconnect_mode_str().to_owned()
+        } else {
+            // Fallback — device may have been removed but D-Bus object lingers
+            "none".to_owned()
+        }
+    }
+}
+
+// ===========================================================================
 // Profile lifecycle callbacks
 // ===========================================================================
 
@@ -1439,8 +1477,18 @@ fn input_device_probe(device: &Arc<TokioMutex<BtdDevice>>) -> Result<(), BtdErro
 
         let idev = InputDevice::new(path.clone(), src, dst, &config);
 
-        let mut devices = INPUT_DEVICES.lock().unwrap_or_else(|e| e.into_inner());
-        devices.insert(path.clone(), Arc::new(StdMutex::new(idev)));
+        // Lock, insert, then drop the guard before any `.await`.
+        {
+            let mut devices = INPUT_DEVICES.lock().unwrap_or_else(|e| e.into_inner());
+            devices.insert(path.clone(), Arc::new(StdMutex::new(idev)));
+        }
+
+        // Register the org.bluez.Input1 interface on the device's D-Bus object
+        let conn = btd_get_dbus_connection().clone();
+        let input1_iface = Input1Interface::new(path.clone());
+        if let Err(e) = conn.object_server().at(path.as_str(), input1_iface).await {
+            error!("input: failed to register Input1 on {}: {}", path, e);
+        }
 
         debug!("input: device probed: {}", path);
     });
@@ -1456,11 +1504,19 @@ fn input_device_remove(device: &Arc<TokioMutex<BtdDevice>>) {
             d.path.clone()
         };
 
-        let mut devices = INPUT_DEVICES.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some(idev_arc) = devices.remove(&path) {
-            let mut idev = idev_arc.lock().unwrap_or_else(|e| e.into_inner());
-            idev.disconnect_device();
+        // Lock, do synchronous work, then drop the guard before any `.await`.
+        {
+            let mut devices = INPUT_DEVICES.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(idev_arc) = devices.remove(&path) {
+                let mut idev = idev_arc.lock().unwrap_or_else(|e| e.into_inner());
+                idev.disconnect_device();
+            }
         }
+
+        // Unregister the org.bluez.Input1 interface from D-Bus
+        let conn = btd_get_dbus_connection().clone();
+        let _ = conn.object_server().remove::<Input1Interface, _>(path.as_str()).await;
+
         debug!("input: device removed: {}", path);
     });
 }

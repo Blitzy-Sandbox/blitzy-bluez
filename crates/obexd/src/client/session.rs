@@ -863,6 +863,7 @@ impl ObcSession {
             session_channel: self.channel,
             session_psm: self.psm,
             session_target: self.target_name.clone(),
+            session_root: String::new(),
         };
 
         let path = self.path.clone();
@@ -1418,6 +1419,8 @@ struct Session1Interface {
     session_psm: u16,
     /// Target/service name.
     session_target: String,
+    /// Root path (server-side OBEX root folder).
+    session_root: String,
 }
 
 #[zbus::interface(name = "org.bluez.obex.Session1")]
@@ -1450,6 +1453,12 @@ impl Session1Interface {
     #[zbus(property)]
     fn target(&self) -> &str {
         &self.session_target
+    }
+
+    /// Read-only property: Root path.
+    #[zbus(property)]
+    fn root(&self) -> &str {
+        &self.session_root
     }
 
     /// Retrieves the remote device's capabilities document.

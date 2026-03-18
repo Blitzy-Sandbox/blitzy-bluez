@@ -1433,6 +1433,17 @@ impl Adapter1Interface {
         let adapter = self.inner.lock().await;
         adapter.version
     }
+
+    /// Whether the adapter is connectable (accepting incoming connections).
+    ///
+    /// This read-only property reflects the current connectable state as
+    /// reported by the kernel Management API (matching C `src/adapter.c`
+    /// `Connectable` property).
+    #[zbus(property)]
+    async fn connectable(&self) -> bool {
+        let adapter = self.inner.lock().await;
+        adapter.has_setting(MgmtSettings::CONNECTABLE.bits())
+    }
 }
 
 // ===========================================================================

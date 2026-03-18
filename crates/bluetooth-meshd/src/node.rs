@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU16, AtomicU32, AtomicU64, O
 use std::sync::{Arc, Mutex, OnceLock};
 
 use tracing::{debug, error, info, warn};
-use zbus::zvariant::Value;
+use zbus::zvariant::{OwnedValue, Value};
 
 use crate::agent::{MeshAgent, mesh_agent_create, mesh_agent_remove};
 use crate::appkey::{appkey_key_init, appkey_net_idx};
@@ -27,9 +27,9 @@ use crate::keyring::{
     KeyringNetKey, keyring_get_app_key, keyring_get_net_key, keyring_put_net_key,
 };
 use crate::mesh::{
-    APP_IDX_DEV_LOCAL, APP_IDX_DEV_REMOTE, DEFAULT_TTL, FEATURE_FRIEND, FEATURE_LPN, FEATURE_PROXY,
-    FEATURE_RELAY, KEY_REFRESH_PHASE_NONE, KEY_REFRESH_PHASE_TWO, MESH_MODE_DISABLED,
-    MESH_MODE_ENABLED, OP_APPKEY_ADD, OP_APPKEY_UPDATE, OP_NETKEY_ADD, OP_NETKEY_UPDATE,
+    APP_IDX_DEV_LOCAL, APP_IDX_DEV_REMOTE, DEFAULT_TTL, KEY_REFRESH_PHASE_NONE,
+    KEY_REFRESH_PHASE_TWO, MESH_MODE_DISABLED,
+    MESH_MODE_ENABLED, MESH_MODE_UNSUPPORTED, OP_APPKEY_ADD, OP_APPKEY_UPDATE, OP_NETKEY_ADD, OP_NETKEY_UPDATE,
     PROV_FLAG_IVU, PROV_FLAG_KR, UNASSIGNED_ADDRESS, is_unassigned, mesh_friendship_supported,
     mesh_get_crpl, mesh_get_storage_dir, mesh_relay_supported,
 };
@@ -40,7 +40,7 @@ use crate::model::{
 use crate::net::{MeshNet, TTL_MASK};
 use crate::provisioning::MeshProvNodeInfo;
 use crate::rpl::rpl_init;
-use crate::util::{create_dir, hex2str};
+use crate::util::{create_dir, get_timestamp_secs, hex2str};
 
 // =========================================================================
 // Constants
@@ -1610,26 +1610,59 @@ impl NodeInterface {
 
     // ── Properties ──────────────────────────────────────────────
 
-    /// Node features bitmask.
+    /// Node features as a dict of string→boolean (D-Bus type `a{sv}`).
+    ///
+    /// Keys included only when the mode is supported (≠ `MESH_MODE_UNSUPPORTED`):
+    ///   - `"Relay"` — relay mode enabled/disabled
+    ///   - `"Proxy"` — proxy mode enabled/disabled
+    ///   - `"Friend"` — friend mode enabled/disabled
+    ///   - `"LowPower"` — low-power node mode enabled/disabled
     #[zbus(property)]
-    pub fn features(&self) -> u16 {
+    pub fn features(&self) -> HashMap<String, OwnedValue> {
         let modes = self.node.modes.lock().unwrap();
-        let mut features: u16 = 0;
+        let mut dict = HashMap::new();
 
-        if modes.relay == MESH_MODE_ENABLED {
-            features |= FEATURE_RELAY;
+        if modes.relay != MESH_MODE_UNSUPPORTED {
+            dict.insert(
+                "Relay".to_owned(),
+                OwnedValue::try_from(Value::Bool(modes.relay == MESH_MODE_ENABLED))
+                    .unwrap(),
+            );
         }
-        if modes.proxy == MESH_MODE_ENABLED {
-            features |= FEATURE_PROXY;
+        if modes.proxy != MESH_MODE_UNSUPPORTED {
+            dict.insert(
+                "Proxy".to_owned(),
+                OwnedValue::try_from(Value::Bool(modes.proxy == MESH_MODE_ENABLED))
+                    .unwrap(),
+            );
         }
-        if modes.friend == MESH_MODE_ENABLED {
-            features |= FEATURE_FRIEND;
-        }
-        if self.node.lpn_mode.load(Ordering::Relaxed) == MESH_MODE_ENABLED {
-            features |= FEATURE_LPN;
+        if modes.friend != MESH_MODE_UNSUPPORTED {
+            dict.insert(
+                "Friend".to_owned(),
+                OwnedValue::try_from(Value::Bool(modes.friend == MESH_MODE_ENABLED))
+                    .unwrap(),
+            );
         }
 
-        features
+        let lpn = self.node.lpn_mode.load(Ordering::Relaxed);
+        if lpn != MESH_MODE_UNSUPPORTED {
+            dict.insert(
+                "LowPower".to_owned(),
+                OwnedValue::try_from(Value::Bool(lpn == MESH_MODE_ENABLED))
+                    .unwrap(),
+            );
+        }
+
+        dict
+    }
+
+    /// Seconds since the last mesh message was heard by this node.
+    #[zbus(property)]
+    pub fn seconds_since_last_heard(&self) -> u32 {
+        let net = self.node.net.lock().unwrap();
+        let now = get_timestamp_secs();
+        let instant = net.get_instant();
+        now.saturating_sub(instant)
     }
 
     /// Whether Secure Network Beaconing is enabled.

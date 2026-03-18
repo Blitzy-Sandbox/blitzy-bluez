@@ -519,8 +519,9 @@ pub struct BtdOpts {
     pub fast_conn: bool,
     /// Refresh discovery enabled. Default: true.
     pub refresh_discovery: bool,
-    /// Experimental mode enabled.
-    // Note: C field name is `experimental`.
+    /// Experimental interfaces enabled.  `-E, --experimental` flag.
+    pub experimental: bool,
+    /// Testing interfaces enabled.  `-T, --testing` flag.
     pub testing: bool,
     /// Filter discoverable devices. Default: true.
     pub filter_discoverable: bool,
@@ -595,6 +596,7 @@ impl Default for BtdOpts {
             debug_keys: false,
             fast_conn: false,
             refresh_discovery: true,
+            experimental: false,
             testing: false,
             filter_discoverable: true,
             kernel: Vec::new(),
@@ -954,15 +956,7 @@ fn parse_general(config: &Ini, opts: &mut BtdOpts) {
     parse_secure_conns(config, opts);
 
     if let Some(v) = get_config_bool(config, "General", "Experimental") {
-        // Note: stored in the testing field since the C struct has both
-        // `experimental` and `testing` fields; the Experimental key maps
-        // to the `experimental` field in C — but the schema exposes it
-        // as a separate concept. We handle this by conditionally setting
-        // the `testing` field based on the `Testing` key below.
-        // The Experimental key here is handled by the kernel experimental
-        // UUID parsing, and by setting a separate in-memory flag.
-        // For the Rust BtdOpts, we keep it consistent with the schema.
-        let _ = v; // Experimental sets the experimental flag, handled separately
+        opts.experimental = v;
     }
 
     if let Some(v) = get_config_bool(config, "General", "Testing") {
@@ -2318,6 +2312,7 @@ TemporaryTimeout = 15
 NameResolving = false
 DebugKeys = true
 RefreshDiscovery = false
+Experimental = true
 Testing = true
 FilterDiscoverable = false
 RemoteNameRequestRetryDelay = 600
@@ -2380,6 +2375,7 @@ ReconnectAttempts = 5
         assert!(!opts.name_resolv);
         assert!(opts.debug_keys);
         assert!(!opts.refresh_discovery);
+        assert!(opts.experimental);
         assert!(opts.testing);
         assert!(!opts.filter_discoverable);
         assert_eq!(opts.name_request_retry_delay, 600);

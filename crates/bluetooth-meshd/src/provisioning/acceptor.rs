@@ -17,7 +17,7 @@ use std::sync::Arc;
 use rand::RngCore;
 use tokio::sync::Mutex;
 use tokio::task::JoinHandle;
-use tracing::{debug, error, info};
+use tracing::{debug, error};
 
 use crate::agent::{
     MeshAgent, MeshAgentProvCaps, mesh_agent_display_number, mesh_agent_display_string,
@@ -26,6 +26,7 @@ use crate::agent::{
 };
 use crate::crypto;
 use crate::mesh::{self, BEACON_TYPE_UNPROVISIONED, BT_AD_MESH_PROV};
+use crate::models::register_nppi_acceptor;
 use crate::provisioning::pb_adv;
 use crate::provisioning::{
     AUTH_METHOD_INPUT, AUTH_METHOD_NO_OOB, AUTH_METHOD_OUTPUT, AUTH_METHOD_STATIC, ConfInput,
@@ -873,11 +874,23 @@ pub async fn acceptor_start(
         }
     } else {
         // Device Key Refresh procedure — NPPI transport (TRANSPORT_NPPI).
-        // NPPI registration requires remprv-server support which is not yet
-        // available in this build.
+        //
+        // When no UUID is supplied the provisioning session is a device-key
+        // refresh via NPPI (Node Provisioning Protocol Interface).  The
+        // acceptor registers its open/close/rx/ack callbacks with the
+        // Remote Provisioning Server which will relay PDUs over the mesh
+        // network instead of a PB-ADV bearer.
+        //
+        // Mirrors C prov-acceptor.c lines 810-815:
+        //   prov->transport = TRANSPORT_NPPI;
+        //   if (!register_nppi_acceptor(open, close, rx, ack, prov))
+        //       return false;
         acceptor.transport = TRANSPORT_NPPI;
-        info!("NPPI acceptor registration not yet implemented");
-        return false;
+
+        if !register_nppi_prov_acceptor() {
+            acceptor_free_inner(&mut Some(acceptor));
+            return false;
+        }
     }
 
     *guard = Some(acceptor);
@@ -934,6 +947,59 @@ fn register_pb_adv_acceptor(uuid: &[u8; 16]) -> bool {
     });
 
     pb_adv::pb_adv_reg(false, open_cb, close_cb, rx_cb, ack_cb, uuid, 0)
+}
+
+// ---------------------------------------------------------------------------
+// NPPI callback registration
+// ---------------------------------------------------------------------------
+
+/// Register the acceptor's callbacks with the Remote Provisioning Server
+/// for an NPPI (Node Provisioning Protocol Interface) session.
+///
+/// This mirrors the PB-ADV registration pattern: four callback closures
+/// (open/close/rx/ack) are constructed that bridge bearer events into the
+/// async acceptor state machine, then handed to the Remote Provisioning
+/// Server via [`register_nppi_acceptor`].
+///
+/// Mirrors C prov-acceptor.c lines 810-815:
+///   `register_nppi_acceptor(acp_prov_open, acp_prov_close, acp_prov_rx, acp_prov_ack, prov)`
+fn register_nppi_prov_acceptor() -> bool {
+    // Construct the callback closures that bridge from the Remote
+    // Provisioning Server into our async acceptor state machine.
+    // Identical signatures to the PB-ADV callbacks.
+    let open_cb: ProvOpenCb =
+        Box::new(|_user_data: usize, trans_tx: ProvTransTx, trans_data: usize, transport: u8| {
+            let rt = tokio::runtime::Handle::current();
+            rt.spawn(async move {
+                handle_prov_open(trans_tx, trans_data, transport).await;
+            });
+        });
+
+    let close_cb: ProvCloseCb = Box::new(|_user_data: usize, reason: u8| {
+        let rt = tokio::runtime::Handle::current();
+        rt.spawn(async move {
+            handle_prov_close(reason).await;
+        });
+    });
+
+    let rx_cb: ProvRxCb = Box::new(|_user_data: usize, data: &[u8]| {
+        let data_owned = data.to_vec();
+        let rt = tokio::runtime::Handle::current();
+        rt.spawn(async move {
+            handle_prov_rx(&data_owned).await;
+        });
+    });
+
+    let ack_cb: ProvAckCb = Box::new(|_user_data: usize, msg_num: u8| {
+        let rt = tokio::runtime::Handle::current();
+        rt.spawn(async move {
+            handle_prov_ack(msg_num).await;
+        });
+    });
+
+    // The user_data value 0 is used since there is only one acceptor at
+    // a time (same convention as the PB-ADV registration).
+    register_nppi_acceptor(open_cb, close_cb, rx_cb, ack_cb, 0)
 }
 
 /// Called by the PB-ADV bearer when the provisioning link is opened.
@@ -1361,5 +1427,111 @@ async fn handle_input_oob() {
                 prov_send(p, &fail_msg);
             }
         }
+    }
+}
+
+// ===========================================================================
+// Unit tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// When no Remote Provisioning session is active (the global `RPB_PROV`
+    /// is `None`), `register_nppi_prov_acceptor()` must return `false`
+    /// because the RP server has no state to store the callbacks.
+    #[test]
+    fn nppi_registration_fails_without_rp_session() {
+        // No setup required — RPB_PROV defaults to None in test context.
+        let result = register_nppi_prov_acceptor();
+        assert!(
+            !result,
+            "register_nppi_prov_acceptor must return false when no RP session is active"
+        );
+    }
+
+    /// Verify that the transport type constant used by the NPPI path is
+    /// correct and distinct from the PB-ADV constant.
+    #[test]
+    fn transport_nppi_constant() {
+        assert_ne!(
+            TRANSPORT_NPPI, TRANSPORT_PB_ADV,
+            "NPPI and PB-ADV transport constants must differ"
+        );
+    }
+
+    /// Verify that the `MeshProvAcceptor` struct can be created with the
+    /// NPPI transport type, matching the NPPI branch in `acceptor_start`.
+    #[test]
+    fn acceptor_nppi_transport_field() {
+        let acceptor = MeshProvAcceptor {
+            cmplt: None,
+            trans_tx: None,
+            trans_data: 0,
+            ob: VecDeque::new(),
+            agent: None,
+            caller_data: 0,
+            timeout: None,
+            to_secs: 60,
+            out_opcode: PROV_NONE,
+            transport: TRANSPORT_NPPI,
+            material: 0,
+            expected: PROV_INVITE,
+            previous: -1,
+            failed: false,
+            conf_inputs: ConfInput::default(),
+            calc_key: [0u8; 16],
+            salt: [0u8; 16],
+            confirm: [0u8; 16],
+            s_key: [0u8; 16],
+            s_nonce: [0u8; 13],
+            private_key: [0u8; 32],
+            secret: [0u8; 32],
+            rand_auth_workspace: [0u8; 48],
+        };
+        assert_eq!(acceptor.transport, TRANSPORT_NPPI);
+    }
+
+    /// Verify `acceptor_free_inner` safely handles an already-empty state.
+    #[test]
+    fn acceptor_free_inner_noop_on_none() {
+        let mut state: Option<MeshProvAcceptor> = None;
+        acceptor_free_inner(&mut state);
+        assert!(state.is_none());
+    }
+
+    /// `acceptor_free_inner` should clear the session and cancel the
+    /// timeout when called on a populated `Some` value.
+    #[test]
+    fn acceptor_free_inner_clears_session() {
+        let acceptor = MeshProvAcceptor {
+            cmplt: None,
+            trans_tx: None,
+            trans_data: 0,
+            ob: VecDeque::new(),
+            agent: None,
+            caller_data: 0,
+            timeout: None,
+            to_secs: 30,
+            out_opcode: PROV_NONE,
+            transport: TRANSPORT_PB_ADV,
+            material: 0,
+            expected: PROV_INVITE,
+            previous: -1,
+            failed: false,
+            conf_inputs: ConfInput::default(),
+            calc_key: [0u8; 16],
+            salt: [0u8; 16],
+            confirm: [0u8; 16],
+            s_key: [0u8; 16],
+            s_nonce: [0u8; 13],
+            private_key: [0u8; 32],
+            secret: [0u8; 32],
+            rand_auth_workspace: [0u8; 48],
+        };
+        let mut state = Some(acceptor);
+        acceptor_free_inner(&mut state);
+        assert!(state.is_none(), "acceptor_free_inner must clear the session");
     }
 }

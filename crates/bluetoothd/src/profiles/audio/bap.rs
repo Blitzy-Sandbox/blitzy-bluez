@@ -24,6 +24,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 use zbus::zvariant::{OwnedValue, Value};
 
+use bluez_shared::att::transport::BtAtt;
 use bluez_shared::audio::bap::{
     BapPacQos, BapQos, BapStreamState, BapType, BapUcastQos, BtBap, BtBapPac, BtBapStream,
     bt_bap_new, bt_bap_register, bt_bap_unregister,
@@ -1821,6 +1822,31 @@ pub fn bap_init() -> Result<(), Box<dyn std::error::Error>> {
 /// Unregisters profiles and cleans up all sessions.
 ///
 /// Corresponds to C `bap_exit()`.
+/// Find an ATT transport from any active BAP session on the given adapter.
+///
+/// Iterates the global BAP session list and returns the first ATT
+/// transport whose session belongs to the specified adapter path.
+/// Returns `None` when no BAP session with an ATT transport exists for
+/// the adapter.
+///
+/// This is used by the media subsystem to locate an ATT handle for
+/// [`super::media::update_gmap_features_with_att`] during endpoint
+/// feature propagation.
+pub fn bap_find_att_for_adapter(adapter_path: &str) -> Option<Arc<StdMutex<BtAtt>>> {
+    let sessions = SESSIONS.lock().ok()?;
+    for data_arc in sessions.iter() {
+        let d = data_arc.lock().ok()?;
+        if d.adapter_path == adapter_path {
+            if let Some(ref bap) = d.bap {
+                if let Some(att) = bap.get_att() {
+                    return Some(att);
+                }
+            }
+        }
+    }
+    None
+}
+
 pub fn bap_exit() {
     debug!("BAP: shutting down plugin");
 

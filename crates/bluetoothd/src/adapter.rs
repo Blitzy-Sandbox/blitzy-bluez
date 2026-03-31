@@ -56,7 +56,8 @@ use bluez_shared::util::eir::{EirData, eir_parse};
 use bluez_shared::util::uuid::BtUuid;
 
 use crate::agent::{
-    agent_get, agent_request_confirmation, agent_request_passkey, agent_request_pincode,
+    Agent, agent_cancel, agent_get, agent_request_confirmation, agent_request_passkey,
+    agent_request_pincode,
 };
 use crate::config::BtdOpts;
 use crate::device::{AddressType, BtdDevice, device_create_from_storage};
@@ -444,6 +445,18 @@ pub struct ExpPending {
 }
 
 // ===========================================================================
+// Pending authorization tracking
+// ===========================================================================
+
+/// Information stored for each pending authorization so that
+/// [`btd_cancel_authorization`] can locate and cancel the request.
+struct PendingAuthInfo {
+    /// The agent handling this request (if one was available at the time the
+    /// authorization was issued).  Used to send the D-Bus `Cancel` call.
+    agent: Option<Arc<Agent>>,
+}
+
+// ===========================================================================
 // BtdAdapter — Core adapter struct
 // ===========================================================================
 
@@ -515,6 +528,10 @@ pub struct BtdAdapter {
     pub connections: HashSet<BdAddr>,
     pub connect_list: Vec<BdAddr>,
     pub connect_le: Vec<BdAddr>,
+    /// Mapping from active ATT/L2CAP connection file descriptors to the peer
+    /// device address.  Populated when connections are established and cleared
+    /// on disconnect.  Used by `btd_adapter_find_device_by_fd()`.
+    pub fd_device_map: HashMap<i32, BdAddr>,
 
     // ---- Callback registries ----
     pub pin_callbacks: Vec<PinCbEntry>,
@@ -535,6 +552,13 @@ pub struct BtdAdapter {
     // ---- Pending operations ----
     pub exp_pending: Vec<ExpPending>,
     pub initialized: bool,
+
+    // ---- Pending authorization requests ----
+    /// Maps authorization IDs returned by [`btd_request_authorization`] to the
+    /// agent and metadata needed for later cancellation.  Populated in
+    /// `btd_request_authorization` and consumed by `btd_cancel_authorization` /
+    /// `btd_adapter_cancel_service_auth`.
+    pending_auths: HashMap<u32, PendingAuthInfo>,
 
     // ---- MGMT socket ----
     pub mgmt: Option<Arc<MgmtSocket>>,
@@ -672,6 +696,7 @@ impl BtdAdapter {
             connections: HashSet::new(),
             connect_list: Vec::new(),
             connect_le: Vec::new(),
+            fd_device_map: HashMap::new(),
             pin_callbacks: Vec::new(),
             msd_callbacks: Vec::new(),
             disconnect_callbacks: Vec::new(),
@@ -682,6 +707,7 @@ impl BtdAdapter {
             is_default: false,
             exp_pending: Vec::new(),
             initialized: false,
+            pending_auths: HashMap::new(),
             mgmt: Some(mgmt),
             event_task: None,
             storage_dir,
@@ -852,6 +878,7 @@ impl BtdAdapter {
             connections: HashSet::new(),
             connect_list: Vec::new(),
             connect_le: Vec::new(),
+            fd_device_map: HashMap::new(),
             pin_callbacks: Vec::new(),
             msd_callbacks: Vec::new(),
             disconnect_callbacks: Vec::new(),
@@ -862,6 +889,7 @@ impl BtdAdapter {
             is_default: false,
             exp_pending: Vec::new(),
             initialized: false,
+            pending_auths: HashMap::new(),
             mgmt: None,
             event_task: None,
             storage_dir,
@@ -2186,13 +2214,41 @@ pub async fn btd_adapter_find_device_by_path(
     None
 }
 
-/// Find a device by file descriptor (placeholder — requires device.rs wiring).
+/// Find a device by its active ATT/L2CAP connection file descriptor.
+///
+/// The adapter maintains an internal `fd_device_map` populated by
+/// [`btd_adapter_register_connection_fd`] when connections are established
+/// and cleared by [`btd_adapter_unregister_connection_fd`] on disconnect.
+/// Returns `Some(BdAddr)` when a mapping exists for `fd`, `None` otherwise.
 pub async fn btd_adapter_find_device_by_fd(
-    _adapter: &Arc<Mutex<BtdAdapter>>,
-    _fd: i32,
+    adapter: &Arc<Mutex<BtdAdapter>>,
+    fd: i32,
 ) -> Option<BdAddr> {
-    // Requires device.rs connection tracking — not yet wired.
-    None
+    let a = adapter.lock().await;
+    a.fd_device_map.get(&fd).copied()
+}
+
+/// Register an active connection file descriptor mapping to a device address.
+///
+/// Called when an ATT/L2CAP connection is established to associate the socket
+/// fd with the remote peer's address.  Must be paired with a corresponding
+/// [`btd_adapter_unregister_connection_fd`] call on disconnect.
+pub async fn btd_adapter_register_connection_fd(
+    adapter: &Arc<Mutex<BtdAdapter>>,
+    fd: i32,
+    addr: &BdAddr,
+) {
+    let mut a = adapter.lock().await;
+    a.fd_device_map.insert(fd, *addr);
+}
+
+/// Unregister a connection file descriptor from the adapter's FD-device map.
+///
+/// Called on disconnect to clean up the mapping.  No-op if `fd` is not in the
+/// map.
+pub async fn btd_adapter_unregister_connection_fd(adapter: &Arc<Mutex<BtdAdapter>>, fd: i32) {
+    let mut a = adapter.lock().await;
+    a.fd_device_map.remove(&fd);
 }
 
 /// Get or create a device entry for a given address.
@@ -2735,14 +2791,26 @@ pub async fn device_resolved_drivers(adapter: &Arc<Mutex<BtdAdapter>>, addr: &Bd
 // ===========================================================================
 
 /// Request authorization for a service access.
+///
+/// Allocates a unique authorization ID, records the current default agent
+/// (if any) so that the request can be cancelled later via
+/// [`btd_cancel_authorization`], and returns the ID.
+///
+/// In the C original this also dispatches to the agent; here the actual
+/// agent D-Bus call is still handled by the caller's own async flow, but
+/// the mapping from ID → agent is registered for cancellation support.
 pub async fn btd_request_authorization(
-    _adapter: &Arc<Mutex<BtdAdapter>>,
+    adapter: &Arc<Mutex<BtdAdapter>>,
     _addr: &BdAddr,
     _uuid: &str,
 ) -> Result<u32, BtdError> {
-    // Authorization brokerage requires agent.rs integration.
-    // Return a dummy auth ID.
-    Ok(alloc_cb_id() as u32)
+    let auth_id = alloc_cb_id() as u32;
+    let agent = agent_get(None).await;
+    {
+        let mut a = adapter.lock().await;
+        a.pending_auths.insert(auth_id, PendingAuthInfo { agent });
+    }
+    Ok(auth_id)
 }
 
 /// Request authorization configured for cable pairing.
@@ -2755,13 +2823,49 @@ pub async fn btd_request_authorization_cable_configured(
 }
 
 /// Cancel a pending authorization request.
-pub async fn btd_cancel_authorization(_auth_id: u32) {
-    // Agent integration placeholder.
+///
+/// Iterates all adapters to locate the authorization identified by
+/// `auth_id`.  If found, the entry is removed and a D-Bus `Cancel`
+/// message is sent to the agent that was handling the request (if any).
+///
+/// If no pending request matches `auth_id`, this is a silent no-op —
+/// the request may have already completed or been cleaned up.
+pub async fn btd_cancel_authorization(auth_id: u32) {
+    let adapters = ADAPTERS.read().await;
+    for adapter in adapters.iter() {
+        let entry = {
+            let mut a = adapter.lock().await;
+            a.pending_auths.remove(&auth_id)
+        };
+        if let Some(info) = entry {
+            // Send Cancel to the agent if one was associated.
+            if let Some(ref agent) = info.agent {
+                // agent_cancel returns Err(NoPendingRequest) when the
+                // agent has no in-flight request — that is expected and
+                // harmless here.
+                let _ = agent_cancel(agent).await;
+            }
+            return;
+        }
+    }
+    // auth_id not found on any adapter — silent no-op.
 }
 
-/// Cancel a service authorization.
-pub async fn btd_adapter_cancel_service_auth(_adapter: &Arc<Mutex<BtdAdapter>>, _auth_id: u32) {
-    // Agent integration placeholder.
+/// Cancel a service authorization on a specific adapter.
+///
+/// Looks up `auth_id` in the given adapter's pending authorization map.
+/// If found, removes the entry and sends a D-Bus `Cancel` to the
+/// associated agent.  If not found, this is a silent no-op.
+pub async fn btd_adapter_cancel_service_auth(adapter: &Arc<Mutex<BtdAdapter>>, auth_id: u32) {
+    let entry = {
+        let mut a = adapter.lock().await;
+        a.pending_auths.remove(&auth_id)
+    };
+    if let Some(info) = entry {
+        if let Some(ref agent) = info.agent {
+            let _ = agent_cancel(agent).await;
+        }
+    }
 }
 
 // ===========================================================================
@@ -3114,4 +3218,133 @@ pub async fn adapter_bonding_attempt_sync(
     status: u8,
 ) {
     adapter_bonding_attempt(adapter, addr, addr_type, status).await;
+}
+
+// ===========================================================================
+// Tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper to create a test BdAddr from 6 bytes.
+    fn test_addr(b5: u8) -> BdAddr {
+        BdAddr { b: [0x11, 0x22, 0x33, 0x44, 0x55, b5] }
+    }
+
+    #[tokio::test]
+    async fn find_device_by_fd_returns_none_for_unknown() {
+        let adapter = Arc::new(Mutex::new(BtdAdapter::new_for_test(0)));
+        assert!(btd_adapter_find_device_by_fd(&adapter, 42).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn find_device_by_fd_returns_addr_after_registration() {
+        let adapter = Arc::new(Mutex::new(BtdAdapter::new_for_test(0)));
+        let addr = test_addr(0xAA);
+        btd_adapter_register_connection_fd(&adapter, 7, &addr).await;
+        let result = btd_adapter_find_device_by_fd(&adapter, 7).await;
+        assert_eq!(result, Some(addr));
+    }
+
+    #[tokio::test]
+    async fn find_device_by_fd_returns_none_after_unregistration() {
+        let adapter = Arc::new(Mutex::new(BtdAdapter::new_for_test(0)));
+        let addr = test_addr(0xBB);
+        btd_adapter_register_connection_fd(&adapter, 9, &addr).await;
+        btd_adapter_unregister_connection_fd(&adapter, 9).await;
+        assert!(btd_adapter_find_device_by_fd(&adapter, 9).await.is_none());
+    }
+
+    #[tokio::test]
+    async fn find_device_by_fd_multiple_fds() {
+        let adapter = Arc::new(Mutex::new(BtdAdapter::new_for_test(0)));
+        let addr1 = test_addr(0x01);
+        let addr2 = test_addr(0x02);
+        btd_adapter_register_connection_fd(&adapter, 10, &addr1).await;
+        btd_adapter_register_connection_fd(&adapter, 11, &addr2).await;
+        assert_eq!(btd_adapter_find_device_by_fd(&adapter, 10).await, Some(addr1));
+        assert_eq!(btd_adapter_find_device_by_fd(&adapter, 11).await, Some(addr2));
+        // Unregister one — the other should still be found.
+        btd_adapter_unregister_connection_fd(&adapter, 10).await;
+        assert!(btd_adapter_find_device_by_fd(&adapter, 10).await.is_none());
+        assert_eq!(btd_adapter_find_device_by_fd(&adapter, 11).await, Some(addr2));
+    }
+
+    #[tokio::test]
+    async fn unregister_unknown_fd_is_noop() {
+        let adapter = Arc::new(Mutex::new(BtdAdapter::new_for_test(0)));
+        // Should not panic or error.
+        btd_adapter_unregister_connection_fd(&adapter, 999).await;
+    }
+
+    // -----------------------------------------------------------------------
+    // Authorization cancel tests (Stubs 2 & 3)
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn cancel_authorization_noop_for_unknown_id() {
+        // Cancelling an auth_id that was never registered must be a
+        // silent no-op — no panic, no error.
+        btd_cancel_authorization(99999).await;
+    }
+
+    #[tokio::test]
+    async fn cancel_service_auth_noop_for_unknown_id() {
+        let adapter = Arc::new(Mutex::new(BtdAdapter::new_for_test(0)));
+        // Cancelling an auth_id that doesn't exist on this adapter must
+        // be a silent no-op.
+        btd_adapter_cancel_service_auth(&adapter, 99999).await;
+    }
+
+    #[tokio::test]
+    async fn request_authorization_registers_pending_auth() {
+        let adapter = Arc::new(Mutex::new(BtdAdapter::new_for_test(0)));
+        let addr = test_addr(0xCC);
+        let auth_id =
+            btd_request_authorization(&adapter, &addr, "0000110a-0000-1000-8000-00805f9b34fb")
+                .await
+                .expect("request_authorization should succeed");
+        assert_ne!(auth_id, 0);
+        // The auth_id should now exist in the adapter's pending_auths map.
+        let a = adapter.lock().await;
+        assert!(a.pending_auths.contains_key(&auth_id));
+    }
+
+    #[tokio::test]
+    async fn cancel_service_auth_removes_entry() {
+        let adapter = Arc::new(Mutex::new(BtdAdapter::new_for_test(0)));
+        let addr = test_addr(0xDD);
+        let auth_id =
+            btd_request_authorization(&adapter, &addr, "0000110a-0000-1000-8000-00805f9b34fb")
+                .await
+                .expect("request_authorization should succeed");
+        // Verify it was registered.
+        {
+            let a = adapter.lock().await;
+            assert!(a.pending_auths.contains_key(&auth_id));
+        }
+        // Cancel it.
+        btd_adapter_cancel_service_auth(&adapter, auth_id).await;
+        // Verify it was removed.
+        {
+            let a = adapter.lock().await;
+            assert!(!a.pending_auths.contains_key(&auth_id));
+        }
+    }
+
+    #[tokio::test]
+    async fn cancel_service_auth_double_cancel_is_noop() {
+        let adapter = Arc::new(Mutex::new(BtdAdapter::new_for_test(0)));
+        let addr = test_addr(0xEE);
+        let auth_id =
+            btd_request_authorization(&adapter, &addr, "0000110a-0000-1000-8000-00805f9b34fb")
+                .await
+                .expect("request_authorization should succeed");
+        // First cancel removes the entry.
+        btd_adapter_cancel_service_auth(&adapter, auth_id).await;
+        // Second cancel should be a silent no-op.
+        btd_adapter_cancel_service_auth(&adapter, auth_id).await;
+    }
 }

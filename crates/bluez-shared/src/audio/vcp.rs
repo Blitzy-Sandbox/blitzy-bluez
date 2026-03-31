@@ -510,6 +510,11 @@ struct BtVcpInner {
 ///
 /// Replaces `struct bt_vcp` with `bt_vcp_ref`/`bt_vcp_unref` from the C
 /// implementation.
+///
+/// `Clone` is implemented because cloning a `BtVcp` is the Rust equivalent
+/// of `bt_vcp_ref()` in C — it creates a new handle sharing the same
+/// underlying session state via the inner `Arc`.
+#[derive(Clone)]
 pub struct BtVcp {
     inner: Arc<Mutex<BtVcpInner>>,
 }

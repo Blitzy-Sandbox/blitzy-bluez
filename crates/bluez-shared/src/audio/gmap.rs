@@ -422,6 +422,29 @@ impl BtGmap {
         None
     }
 
+    /// Find an existing GMAP session by its local GATT database.
+    ///
+    /// Searches the global session registry for a session whose local
+    /// GATT database is pointer-identical to `db`.  This is the
+    /// database-based counterpart of [`BtGmap::find`] and mirrors the
+    /// pattern used by [`BtTmap::find`] for local service lookup.
+    ///
+    /// Typically used during endpoint registration to update the local
+    /// GMAS service characteristics with aggregated role and feature
+    /// values computed from all registered media endpoints.
+    pub fn find_by_db(db: &GattDb) -> Option<Arc<BtGmap>> {
+        let instances = INSTANCES.lock().unwrap();
+        for gmap in instances.iter() {
+            let inner = gmap.inner.lock().unwrap();
+            if let Some(ref ldb) = inner.ldb {
+                if ldb.ptr_eq(db) {
+                    return Some(Arc::clone(gmap));
+                }
+            }
+        }
+        None
+    }
+
     /// Register the GMAS service in a local GATT database (server-side).
     ///
     /// Creates a new GMAP session with the specified role and per-role
@@ -1100,5 +1123,77 @@ mod tests {
             GmapBgrFeatures::empty(),
         );
         assert!(!result);
+    }
+
+    #[test]
+    fn test_find_by_db_returns_matching_instance() {
+        // Create a GattDb and clone it before handing to add_db (Clone
+        // shares the same inner Arc, so ptr_eq will hold).
+        let db = GattDb::new();
+        let db_clone = db.clone();
+
+        let ok = BtGmap::add_db(
+            db,
+            GmapRole::UGG,
+            GmapUggFeatures::MULTIPLEX,
+            GmapUgtFeatures::empty(),
+            GmapBgsFeatures::empty(),
+            GmapBgrFeatures::empty(),
+        );
+        assert!(ok);
+
+        // find_by_db should locate the instance we just registered.
+        let found = BtGmap::find_by_db(&db_clone);
+        assert!(found.is_some(), "find_by_db must locate the instance registered via add_db");
+
+        let gmap = found.unwrap();
+        assert_eq!(gmap.get_role(), GmapRole::UGG);
+
+        // Cleanup: drain INSTANCES to avoid leaking into other tests.
+        let drained: Vec<Arc<BtGmap>> = {
+            let mut instances = INSTANCES.lock().unwrap();
+            instances.drain(..).collect()
+        };
+        drop(drained);
+    }
+
+    #[test]
+    fn test_find_by_db_returns_none_for_different_db() {
+        // Register a GMAP instance with one database.
+        let db1 = GattDb::new();
+        let ok = BtGmap::add_db(
+            db1,
+            GmapRole::UGT,
+            GmapUggFeatures::empty(),
+            GmapUgtFeatures::SOURCE,
+            GmapBgsFeatures::empty(),
+            GmapBgrFeatures::empty(),
+        );
+        assert!(ok);
+
+        // Search using a completely different GattDb — should not match.
+        let db2 = GattDb::new();
+        let found = BtGmap::find_by_db(&db2);
+        assert!(found.is_none(), "find_by_db must return None for a non-matching database");
+
+        // Cleanup.
+        let drained: Vec<Arc<BtGmap>> = {
+            let mut instances = INSTANCES.lock().unwrap();
+            instances.drain(..).collect()
+        };
+        drop(drained);
+    }
+
+    #[test]
+    fn test_find_by_db_returns_none_when_empty() {
+        // Ensure INSTANCES is empty before the check.
+        {
+            let mut instances = INSTANCES.lock().unwrap();
+            instances.drain(..);
+        }
+
+        let db = GattDb::new();
+        let found = BtGmap::find_by_db(&db);
+        assert!(found.is_none(), "find_by_db must return None when no instances are registered");
     }
 }

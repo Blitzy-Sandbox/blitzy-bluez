@@ -419,6 +419,11 @@ fn vcp_disconnect(
 
 /// Callback invoked when a remote GATT client attaches to the local VCS
 /// server.  Maps the ATT file descriptor to a device and creates a session.
+///
+/// This corresponds to the C `vcp_attached()` function.  The adapter's
+/// FD-to-device mapping (populated by `device.rs` connection tracking) is
+/// used to resolve the ATT socket fd to a `BdAddr`, after which a
+/// `BtdDevice` wrapper and VCP session are created.
 fn vcp_remote_client_attached(vcp: &BtVcp) {
     debug!("VCP: remote client attached");
 
@@ -449,15 +454,31 @@ fn vcp_remote_client_attached(vcp: &BtVcp) {
         }
     };
 
-    // Look up the device by file descriptor via the default adapter.
-    let device = {
+    // Look up the device BdAddr by file descriptor via the default adapter,
+    // and also retrieve the adapter Arc + path for device construction.
+    // This is an async operation bridged into the sync callback context
+    // using `block_in_place`.
+    let device_info: Option<(
+        bluez_shared::sys::bluetooth::BdAddr,
+        Arc<tokio::sync::Mutex<BtdAdapter>>,
+        String,
+    )> = {
         let rt = tokio::runtime::Handle::try_current();
         match rt {
             Ok(handle) => tokio::task::block_in_place(|| {
                 handle.block_on(async {
                     let adapter = btd_adapter_get_default().await;
                     match adapter {
-                        Some(a) => btd_adapter_find_device_by_fd(&a, fd).await,
+                        Some(a) => {
+                            let bdaddr = btd_adapter_find_device_by_fd(&a, fd).await;
+                            match bdaddr {
+                                Some(addr) => {
+                                    let path = adapter_get_path(&a).await;
+                                    Some((addr, a, path))
+                                }
+                                None => None,
+                            }
+                        }
                         None => None,
                     }
                 })
@@ -466,17 +487,30 @@ fn vcp_remote_client_attached(vcp: &BtVcp) {
         }
     };
 
-    if device.is_none() {
-        debug!("VCP: could not find device for fd {}", fd);
-        // This is expected since btd_adapter_find_device_by_fd is a
-        // placeholder returning None.  The session will be created once
-        // the adapter-device FD mapping is fully wired.
-    }
+    let (bdaddr, adapter_arc, adapter_path) = match device_info {
+        Some(info) => info,
+        None => {
+            debug!("VCP: could not find device for fd {}", fd);
+            return;
+        }
+    };
 
-    // In the C original, if device is found, a session is created via
-    // vcp_data_add(vcp, device, NULL).  Since find_device_by_fd is not
-    // yet functional, we log and return.
-    debug!("VCP: remote client attach handling complete");
+    debug!("VCP: resolved fd {} to device {:?}", fd, bdaddr);
+
+    // Create a BtdDevice wrapper for the resolved address.  VCP operates
+    // over LE, so we use LePublic as the default address type.
+    let device =
+        BtdDevice::new(adapter_arc, bdaddr, crate::device::AddressType::LePublic, &adapter_path);
+    let device_arc = Arc::new(tokio::sync::Mutex::new(device));
+
+    // Clone the VCP engine reference into an Arc for session ownership.
+    let vcp_arc = Arc::new(vcp.clone());
+
+    // Store the session — service is None for server-side (remote client)
+    // sessions, matching the C original's vcp_data_add(vcp, device, NULL).
+    vcp_data_add(&vcp_arc, &device_arc, None);
+
+    debug!("VCP: remote client session created for fd {}", fd);
 }
 
 /// Callback invoked when a remote GATT client detaches from the local VCS.
@@ -926,5 +960,77 @@ mod tests {
         // Cleanup.
         vcp_data_remove(&vcp2);
         clear_sessions();
+    }
+
+    // -----------------------------------------------------------------------
+    // vcp_remote_client_attached — session creation via cloned BtVcp
+    // -----------------------------------------------------------------------
+
+    /// Verify that a cloned `BtVcp` wrapped in `Arc` can be used to create
+    /// a session via `vcp_data_add`, exercising the same code path as
+    /// `vcp_remote_client_attached` when a device is resolved from FD lookup.
+    #[test]
+    fn test_vcp_attached_clone_creates_session() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_sessions();
+
+        let gatt_db = GattDb::new();
+        if let Some(vcp) = BtVcp::new(gatt_db, None) {
+            // Simulate what vcp_remote_client_attached does when a device
+            // is found: clone the &BtVcp into an Arc and call vcp_data_add.
+            let vcp_clone = vcp.as_ref().clone();
+            let vcp_arc = Arc::new(vcp_clone);
+
+            let device = make_test_device();
+            vcp_data_add(&vcp_arc, &device, None);
+
+            assert_eq!(session_count(), 1);
+            assert!(has_session_for(&device));
+
+            // Clean up
+            vcp_data_remove(&vcp_arc);
+            assert_eq!(session_count(), 0);
+        }
+    }
+
+    /// Verify that `vcp_remote_client_attached` does not panic when called
+    /// with a BtVcp that has no ATT transport (returns early without session).
+    #[test]
+    fn test_vcp_attached_no_att_returns_early() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_sessions();
+
+        let gatt_db = GattDb::new();
+        if let Some(vcp) = BtVcp::new(gatt_db, None) {
+            // BtVcp created without ATT transport — should bail at
+            // get_att() check without creating a session.
+            vcp_remote_client_attached(&vcp);
+            assert_eq!(session_count(), 0);
+        }
+    }
+
+    /// Verify that the volume API works on a session created from a cloned
+    /// BtVcp, matching the server-side attach flow.
+    #[test]
+    fn test_vcp_attached_clone_session_volume_api() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_sessions();
+
+        let gatt_db = GattDb::new();
+        if let Some(vcp) = BtVcp::new(gatt_db, None) {
+            let vcp_clone = vcp.as_ref().clone();
+            let vcp_arc = Arc::new(vcp_clone);
+
+            let device = make_test_device();
+            vcp_data_add(&vcp_arc, &device, None);
+
+            // Volume query should succeed on the session created from clone.
+            let result = bt_audio_vcp_get_volume(&device);
+            assert!(result.is_ok());
+
+            // Clean up
+            vcp_data_remove(&vcp_arc);
+            clear_sessions();
+        }
     }
 }

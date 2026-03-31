@@ -231,6 +231,11 @@ struct BtMicpInner {
 ///
 /// Replaces `struct bt_micp` with `bt_micp_ref`/`bt_micp_unref` from the C
 /// implementation.
+///
+/// `Clone` is implemented because cloning a `BtMicp` is the Rust equivalent
+/// of `bt_micp_ref()` in C — it creates a new handle sharing the same
+/// underlying session state via the inner `Arc`.
+#[derive(Clone)]
 pub struct BtMicp {
     inner: Arc<Mutex<BtMicpInner>>,
 }

@@ -841,15 +841,26 @@ impl BtdDevice {
     }
 
     /// Attach an ATT transport (after LE connection established).
+    ///
+    /// Registers the ATT file descriptor in the adapter's FD-device map so
+    /// that `btd_adapter_find_device_by_fd()` can resolve this connection
+    /// back to the peer's `BdAddr`.
     pub fn attach_att(&mut self, att: Arc<StdMutex<BtAtt>>) {
         btd_debug(0, &format!("device {}: attaching ATT", self.address));
-        self.att_mtu = {
+        let fd_opt = {
             let g = att.lock().expect("lock");
-            g.get_mtu()
+            self.att_mtu = g.get_mtu();
+            g.get_fd().ok()
         };
         self.att = Some(att);
         if self.db.is_none() {
             self.db = Some(GattDb::new());
+        }
+        // Register the FD → BdAddr mapping on the adapter.
+        if let Some(fd) = fd_opt {
+            if let Ok(mut a) = self.adapter.try_lock() {
+                a.fd_device_map.insert(fd, self.address);
+            }
         }
     }
 
@@ -1025,6 +1036,17 @@ impl BtdDevice {
             _ => {
                 self.le_state.state = BearerState::Disconnected;
                 self.le_state.connected_time = None;
+                // Unregister the ATT FD from the adapter's FD-device map
+                // before dropping the ATT transport.
+                if let Some(ref att) = self.att {
+                    if let Ok(g) = att.lock() {
+                        if let Ok(fd) = g.get_fd() {
+                            if let Ok(mut a) = self.adapter.try_lock() {
+                                a.fd_device_map.remove(&fd);
+                            }
+                        }
+                    }
+                }
                 self.att = None;
                 self.gatt_client = None;
                 self.gatt_server = None;

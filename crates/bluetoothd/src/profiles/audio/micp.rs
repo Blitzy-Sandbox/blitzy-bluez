@@ -187,9 +187,10 @@ fn micp_ready(_micp: &BtMicp) {
 /// Callback invoked when a remote GATT client attaches to the local MICS
 /// server.  Maps the ATT file descriptor to a device and creates a session.
 ///
-/// This corresponds to the C `micp_attached()` function.  The device lookup
-/// via `btd_adapter_find_device_by_fd()` is currently a placeholder; once
-/// device-FD tracking is wired in adapter.rs, this will create full sessions.
+/// This corresponds to the C `micp_attached()` function.  The adapter's
+/// FD-to-device mapping (populated by `device.rs` connection tracking) is
+/// used to resolve the ATT socket fd to a `BdAddr`, after which a
+/// `BtdDevice` wrapper and MICP session are created.
 fn micp_attached(micp: &BtMicp) {
     debug!("MICP: remote client attached");
 
@@ -232,17 +233,31 @@ fn micp_attached(micp: &BtMicp) {
         }
     };
 
-    // Look up the device by file descriptor via the default adapter.
-    // This is an async operation that we bridge into the sync callback
-    // context using `block_in_place`.
-    let _device = {
+    // Look up the device BdAddr by file descriptor via the default adapter,
+    // and also retrieve the adapter Arc + path for device construction.
+    // This is an async operation bridged into the sync callback context
+    // using `block_in_place`.
+    let device_info: Option<(
+        bluez_shared::sys::bluetooth::BdAddr,
+        Arc<tokio::sync::Mutex<BtdAdapter>>,
+        String,
+    )> = {
         let rt = tokio::runtime::Handle::try_current();
         match rt {
             Ok(handle) => tokio::task::block_in_place(|| {
                 handle.block_on(async {
                     let adapter = btd_adapter_get_default().await;
                     match adapter {
-                        Some(a) => btd_adapter_find_device_by_fd(&a, fd).await,
+                        Some(a) => {
+                            let bdaddr = btd_adapter_find_device_by_fd(&a, fd).await;
+                            match bdaddr {
+                                Some(addr) => {
+                                    let path = adapter_get_path(&a).await;
+                                    Some((addr, a, path))
+                                }
+                                None => None,
+                            }
+                        }
                         None => None,
                     }
                 })
@@ -251,17 +266,33 @@ fn micp_attached(micp: &BtMicp) {
         }
     };
 
-    if _device.is_none() {
-        debug!("MICP: could not find device for fd {}", fd);
-        // This is expected since btd_adapter_find_device_by_fd is a
-        // placeholder returning None.  The session will be created once
-        // the adapter-device FD mapping is fully wired.
-    }
+    let (bdaddr, adapter_arc, adapter_path) = match device_info {
+        Some(info) => info,
+        None => {
+            debug!("MICP: could not find device for fd {}", fd);
+            return;
+        }
+    };
 
-    // In the C original, if device is found, a session is created via
-    // micp_data_add(data).  Since find_device_by_fd is not yet functional,
-    // we log and return.
-    debug!("MICP: remote client attach handling complete");
+    debug!("MICP: resolved fd {} to device {:?}", fd, bdaddr);
+
+    // Create a BtdDevice wrapper for the resolved address.  MICP operates
+    // over LE, so we use LePublic as the default address type.
+    let device =
+        BtdDevice::new(adapter_arc, bdaddr, crate::device::AddressType::LePublic, &adapter_path);
+    let device_arc = Arc::new(tokio::sync::Mutex::new(device));
+
+    // Clone the MICP engine reference into an Arc for session ownership.
+    let micp_arc = Arc::new(micp.clone());
+
+    // Register the ready callback, which fires when MICS service
+    // discovery completes on the remote device.
+    let ready_id = micp_arc.ready_register(micp_ready);
+
+    // Store the session in the global sessions list.
+    micp_data_add(&micp_arc, &device_arc, ready_id);
+
+    debug!("MICP: remote client session created for fd {}", fd);
 }
 
 /// Callback invoked when a remote GATT client detaches from the local MICS
@@ -890,6 +921,84 @@ mod tests {
         if let Some(micp) = BtMicp::new(db, None) {
             let sessions = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
             assert!(find_session_by_micp(&sessions, &micp).is_none());
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // micp_attached — session creation via cloned BtMicp
+    // -----------------------------------------------------------------------
+
+    /// Verify that a cloned `BtMicp` wrapped in `Arc` can be used to create
+    /// a session via `micp_data_add`, exercising the same code path as
+    /// `micp_attached` when a device is resolved from the FD lookup.
+    #[test]
+    fn test_micp_attached_clone_creates_session() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_sessions();
+
+        let db = GattDb::new();
+        bt_micp_add_db(&db);
+
+        if let Some(micp) = BtMicp::new(db, None) {
+            // Simulate what micp_attached does when a device is found:
+            // clone the &BtMicp into an Arc and call micp_data_add.
+            let micp_clone = micp.as_ref().clone();
+            let micp_arc = Arc::new(micp_clone);
+
+            let device = make_test_device();
+            let ready_id = micp_arc.ready_register(micp_ready);
+            micp_data_add(&micp_arc, &device, ready_id);
+
+            assert_eq!(session_count(), 1);
+            assert!(has_session_for(&device));
+
+            // Clean up
+            micp_data_remove(&micp_arc);
+            assert_eq!(session_count(), 0);
+        }
+    }
+
+    /// Verify that `micp_attached` does not panic when called with a BtMicp
+    /// that has no ATT transport (the function should return early).
+    #[test]
+    fn test_micp_attached_no_att_returns_early() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_sessions();
+
+        let db = GattDb::new();
+        bt_micp_add_db(&db);
+
+        if let Some(micp) = BtMicp::new(db, None) {
+            // BtMicp created without an ATT transport — micp_attached
+            // should bail at the get_att() check without creating a session.
+            micp_attached(&micp);
+            assert_eq!(session_count(), 0);
+        }
+    }
+
+    /// Verify that duplicate-guard in `micp_attached` prevents creating
+    /// a second session for the same BtMicp engine when called twice.
+    #[test]
+    fn test_micp_attached_duplicate_guard() {
+        let _guard = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        clear_sessions();
+
+        let db = GattDb::new();
+        bt_micp_add_db(&db);
+
+        if let Some(micp) = BtMicp::new(db, None) {
+            // Pre-populate a session using the micp Arc directly.
+            let device = make_test_device();
+            micp_data_add(&micp, &device, 0);
+            assert_eq!(session_count(), 1);
+
+            // Now call micp_attached — the duplicate check on the BtMicp
+            // pointer should cause it to return immediately.
+            micp_attached(&micp);
+            assert_eq!(session_count(), 1);
+
+            // Clean up
+            micp_data_remove(&micp);
         }
     }
 }

@@ -1048,12 +1048,35 @@ async fn update_features(
         tmap.set_role(tmap_role);
     }
 
-    // Update GMAP if we can find it.
-    // BtGmap::find() requires an ATT transport reference. During endpoint
-    // registration we may have an active BAP session whose ATT transport
-    // can be used. This is invoked when a BAP-based endpoint establishes
-    // a connection and provides its ATT transport to the media subsystem.
-    update_gmap_features_if_available(&gatt_db, gmap_role, ugg_feat, ugt_feat, bgs_feat, bgr_feat);
+    // Update the local GMAP instance by locating it via the GATT database.
+    // This mirrors the BtTmap::find(&gatt_db) pattern above and ensures
+    // the local GMAS service characteristics reflect the aggregated
+    // role/features from all registered media endpoints.
+    if let Some(gmap) = BtGmap::find_by_db(&gatt_db) {
+        gmap.set_role(gmap_role);
+        if gmap_role.contains(GmapRole::UGG) {
+            gmap.set_ugg_features(ugg_feat);
+        }
+        if gmap_role.contains(GmapRole::UGT) {
+            gmap.set_ugt_features(ugt_feat);
+        }
+        if gmap_role.contains(GmapRole::BGS) {
+            gmap.set_bgs_features(bgs_feat);
+        }
+        if gmap_role.contains(GmapRole::BGR) {
+            gmap.set_bgr_features(bgr_feat);
+        }
+        debug!("media: updated local GMAP role={:?}", gmap_role);
+    }
+
+    // Additionally, propagate features to any ATT-connected GMAP sessions.
+    // When a BAP unicast stream is active on this adapter, its ATT transport
+    // identifies a client-side GMAP instance that should also reflect the
+    // current endpoint configuration.
+    let adapter_path = adapter_get_path(adapter).await;
+    if let Some(att) = super::bap::bap_find_att_for_adapter(&adapter_path) {
+        update_gmap_features_with_att(&att, gmap_role, ugg_feat, ugt_feat, bgs_feat, bgr_feat);
+    }
 
     debug!("media: aggregate features — tmap={:?} gmap_role={:?}", tmap_role, gmap_role);
 }
@@ -2217,30 +2240,6 @@ pub async fn unregister_application(
 // ===========================================================================
 // GMAP Feature Update Helper
 // ===========================================================================
-
-/// Update GMAP role and per-role features when the GMAP instance is available.
-///
-/// BtGmap::find() requires an ATT transport reference.  This function is a
-/// synchronous placeholder that logs the intended update.  When a BAP-based
-/// endpoint establishes a connection and provides its ATT transport, the
-/// GMAP instance can be looked up and updated.
-fn update_gmap_features_if_available(
-    _gatt_db: &GattDb,
-    gmap_role: GmapRole,
-    ugg_feat: GmapUggFeatures,
-    ugt_feat: GmapUgtFeatures,
-    bgs_feat: GmapBgsFeatures,
-    bgr_feat: GmapBgrFeatures,
-) {
-    // GMAP lookup requires an active ATT transport that is not available from
-    // the GATT database alone.  When a BAP stream is established, the caller
-    // should provide the ATT transport to look up the GMAP instance.
-    // For now, log the intended update for traceability.
-    debug!(
-        "media: GMAP feature update pending — role={:?} ugg={:?} ugt={:?} bgs={:?} bgr={:?}",
-        gmap_role, ugg_feat, ugt_feat, bgs_feat, bgr_feat
-    );
-}
 
 /// Apply GMAP role and feature updates using a known ATT transport.
 ///

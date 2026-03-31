@@ -37,7 +37,12 @@ use bluez_shared::crypto::aes_cmac::{bt_crypto_sef, bt_crypto_sih};
 use bluez_shared::gatt::db::GattDb;
 use bluez_shared::util::ad::{AdData, BT_AD_CSIP_RSI};
 
-use crate::adapter::{BtdAdapter, adapter_get_path, btd_adapter_for_each_device};
+use bluez_shared::sys::bluetooth::BDADDR_LE_PUBLIC;
+use bluez_shared::sys::mgmt::{MGMT_OP_ADD_DEVICE, MGMT_OP_DISCONNECT, MGMT_STATUS_SUCCESS};
+
+use crate::adapter::{
+    BtdAdapter, adapter_get_path, btd_adapter_find_device_by_path, btd_adapter_for_each_device,
+};
 use crate::dbus_common::btd_get_dbus_connection;
 use crate::device::BtdDevice;
 use crate::error::{BtdError, ERROR_INTERFACE};
@@ -221,19 +226,120 @@ impl DeviceSet1Iface {
     /// Disconnect all members of this set.
     ///
     /// Corresponds to `GDBUS_EXPERIMENTAL_ASYNC_METHOD("Disconnect", ...)`.
-    /// The C implementation is a stub (returns NULL / TODO), preserved here.
+    /// Iterates all member devices, resolves each D-Bus path to a
+    /// `BdAddr`, and sends `MGMT_OP_DISCONNECT` to the kernel for each.
+    /// CSIP set members are LE devices, so `BDADDR_LE_PUBLIC` is used
+    /// as the address type for the disconnect command.
     async fn disconnect(&self) -> Result<(), BtdError> {
-        // C original is a TODO stub — preserved as no-op
-        Ok(())
+        let data = self.inner.lock().await;
+        let device_paths = data.devices.clone();
+        let adapter = Arc::clone(&data.adapter);
+        drop(data);
+
+        let mut last_error: Option<BtdError> = None;
+
+        for path in &device_paths {
+            let addr = match btd_adapter_find_device_by_path(&adapter, path).await {
+                Some(a) => a,
+                None => {
+                    debug!("DeviceSet disconnect: device {} not found on adapter", path);
+                    continue;
+                }
+            };
+
+            // Send MGMT_OP_DISCONNECT for this LE device.
+            let a = adapter.lock().await;
+            if !a.powered {
+                return Err(BtdError::not_ready());
+            }
+            let mgmt = match a.mgmt() {
+                Some(m) => m,
+                None => return Err(BtdError::not_ready()),
+            };
+            let idx = a.index;
+            drop(a);
+
+            let mut param = Vec::with_capacity(7);
+            param.extend_from_slice(&addr.b);
+            param.push(BDADDR_LE_PUBLIC);
+
+            match mgmt.send_command(MGMT_OP_DISCONNECT, idx, &param).await {
+                Ok(r) if r.status == MGMT_STATUS_SUCCESS => {}
+                Ok(r) => {
+                    debug!("DeviceSet disconnect {} failed: MGMT status {}", path, r.status);
+                    last_error = Some(BtdError::failed(&format!("Disconnect failed for {path}")));
+                }
+                Err(e) => {
+                    debug!("DeviceSet disconnect {} MGMT error: {}", path, e);
+                    last_error = Some(BtdError::failed(&format!("Disconnect error for {path}")));
+                }
+            }
+        }
+
+        match last_error {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 
     /// Connect all members of this set.
     ///
     /// Corresponds to `GDBUS_EXPERIMENTAL_ASYNC_METHOD("Connect", ...)`.
-    /// The C implementation is a stub (returns NULL / TODO), preserved here.
+    /// Iterates all member devices, resolves each D-Bus path to a
+    /// `BdAddr`, and sends `MGMT_OP_ADD_DEVICE` with
+    /// `ACTION_AUTO_CONNECT` to the kernel for each.  CSIP set members
+    /// are LE devices, so `BDADDR_LE_PUBLIC` is used as the address type.
     async fn connect(&self) -> Result<(), BtdError> {
-        // C original is a TODO stub — preserved as no-op
-        Ok(())
+        let data = self.inner.lock().await;
+        let device_paths = data.devices.clone();
+        let adapter = Arc::clone(&data.adapter);
+        drop(data);
+
+        let mut last_error: Option<BtdError> = None;
+
+        for path in &device_paths {
+            let addr = match btd_adapter_find_device_by_path(&adapter, path).await {
+                Some(a) => a,
+                None => {
+                    debug!("DeviceSet connect: device {} not found on adapter", path);
+                    continue;
+                }
+            };
+
+            // Send MGMT_OP_ADD_DEVICE with ACTION_AUTO_CONNECT for this LE device.
+            let a = adapter.lock().await;
+            if !a.powered {
+                return Err(BtdError::not_ready());
+            }
+            let mgmt = match a.mgmt() {
+                Some(m) => m,
+                None => return Err(BtdError::not_ready()),
+            };
+            let idx = a.index;
+            drop(a);
+
+            let mut param = [0u8; 8];
+            param[..6].copy_from_slice(&addr.b);
+            param[6] = BDADDR_LE_PUBLIC;
+            param[7] = 0x02; // ACTION_AUTO_CONNECT
+
+            match mgmt.send_command(MGMT_OP_ADD_DEVICE, idx, &param).await {
+                Ok(r) if r.status == MGMT_STATUS_SUCCESS => {}
+                Ok(r) => {
+                    debug!("DeviceSet connect {} failed: MGMT status {}", path, r.status);
+                    last_error = Some(BtdError::failed(&format!("Connect failed for {path}")));
+                }
+                Err(e) => {
+                    debug!("DeviceSet connect {} MGMT error: {}", path, e);
+                    last_error = Some(BtdError::failed(&format!("Connect error for {path}")));
+                }
+            }
+        }
+
+        match last_error {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     }
 
     // ---- Properties (experimental) ----
@@ -813,5 +919,108 @@ mod tests {
     #[test]
     fn test_btd_device_set_interface_constant() {
         assert_eq!(BTD_DEVICE_SET_INTERFACE, "org.bluez.DeviceSet1");
+    }
+
+    /// Helper to create a test adapter wrapped in `Arc<TokioMutex<>>`.
+    fn test_adapter() -> Arc<TokioMutex<BtdAdapter>> {
+        Arc::new(TokioMutex::new(BtdAdapter::new_for_test(0)))
+    }
+
+    /// Helper to create a `DeviceSetData` with the given device paths.
+    fn test_set_data(
+        adapter: Arc<TokioMutex<BtdAdapter>>,
+        device_paths: Vec<String>,
+    ) -> Arc<TokioMutex<DeviceSetData>> {
+        Arc::new(TokioMutex::new(DeviceSetData {
+            adapter,
+            adapter_path: "/org/bluez/hci0".to_string(),
+            path: "/org/bluez/hci0/set_test".to_string(),
+            sirk: [0u8; 16],
+            size: 2,
+            auto_connect: true,
+            devices: device_paths,
+        }))
+    }
+
+    #[tokio::test]
+    async fn test_device_set_disconnect_empty_set_is_noop() {
+        let adapter = test_adapter();
+        let inner = test_set_data(adapter, vec![]);
+        let iface = DeviceSet1Iface { inner };
+        // disconnect on an empty set should succeed (no devices to disconnect)
+        let result = iface.disconnect().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_device_set_connect_empty_set_is_noop() {
+        let adapter = test_adapter();
+        let inner = test_set_data(adapter, vec![]);
+        let iface = DeviceSet1Iface { inner };
+        // connect on an empty set should succeed (no devices to connect)
+        let result = iface.connect().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_device_set_disconnect_unknown_paths_skipped() {
+        let adapter = test_adapter();
+        // Paths that do not match any device registered on the adapter
+        let paths = vec![
+            "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF".to_string(),
+            "/org/bluez/hci0/dev_11_22_33_44_55_66".to_string(),
+        ];
+        let inner = test_set_data(adapter, paths);
+        let iface = DeviceSet1Iface { inner };
+        // All paths unknown → skipped gracefully, returns Ok
+        let result = iface.disconnect().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_device_set_connect_unknown_paths_skipped() {
+        let adapter = test_adapter();
+        let paths = vec!["/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF".to_string()];
+        let inner = test_set_data(adapter, paths);
+        let iface = DeviceSet1Iface { inner };
+        // Path unknown → skipped gracefully, returns Ok
+        let result = iface.connect().await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_device_set_disconnect_known_device_no_mgmt() {
+        use bluez_shared::sys::bluetooth::BdAddr;
+        let adapter = test_adapter();
+        let addr = BdAddr { b: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF] };
+        // Register a device in the adapter so path lookup succeeds.
+        // ba2str() reverses bytes: b[5]:b[4]:...:b[0] = FF:EE:DD:CC:BB:AA
+        {
+            let mut a = adapter.lock().await;
+            a.devices.insert(addr, ());
+        }
+        let path = format!("/org/bluez/hci0/dev_{}", addr.ba2str().replace(':', "_"));
+        let inner = test_set_data(Arc::clone(&adapter), vec![path]);
+        let iface = DeviceSet1Iface { inner };
+        // Device known but adapter is not powered → NotReady
+        let result = iface.disconnect().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_device_set_connect_known_device_no_mgmt() {
+        use bluez_shared::sys::bluetooth::BdAddr;
+        let adapter = test_adapter();
+        let addr = BdAddr { b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66] };
+        {
+            let mut a = adapter.lock().await;
+            a.devices.insert(addr, ());
+        }
+        let path = format!("/org/bluez/hci0/dev_{}", addr.ba2str().replace(':', "_"));
+        let inner = test_set_data(Arc::clone(&adapter), vec![path]);
+        let iface = DeviceSet1Iface { inner };
+        // Device known but adapter is not powered → NotReady
+        let result = iface.connect().await;
+        assert!(result.is_err());
     }
 }

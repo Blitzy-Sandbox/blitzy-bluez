@@ -1,0 +1,30 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: blitzy-bluez
+  description: "Complete C-to-Rust rewrite of BlueZ v5.86 userspace Bluetooth stack"
+  tags:
+    - rust
+    - c
+    - infrastructure
+    - in-progress
+  labels:
+    blitzy.com/status: in-progress
+    blitzy.com/language: rust
+  annotations:
+    github.com/project-slug: Blitzy-Sandbox/blitzy-bluez
+    backstage.io/source-location: url:https://github.com/Blitzy-Sandbox/blitzy-bluez/tree/master/
+  links:
+    - url: https://github.com/Blitzy-Sandbox/blitzy-bluez
+      title: GitHub Repository
+    - url: https://github.com/Blitzy-Sandbox/blitzy-bluez/pull/2
+      title: "PR #2: C-to-Rust Rewrite of BlueZ Stack"
+      icon: github
+    - url: https://github.com/Blitzy-Sandbox/blitzy-bluez/tree/master/blitzy/documentation
+      title: Blitzy Documentation
+      icon: docs
+spec:
+  type: service
+  lifecycle: experimental
+  owner: blitzy-sandbox
+  system: blitzy-sandbox-projects

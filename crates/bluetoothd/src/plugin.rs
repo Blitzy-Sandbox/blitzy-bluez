@@ -532,10 +532,10 @@ fn add_external_plugin(
 
     // --- Call the external init function ---
     let init_fn = desc.init.expect("init presence validated above");
-    // SAFETY: The `init` function pointer was resolved from a valid symbol in
-    // the loaded shared library. The library was loaded with RTLD_NOW semantics
-    // (all symbols resolved immediately by `libloading::Library::new`), and the
-    // `Library` handle is kept alive so the function code remains mapped.
+    // The `init` function pointer was resolved from a valid symbol in the loaded
+    // shared library, and the `Library` handle is kept alive so code remains mapped.
+    // SAFETY: Function pointer resolved via RTLD_NOW from a validated `.so` library;
+    // library handle is not dropped, so the function code remains valid and callable.
     let ret = unsafe { init_fn() };
     if ret != 0 {
         let neg_ret = -ret;
@@ -654,11 +654,11 @@ fn external_plugin_init(
 
         let plugin_path = plugin_dir.join(file_name_str);
 
-        // SAFETY: We are loading a shared library from the trusted plugin
-        // directory (PLUGINDIR, default `/usr/lib/bluetooth/plugins`). The
-        // path has been validated as a `.so` file without `lib` prefix.
-        // `Library::new()` uses RTLD_NOW semantics (resolving all symbols
-        // immediately), matching the C code's `dlopen(filename, RTLD_NOW)`.
+        // We are loading a shared library from the trusted plugin directory
+        // (PLUGINDIR, default `/usr/lib/bluetooth/plugins`). The path has been
+        // validated as a `.so` file without `lib` prefix.
+        // SAFETY: Plugin path validated as existing `.so` file; `Library::new()`
+        // uses RTLD_NOW semantics matching the C code's `dlopen(filename, RTLD_NOW)`.
         let library = match unsafe { libloading::Library::new(&plugin_path) } {
             Ok(lib) => lib,
             Err(e) => {
@@ -686,11 +686,11 @@ fn external_plugin_init(
                 }
             };
 
-        // SAFETY: The symbol was successfully resolved and `desc_ptr` is a
-        // `*const ExternalPluginDesc` pointing to static data in the loaded
-        // library. The library remains loaded (handle not dropped), so the
-        // pointer is valid for the duration of this scope. We dereference
-        // to obtain a shared reference for reading.
+        // The symbol was successfully resolved and `desc_ptr` is a
+        // `*const ExternalPluginDesc` pointing to static data in the loaded library.
+        // SAFETY: Library remains loaded (handle not dropped), so the pointer is
+        // valid for the duration of this scope; we dereference to obtain a shared
+        // reference for reading.
         let desc: &ExternalPluginDesc = unsafe { &**desc_ptr };
 
         // Extract plugin name for enable/disable filtering.

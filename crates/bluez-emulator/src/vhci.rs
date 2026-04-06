@@ -201,10 +201,9 @@ impl Vhci {
 
         let req = VhciCreateReq { pkt_type: HCI_VENDOR_PKT, opcode };
 
-        // SAFETY: Writing the packed VhciCreateReq struct (2 bytes) to the
-        // /dev/vhci fd. The fd is valid (checked above), the pointer and
-        // length are derived from the repr(C,packed) struct, matching the
-        // kernel's expected wire format exactly.
+        // Write the packed VhciCreateReq struct (2 bytes) to /dev/vhci.
+        // SAFETY: The fd is valid (checked above); pointer and length derive
+        // from the repr(C,packed) struct matching the kernel wire format.
         let written = unsafe {
             libc::write(
                 raw_fd,
@@ -225,10 +224,9 @@ impl Vhci {
 
         let mut rsp = VhciCreateRsp { pkt_type: 0, opcode: 0, index: 0 };
 
-        // SAFETY: Reading the packed VhciCreateRsp struct (4 bytes) from
-        // /dev/vhci. The kernel writes exactly sizeof(VhciCreateRsp) bytes
-        // as the synchronous response to the create request. The buffer is
-        // properly sized and aligned (repr(C,packed)).
+        // Read the packed VhciCreateRsp struct (4 bytes) from /dev/vhci —
+        // the kernel writes exactly sizeof(VhciCreateRsp) bytes synchronously.
+        // SAFETY: Buffer is properly sized repr(C,packed); fd is valid.
         let read_len = unsafe {
             libc::read(
                 raw_fd,
@@ -551,10 +549,10 @@ fn spawn_read_task(
     fd: Arc<OwnedFd>,
     btdev: Arc<Mutex<BtDev>>,
 ) -> Result<JoinHandle<()>, VhciError> {
-    // SAFETY: dup() on a valid fd returns a new fd that references the same
-    // open file description. The original fd remains valid and owned by the
-    // Arc<OwnedFd> in the Vhci struct. The dup'd fd is wrapped in OwnedFd
-    // for automatic cleanup on drop.
+    // Duplicate the VHCI fd for the reader task — the original stays in the
+    // Arc<OwnedFd> owned by the Vhci struct.
+    // SAFETY: dup() on a valid fd returns a new fd referencing the same open
+    // file description; the dup'd fd is wrapped in OwnedFd for cleanup.
     let dup_raw = unsafe { libc::dup(fd.as_fd().as_raw_fd()) };
     if dup_raw < 0 {
         return Err(VhciError::Dup(std::io::Error::last_os_error()));

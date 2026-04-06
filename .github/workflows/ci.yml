@@ -1,24 +1,66 @@
 name: CI
 
-on: [pull_request]
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
 
 jobs:
-  ci:
+  fmt:
+    name: Rustfmt
     runs-on: ubuntu-latest
-    name: CI for Pull Request
     steps:
-    - name: Checkout the source code
-      uses: actions/checkout@v3
-      with:
-        path: src/src
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
 
-    - name: CI
-      uses: bluez/action-ci@main
-      with:
-        task: ci
-        base_folder: src
-        space: user
-        github_token: ${{ secrets.ACTION_TOKEN }}
-        email_token: ${{ secrets.EMAIL_TOKEN }}
-        patchwork_token: ${{ secrets.PATCHWORK_TOKEN }}
-        patchwork_user: ${{ secrets.PATCHWORK_USER }}
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev libudev-dev libasound2-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+      - name: Run clippy
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: cargo clippy --workspace -- -D clippy::all
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev libudev-dev libasound2-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+      - name: Build workspace
+        env:
+          RUSTFLAGS: "-D warnings"
+        run: cargo build --workspace --release
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libdbus-1-dev libudev-dev libasound2-dev pkg-config
+      - uses: Swatinem/rust-cache@v2
+      - name: Run tests
+        run: cargo test --workspace --no-fail-fast

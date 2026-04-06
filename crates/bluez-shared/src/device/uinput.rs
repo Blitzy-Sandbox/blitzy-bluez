@@ -346,11 +346,10 @@ impl BtUinput {
         // Construct the uinput_user_dev setup structure.
         let dev = self.build_uinput_user_dev();
 
-        // Write the device setup structure to /dev/uinput.
-        // SAFETY: Writing the uinput_user_dev struct to /dev/uinput is the
-        // standard device configuration step. The struct is #[repr(C)] and
-        // matches the kernel's expected layout exactly. The pointer is valid
-        // for the size of the struct.
+        // Write the device setup structure to /dev/uinput — the standard
+        // device configuration step for virtual input devices.
+        // SAFETY: The struct is #[repr(C)] matching the kernel layout exactly;
+        // the pointer is valid for the size of the struct.
         let dev_bytes: &[u8] = unsafe {
             std::slice::from_raw_parts(
                 (&dev as *const UinputUserDev).cast::<u8>(),
@@ -409,10 +408,10 @@ impl BtUinput {
                 Err(_) => continue,
             };
 
-            // SAFETY: /dev/uinput (and its alternative paths) are well-defined
-            // Linux kernel character devices for creating virtual input devices.
-            // O_WRONLY|O_NONBLOCK is the standard access mode. The returned fd
-            // is immediately wrapped in OwnedFd for automatic cleanup.
+            // /dev/uinput (and its alternative paths) are well-defined Linux
+            // kernel character devices for creating virtual input devices.
+            // SAFETY: O_WRONLY|O_NONBLOCK is the standard access mode; the
+            // returned fd is immediately wrapped in OwnedFd for cleanup.
             let raw_fd = unsafe { libc::open(c_path.as_ptr(), flags) };
             if raw_fd >= 0 {
                 // SAFETY: raw_fd is a valid, newly opened file descriptor
@@ -459,10 +458,10 @@ impl BtUinput {
         let event =
             InputEvent { time: libc::timeval { tv_sec: 0, tv_usec: 0 }, event_type, code, value };
 
-        // SAFETY: Writing a struct input_event to /dev/uinput is the standard
-        // mechanism for injecting input events into the Linux input subsystem.
-        // The struct is #[repr(C)] and matches the kernel's expected layout.
-        // The fd is a valid /dev/uinput descriptor held in OwnedFd.
+        // Writing a struct input_event to /dev/uinput is the standard mechanism
+        // for injecting input events into the Linux input subsystem.
+        // SAFETY: The struct is #[repr(C)] matching the kernel layout; the fd
+        // is a valid /dev/uinput descriptor held in OwnedFd.
         let event_bytes: &[u8] = unsafe {
             std::slice::from_raw_parts(
                 (&event as *const InputEvent).cast::<u8>(),
@@ -500,10 +499,10 @@ impl Drop for BtUinput {
         if let Some(ref fd) = self.fd {
             self.debug("Destroying uinput device");
 
-            // SAFETY: UI_DEV_DESTROY is a well-defined ioctl for /dev/uinput
-            // that destroys the previously created virtual input device. The fd
-            // is valid because it's held in OwnedFd. Errors are intentionally
-            // ignored (matching C behavior where ioctl return is unchecked).
+            // UI_DEV_DESTROY is a well-defined ioctl for /dev/uinput that
+            // destroys the previously created virtual input device.
+            // SAFETY: The fd is valid (held in OwnedFd). Errors are
+            // intentionally ignored (matching C behavior).
             unsafe {
                 let _ = ui_dev_destroy_ioctl(fd.as_raw_fd());
             }

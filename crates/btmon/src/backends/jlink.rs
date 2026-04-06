@@ -218,6 +218,8 @@ pub fn jlink_init() -> io::Result<()> {
         *unsafe { lib.get::<JlinkEmuSelectByUsbSn>(b"JLINK_EMU_SelectByUSBSN\0") }
             .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
 
+    // SAFETY: Function pointer resolved from libloading::Library::get() with correct
+    // J-Link symbol name; pointer type matches the documented JLINK_Open C API signature.
     let open: JlinkOpen = *unsafe { lib.get::<JlinkOpen>(b"JLINK_Open\0") }
         .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
 
@@ -226,10 +228,13 @@ pub fn jlink_init() -> io::Result<()> {
         *unsafe { lib.get::<JlinkExecCommand>(b"JLINK_ExecCommand\0") }
             .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
 
+    // SAFETY: Function pointer resolved from libloading::Library::get() with correct
+    // J-Link symbol name; pointer type matches the documented JLINK_TIF_Select C signature.
     let tif_select: JlinkTifSelect = *unsafe { lib.get::<JlinkTifSelect>(b"JLINK_TIF_Select\0") }
-        // SAFETY: Loading a known symbol from a validated shared library.
         .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
 
+    // SAFETY: Function pointer resolved from libloading::Library::get() with correct
+    // J-Link symbol name; pointer type matches the documented JLINK_SetSpeed C signature.
     let setspeed: JlinkSetSpeed = *unsafe { lib.get::<JlinkSetSpeed>(b"JLINK_SetSpeed\0") }
         .map_err(|_| io::Error::from_raw_os_error(libc::EIO))?;
 
@@ -351,10 +356,10 @@ pub fn jlink_connect(cfg: &str) -> io::Result<()> {
     // Select the target device via the "device=<name>" J-Link command.
     let device_cmd = CString::new(format!("device={device}"))
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+    // The cast from *const to *mut is required by the C API signature but the
+    // function does not modify the input string. Output buffer is NULL with size 0.
     // SAFETY: Calling resolved J-Link symbol with a valid null-terminated C string
-    // as input. The cast from *const to *mut is required by the C API signature
-    // but the function does not modify the input string. Output buffer is NULL
-    // with size 0 (no output requested).
+    // as input; parameters match the J-Link C API signature for JLINK_ExecCommand.
     let ret = unsafe { (jlink.execcommand)(device_cmd.as_ptr() as *mut c_char, null_mut(), 0) };
     if ret < 0 {
         eprintln!("Failed to select target device");
@@ -486,10 +491,11 @@ pub fn jlink_start_rtt(cfg: Option<&str>) -> io::Result<()> {
     let count = loop {
         sleep(Duration::from_micros(100));
         let mut rtt_dir: c_int = RTT_DIRECTION_UP;
-        // SAFETY: Calling resolved J-Link symbol with RTT_CONTROL_GET_NUM_BUF.
         // The data pointer points to a valid stack-allocated c_int holding the
         // direction value. The function reads this integer and returns the buffer
         // count (>= 0) on success or < 0 while still searching.
+        // SAFETY: Calling resolved J-Link symbol with RTT_CONTROL_GET_NUM_BUF;
+        // parameters match the JLINK_RTTERMINAL_Control C API signature.
         let n = unsafe {
             (jlink.rtterminal_control)(
                 RTT_CONTROL_GET_NUM_BUF,
@@ -513,10 +519,11 @@ pub fn jlink_start_rtt(cfg: Option<&str>) -> io::Result<()> {
             flags: 0,
         };
 
-        // SAFETY: Calling resolved J-Link symbol with RTT_CONTROL_GET_DESC.
         // The data pointer points to a valid stack-allocated RttDesc (#[repr(C)])
         // with index and direction initialised. The function populates the
         // remaining fields (name, size, flags) and returns < 0 on failure.
+        // SAFETY: Calling resolved J-Link symbol with RTT_CONTROL_GET_DESC;
+        // parameters match the JLINK_RTTERMINAL_Control C API signature.
         let ret = unsafe {
             (jlink.rtterminal_control)(
                 RTT_CONTROL_GET_DESC,
@@ -564,11 +571,11 @@ pub fn jlink_rtt_read(buf: &mut [u8]) -> io::Result<usize> {
     let jlink = get_jlink()?;
     let desc = RTT_DESC.lock().unwrap();
 
-    // SAFETY: Calling resolved J-Link symbol with a valid buffer index
-    // (set by a prior successful jlink_start_rtt call), a valid mutable
-    // output buffer pointer, and the buffer length as size. The function
-    // writes at most `size` bytes to the buffer and returns the number
-    // of bytes actually read (>= 0) or < 0 on failure.
+    // The function writes at most `size` bytes to the buffer and returns the
+    // number of bytes actually read (>= 0) or < 0 on failure.
+    // SAFETY: Calling resolved J-Link symbol with a valid buffer index (set by a
+    // prior successful jlink_start_rtt call), a valid mutable output buffer pointer,
+    // and the buffer length as size; parameters match JLINK_RTTERMINAL_Read C API.
     let ret = unsafe {
         (jlink.rtterminal_read)(
             desc.index as c_int,

@@ -234,10 +234,9 @@ impl BtLog {
             hci_channel: HCI_CHANNEL_LOGGING,
         };
 
-        // SAFETY: `raw_fd` is a valid open file descriptor from socket().
-        // `&addr` points to a correctly populated `sockaddr_hci` whose lifetime
-        // exceeds the bind() call.  `size_of::<sockaddr_hci>()` (6) matches
-        // the kernel's expected address length.
+        // Bind the HCI logging socket to the HCI_CHANNEL_LOGGING address.
+        // SAFETY: `raw_fd` is a valid fd from socket(); `&addr` is a
+        // correctly populated `sockaddr_hci` matching the kernel layout.
         let ret = unsafe {
             libc::bind(
                 raw_fd,
@@ -353,10 +352,9 @@ impl BtLog {
         // Transmit the datagram
         let raw_fd = self.fd.as_ref().expect("fd must be Some after open()").as_raw_fd();
 
-        // SAFETY: `raw_fd` is a valid fd from our cached OwnedFd.  `&msg`
-        // points to a correctly populated msghdr whose iov entries reference
-        // valid memory (hdr_bytes, label_buf, and caller's IoSlice buffers)
-        // that outlives this call.  Flags are 0 (no special options).
+        // Send the log message via the HCI logging channel msghdr.
+        // SAFETY: `raw_fd` is a valid fd from our cached OwnedFd; `&msg`
+        // references valid iov memory that outlives this call.
         let ret = unsafe { libc::sendmsg(raw_fd, &msg, 0) };
 
         if ret < 0 {

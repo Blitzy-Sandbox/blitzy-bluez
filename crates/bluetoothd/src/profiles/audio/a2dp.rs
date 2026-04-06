@@ -1621,12 +1621,12 @@ impl BtdAdapterDriver for A2dpAdapterDriver {
         "a2dp"
     }
 
-    fn probe(&self, _adapter: &BtdAdapter) -> Result<(), BtdError> {
+    fn probe(&self, _adapter: Arc<Mutex<BtdAdapter>>) -> Result<(), BtdError> {
         debug!("a2dp: adapter probe");
         Ok(())
     }
 
-    fn remove(&self, _adapter: &BtdAdapter) {
+    fn remove(&self, _adapter: Arc<Mutex<BtdAdapter>>) {
         debug!("a2dp: adapter remove");
     }
 }

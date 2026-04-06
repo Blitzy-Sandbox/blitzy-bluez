@@ -15,6 +15,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex as StdMutex, OnceLock};
 
+use tokio::sync::Mutex as TokioMutex;
+
 use ini::Ini;
 use tracing::{debug, error, info, warn};
 use zbus::Connection;
@@ -626,11 +628,14 @@ impl BtdAdapterDriver for AdminPolicyDriver {
     /// without re-creating.
     ///
     /// Replaces C `admin_policy_adapter_probe`.
-    fn probe(&self, adapter: &BtdAdapter) -> Result<(), BtdError> {
-        let adapter_index = adapter.index;
-        let adapter_path = adapter.path.clone();
-        let adapter_address = adapter.address.ba2str();
-        let storage_dir = adapter.storage_dir.clone();
+    fn probe(&self, adapter: Arc<TokioMutex<BtdAdapter>>) -> Result<(), BtdError> {
+        let (adapter_index, adapter_path, adapter_address, storage_dir) =
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(async {
+                    let a = adapter.lock().await;
+                    (a.index, a.path.clone(), a.address.ba2str(), a.storage_dir.clone())
+                })
+            });
 
         btd_debug(adapter_index, &format!("Admin policy probe for adapter {}", adapter_path));
 
@@ -684,9 +689,10 @@ impl BtdAdapterDriver for AdminPolicyDriver {
             return Err(e);
         }
 
-        // If we loaded a non-empty allowlist, apply it to the adapter via a
-        // spawned task (we cannot call the async function directly from probe
-        // because the adapter tokio Mutex is held by the caller).
+        // If we loaded a non-empty allowlist, apply it to the adapter.
+        // The caller no longer holds any tokio Mutex on the adapter, so we
+        // can safely use block_in_place + block_on to perform the async
+        // allowlist update.
         if has_loaded_uuids {
             let idx = adapter_index;
             let uuids = loaded_uuids;
@@ -710,9 +716,13 @@ impl BtdAdapterDriver for AdminPolicyDriver {
     /// interfaces, and clears the module-level policy state.
     ///
     /// Replaces C `admin_policy_remove`.
-    fn remove(&self, adapter: &BtdAdapter) {
-        let adapter_index = adapter.index;
-        let adapter_path = adapter.path.clone();
+    fn remove(&self, adapter: Arc<TokioMutex<BtdAdapter>>) {
+        let (adapter_index, adapter_path) = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let a = adapter.lock().await;
+                (a.index, a.path.clone())
+            })
+        });
 
         btd_debug(adapter_index, &format!("Admin policy remove for adapter {}", adapter_path));
 
@@ -751,10 +761,14 @@ impl BtdAdapterDriver for AdminPolicyDriver {
     /// and computes the initial `AffectedByPolicy` value.
     ///
     /// Replaces C `admin_policy_device_added`.
-    fn device_resolved(&self, adapter: &BtdAdapter, addr: &BdAddr) {
-        let adapter_index = adapter.index;
-        let adapter_path = &adapter.path;
-        let device_path = device_dbus_path(adapter_path, addr);
+    fn device_resolved(&self, adapter: Arc<TokioMutex<BtdAdapter>>, addr: &BdAddr) {
+        let (adapter_index, adapter_path) = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let a = adapter.lock().await;
+                (a.index, a.path.clone())
+            })
+        });
+        let device_path = device_dbus_path(&adapter_path, addr);
 
         btd_debug(adapter_index, &format!("Admin policy device resolved: {}", device_path));
 
@@ -794,9 +808,14 @@ impl BtdAdapterDriver for AdminPolicyDriver {
     /// device from tracking.
     ///
     /// Replaces C `admin_policy_device_removed`.
-    fn device_removed(&self, adapter: &BtdAdapter, addr: &BdAddr) {
-        let adapter_index = adapter.index;
-        let device_path = device_dbus_path(&adapter.path, addr);
+    fn device_removed(&self, adapter: Arc<TokioMutex<BtdAdapter>>, addr: &BdAddr) {
+        let (adapter_index, adapter_path) = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                let a = adapter.lock().await;
+                (a.index, a.path.clone())
+            })
+        });
+        let device_path = device_dbus_path(&adapter_path, addr);
 
         btd_debug(adapter_index, &format!("Admin policy device removed: {}", device_path));
 

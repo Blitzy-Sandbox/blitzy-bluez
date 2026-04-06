@@ -26,8 +26,10 @@ use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
 use std::sync::Arc;
 
+use futures::stream::StreamExt;
 use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{trace, warn};
 use zbus::zvariant::{ObjectPath, Value};
 
@@ -40,12 +42,13 @@ use bluez_shared::sys::mgmt::{
     MGMT_EV_AUTH_FAILED, MGMT_EV_CLASS_OF_DEV_CHANGED, MGMT_EV_CONNECT_FAILED,
     MGMT_EV_DEVICE_BLOCKED, MGMT_EV_DEVICE_CONNECTED, MGMT_EV_DEVICE_DISCONNECTED,
     MGMT_EV_DEVICE_FOUND, MGMT_EV_DEVICE_UNBLOCKED, MGMT_EV_DEVICE_UNPAIRED, MGMT_EV_DISCOVERING,
-    MGMT_EV_EXP_FEATURE_CHANGE, MGMT_EV_LOCAL_NAME_CHANGED, MGMT_EV_NEW_CONN_PARAM,
-    MGMT_EV_NEW_CSRK, MGMT_EV_NEW_IRK, MGMT_EV_NEW_LINK_KEY, MGMT_EV_NEW_LONG_TERM_KEY,
-    MGMT_EV_NEW_SETTINGS, MGMT_EV_PIN_CODE_REQUEST, MGMT_EV_USER_CONFIRM_REQUEST,
-    MGMT_EV_USER_PASSKEY_REQUEST, MGMT_OP_ADD_DEVICE, MGMT_OP_ADD_UUID, MGMT_OP_DISCONNECT,
-    MGMT_OP_PAIR_DEVICE, MGMT_OP_PIN_CODE_NEG_REPLY, MGMT_OP_PIN_CODE_REPLY, MGMT_OP_REMOVE_UUID,
-    MGMT_OP_SET_BONDABLE, MGMT_OP_SET_DEV_CLASS, MGMT_OP_SET_DISCOVERABLE,
+    MGMT_EV_EXP_FEATURE_CHANGE, MGMT_EV_INDEX_ADDED, MGMT_EV_INDEX_REMOVED,
+    MGMT_EV_LOCAL_NAME_CHANGED, MGMT_EV_NEW_CONN_PARAM, MGMT_EV_NEW_CSRK, MGMT_EV_NEW_IRK,
+    MGMT_EV_NEW_LINK_KEY, MGMT_EV_NEW_LONG_TERM_KEY, MGMT_EV_NEW_SETTINGS,
+    MGMT_EV_PIN_CODE_REQUEST, MGMT_EV_USER_CONFIRM_REQUEST, MGMT_EV_USER_PASSKEY_REQUEST,
+    MGMT_INDEX_NONE, MGMT_OP_ADD_DEVICE, MGMT_OP_ADD_UUID, MGMT_OP_DISCONNECT, MGMT_OP_PAIR_DEVICE,
+    MGMT_OP_PIN_CODE_NEG_REPLY, MGMT_OP_PIN_CODE_REPLY, MGMT_OP_READ_INDEX_LIST, MGMT_OP_READ_INFO,
+    MGMT_OP_REMOVE_UUID, MGMT_OP_SET_BONDABLE, MGMT_OP_SET_DEV_CLASS, MGMT_OP_SET_DISCOVERABLE,
     MGMT_OP_SET_FAST_CONNECTABLE, MGMT_OP_SET_LOCAL_NAME, MGMT_OP_SET_POWERED,
     MGMT_OP_START_DISCOVERY, MGMT_OP_STOP_DISCOVERY, MGMT_OP_UNPAIR_DEVICE,
     MGMT_OP_USER_CONFIRM_NEG_REPLY, MGMT_OP_USER_CONFIRM_REPLY, MGMT_OP_USER_PASSKEY_NEG_REPLY,
@@ -333,30 +336,36 @@ impl std::fmt::Debug for OobHandler {
 ///
 /// Profile / plugin subsystems implement this trait to receive adapter
 /// lifecycle callbacks.  Registered via [`btd_register_adapter_driver`].
+///
+/// Methods accept `Arc<tokio::sync::Mutex<BtdAdapter>>` rather than a
+/// locked guard reference so that the caller does not need to hold any
+/// global or per-adapter lock while invoking driver callbacks.  Each
+/// driver implementation acquires the mutex internally when it needs
+/// access to adapter state, avoiding nested lock deadlocks.
 #[allow(unused_variables)]
 pub trait BtdAdapterDriver: Send + Sync + 'static {
     /// Human-readable driver name.
     fn name(&self) -> &str;
 
     /// Called when an adapter becomes available (powered on).
-    fn probe(&self, adapter: &BtdAdapter) -> Result<(), BtdError> {
+    fn probe(&self, adapter: Arc<Mutex<BtdAdapter>>) -> Result<(), BtdError> {
         Ok(())
     }
 
     /// Called when an adapter is being removed.
-    fn remove(&self, adapter: &BtdAdapter) {}
+    fn remove(&self, adapter: Arc<Mutex<BtdAdapter>>) {}
 
     /// Called when an adapter is resumed (e.g. after system suspend).
-    fn resume(&self, adapter: &BtdAdapter) {}
+    fn resume(&self, adapter: Arc<Mutex<BtdAdapter>>) {}
 
     /// Called when a device is added to the adapter.
-    fn device_added(&self, adapter: &BtdAdapter, addr: &BdAddr) {}
+    fn device_added(&self, adapter: Arc<Mutex<BtdAdapter>>, addr: &BdAddr) {}
 
     /// Called when a device is removed from the adapter.
-    fn device_removed(&self, adapter: &BtdAdapter, addr: &BdAddr) {}
+    fn device_removed(&self, adapter: Arc<Mutex<BtdAdapter>>, addr: &BdAddr) {}
 
     /// Called when a device's services have been fully resolved.
-    fn device_resolved(&self, adapter: &BtdAdapter, addr: &BdAddr) {}
+    fn device_resolved(&self, adapter: Arc<Mutex<BtdAdapter>>, addr: &BdAddr) {}
 
     /// Whether the driver requires an experimental feature to be enabled.
     fn experimental(&self) -> bool {
@@ -1115,10 +1124,13 @@ impl Adapter1Interface {
         match addr_to_remove {
             Some(addr) => {
                 adapter.devices.remove(&addr);
-                for driver in &adapter.drivers {
-                    driver.device_removed(&adapter, &addr);
-                }
+                let drivers: Vec<Arc<dyn BtdAdapterDriver>> = adapter.drivers.clone();
+                let adapter_arc = Arc::clone(&self.inner);
                 btd_info(adapter.index, &format!("Device {} removed", addr.ba2str()));
+                drop(adapter);
+                for driver in &drivers {
+                    driver.device_removed(Arc::clone(&adapter_arc), &addr);
+                }
                 Ok(())
             }
             None => Err(zbus::fdo::Error::Failed("Does Not Exist".into())),
@@ -1994,19 +2006,263 @@ pub fn bdaddr_from_bytes(bytes: &[u8]) -> BdAddr {
 
 /// Initialize the global adapter subsystem.
 ///
-/// Opens the MGMT socket, subscribes to INDEX_ADDED / INDEX_REMOVED events,
-/// and reads the initial adapter list.
+/// Stores the global MGMT socket, subscribes to `MGMT_EV_INDEX_ADDED` and
+/// `MGMT_EV_INDEX_REMOVED` to track controller hotplug, then issues
+/// `MGMT_OP_READ_INDEX_LIST` to enumerate controllers already present.
+/// For each controller index returned, [`adapter_add`] is called to
+/// send `MGMT_OP_READ_INFO`, construct the adapter, register it on
+/// D-Bus, and subscribe to per-adapter MGMT events.
+///
+/// Two background tasks are spawned for INDEX_ADDED and INDEX_REMOVED
+/// events to handle controller hotplug for the lifetime of the daemon.
 pub async fn adapter_init(mgmt: Arc<MgmtSocket>) -> Result<(), BtdError> {
+    // Store global MGMT socket for other subsystems.
     {
         let mut guard = MGMT_MAIN.lock().await;
         *guard = Some(mgmt.clone());
     }
 
-    // Read initial controller list via MGMT_OP_READ_INFO on index 0xFFFF
-    // (the non-indexed global command).  In practice the daemon
-    // subscribes to INDEX_ADDED and then reads info for each.
+    // Subscribe to INDEX_ADDED/INDEX_REMOVED BEFORE reading the index
+    // list to avoid a race where a controller is added between the list
+    // read and the subscription.
+    let (_add_sub_id, mut add_rx) = mgmt.subscribe(MGMT_EV_INDEX_ADDED, MGMT_INDEX_NONE).await;
+    let (_rem_sub_id, mut rem_rx) = mgmt.subscribe(MGMT_EV_INDEX_REMOVED, MGMT_INDEX_NONE).await;
+
+    // Read the initial controller list.
+    let resp = mgmt
+        .send_command(MGMT_OP_READ_INDEX_LIST, MGMT_INDEX_NONE, &[])
+        .await
+        .map_err(|e| BtdError::failed(&format!("MGMT_OP_READ_INDEX_LIST failed: {e}")))?;
+
+    if resp.status != MGMT_STATUS_SUCCESS {
+        return Err(BtdError::failed(&format!(
+            "MGMT_OP_READ_INDEX_LIST status: {}",
+            mgmt_errstr(resp.status)
+        )));
+    }
+
+    // Parse response: u16 num_controllers, followed by num_controllers × u16 indices.
+    if resp.data.len() >= 2 {
+        let num = u16::from_le_bytes([resp.data[0], resp.data[1]]) as usize;
+        let body = &resp.data[2..];
+        for i in 0..num {
+            let offset = i * 2;
+            if body.len() >= offset + 2 {
+                let index = u16::from_le_bytes([body[offset], body[offset + 1]]);
+                adapter_add(index, mgmt.clone()).await;
+            }
+        }
+    }
+
+    // Spawn background task: handle INDEX_ADDED (controller hotplug).
+    let mgmt_add = mgmt.clone();
+    tokio::spawn(async move {
+        while let Some(event) = add_rx.recv().await {
+            let index = event.index;
+            btd_info(index, &format!("Controller hci{} added (hotplug)", index));
+            adapter_add(index, mgmt_add.clone()).await;
+        }
+    });
+
+    // Spawn background task: handle INDEX_REMOVED (controller hotplug).
+    tokio::spawn(async move {
+        while let Some(event) = rem_rx.recv().await {
+            let index = event.index;
+            btd_info(index, &format!("Controller hci{} removed (hotplug)", index));
+            adapter_remove(index).await;
+        }
+    });
+
     btd_info(HCI_DEV_NONE, "Adapter subsystem initialized");
     Ok(())
+}
+
+/// Add a single adapter for the given HCI controller index.
+///
+/// Sends `MGMT_OP_READ_INFO`, constructs `BtdAdapter`, registers the
+/// `Adapter1Interface` D-Bus object at `/org/bluez/hciN`, subscribes to
+/// all 21 per-adapter MGMT events, merges them with
+/// `futures::stream::select_all`, and spawns one dispatch task calling
+/// [`process_mgmt_event`].
+async fn adapter_add(index: u16, mgmt: Arc<MgmtSocket>) {
+    // Guard against duplicate add for the same index.
+    {
+        let adapters = ADAPTERS.read().await;
+        for a in adapters.iter() {
+            let adapter = a.lock().await;
+            if adapter.index == index {
+                btd_warn(index, "Adapter already registered — skipping duplicate add");
+                return;
+            }
+        }
+    }
+
+    // Read controller information.
+    let resp = match mgmt.send_command(MGMT_OP_READ_INFO, index, &[]).await {
+        Ok(r) => r,
+        Err(e) => {
+            btd_warn(index, &format!("MGMT_OP_READ_INFO failed: {e}"));
+            return;
+        }
+    };
+
+    if resp.status != MGMT_STATUS_SUCCESS {
+        btd_warn(index, &format!("MGMT_OP_READ_INFO status: {}", mgmt_errstr(resp.status)));
+        return;
+    }
+
+    // Parse mgmt_rp_read_info via zerocopy FromBytes.
+    let info: mgmt_rp_read_info = match zerocopy::FromBytes::read_from_bytes(resp.data.as_slice()) {
+        Ok(info) => info,
+        Err(_) => {
+            btd_warn(
+                index,
+                &format!(
+                    "Failed to parse READ_INFO response (got {} bytes, expected {})",
+                    resp.data.len(),
+                    core::mem::size_of::<mgmt_rp_read_info>()
+                ),
+            );
+            return;
+        }
+    };
+
+    let addr_str = info.bdaddr.ba2str();
+
+    // Construct the adapter and wrap in Arc<Mutex<_>>.
+    let adapter = BtdAdapter::new(index, &info, mgmt.clone());
+    let adapter_arc = Arc::new(Mutex::new(adapter));
+
+    // Register in the global ADAPTERS list.
+    {
+        let mut adapters = ADAPTERS.write().await;
+        adapters.push(Arc::clone(&adapter_arc));
+    }
+
+    // Set as default adapter if this is the first one.
+    {
+        let mut default_idx = DEFAULT_ADAPTER_INDEX.lock().await;
+        if default_idx.is_none() {
+            *default_idx = Some(index);
+            let mut a = adapter_arc.lock().await;
+            a.is_default = true;
+        }
+    }
+
+    // Register org.bluez.Adapter1 D-Bus interface at /org/bluez/hciN.
+    let conn = crate::dbus_common::btd_get_dbus_connection();
+    let iface = Adapter1Interface::new(Arc::clone(&adapter_arc));
+    let path = format!("/org/bluez/hci{index}");
+    if let Err(e) = conn.object_server().at(path.as_str(), iface).await {
+        btd_warn(index, &format!("Failed to register Adapter1 D-Bus interface: {e}"));
+    }
+
+    // Subscribe to all 21 per-adapter MGMT events and merge into a
+    // single stream for dispatch.
+    let event_codes: [u16; 21] = [
+        MGMT_EV_NEW_SETTINGS,
+        MGMT_EV_CLASS_OF_DEV_CHANGED,
+        MGMT_EV_LOCAL_NAME_CHANGED,
+        MGMT_EV_NEW_LINK_KEY,
+        MGMT_EV_NEW_LONG_TERM_KEY,
+        MGMT_EV_DEVICE_CONNECTED,
+        MGMT_EV_DEVICE_DISCONNECTED,
+        MGMT_EV_CONNECT_FAILED,
+        MGMT_EV_DEVICE_FOUND,
+        MGMT_EV_DISCOVERING,
+        MGMT_EV_DEVICE_BLOCKED,
+        MGMT_EV_DEVICE_UNBLOCKED,
+        MGMT_EV_DEVICE_UNPAIRED,
+        MGMT_EV_NEW_IRK,
+        MGMT_EV_NEW_CSRK,
+        MGMT_EV_AUTH_FAILED,
+        MGMT_EV_NEW_CONN_PARAM,
+        MGMT_EV_EXP_FEATURE_CHANGE,
+        MGMT_EV_PIN_CODE_REQUEST,
+        MGMT_EV_USER_CONFIRM_REQUEST,
+        MGMT_EV_USER_PASSKEY_REQUEST,
+    ];
+
+    let mut streams = Vec::with_capacity(event_codes.len());
+    for &ev_code in &event_codes {
+        let (_sub_id, rx) = mgmt.subscribe(ev_code, index).await;
+        streams.push(ReceiverStream::new(rx));
+    }
+
+    // Merge all event streams and spawn a single dispatch task.
+    let adapter_dispatch = Arc::clone(&adapter_arc);
+    tokio::spawn(async move {
+        let mut merged = futures::stream::select_all(streams);
+        while let Some(event) = merged.next().await {
+            process_mgmt_event(&adapter_dispatch, &event).await;
+        }
+    });
+
+    btd_info(index, &format!("Adapter hci{} added ({})", index, addr_str));
+}
+
+/// Remove an adapter identified by HCI controller index.
+///
+/// Removes the adapter from the global `ADAPTERS` list, unsubscribes all
+/// MGMT events for this index, and unregisters the D-Bus object at
+/// `/org/bluez/hciN`.
+async fn adapter_remove(index: u16) {
+    // Remove from ADAPTERS list.
+    let removed = {
+        let mut adapters = ADAPTERS.write().await;
+        let mut found = None;
+        for (i, a) in adapters.iter().enumerate() {
+            let adapter = a.lock().await;
+            if adapter.index == index {
+                found = Some(i);
+                break;
+            }
+        }
+        found.map(|pos| adapters.remove(pos))
+    };
+
+    if let Some(adapter_arc) = removed {
+        // Notify drivers of removal.
+        let drivers: Vec<Arc<dyn BtdAdapterDriver>> = {
+            let a = adapter_arc.lock().await;
+            a.drivers.clone()
+        };
+        for driver in &drivers {
+            driver.remove(Arc::clone(&adapter_arc));
+        }
+
+        // Unsubscribe all MGMT events for this controller index.
+        let mgmt_opt = {
+            let a = adapter_arc.lock().await;
+            a.mgmt.clone()
+        };
+        if let Some(mgmt) = mgmt_opt {
+            let _ = mgmt.unsubscribe_index(index).await;
+        }
+
+        // Unregister D-Bus object.
+        let path = format!("/org/bluez/hci{index}");
+        let conn = crate::dbus_common::btd_get_dbus_connection();
+        let _ = conn.object_server().remove::<Adapter1Interface, _>(path.as_str()).await;
+
+        // Update default adapter if the removed adapter was the default.
+        {
+            let mut default_idx = DEFAULT_ADAPTER_INDEX.lock().await;
+            if *default_idx == Some(index) {
+                *default_idx = None;
+                let adapters = ADAPTERS.read().await;
+                if let Some(first) = adapters.first() {
+                    let mut a = first.lock().await;
+                    a.is_default = true;
+                    *default_idx = Some(a.index);
+                }
+            }
+        }
+
+        btd_info(index, &format!("Adapter hci{} removed", index));
+    } else {
+        btd_warn(index, "adapter_remove: adapter not found");
+    }
 }
 
 /// Shut down the adapter subsystem, powering off all adapters gracefully.
@@ -2264,12 +2520,18 @@ pub async fn btd_adapter_get_device(
 
 /// Remove a device from the adapter and unpair it.
 pub async fn btd_adapter_remove_device(adapter: &Arc<Mutex<BtdAdapter>>, addr: &BdAddr) {
-    let mut a = adapter.lock().await;
-    if a.devices.remove(addr).is_some() {
-        for driver in &a.drivers {
-            driver.device_removed(&a, addr);
+    let (removed, drivers, index) = {
+        let mut a = adapter.lock().await;
+        let was_present = a.devices.remove(addr).is_some();
+        let d = a.drivers.clone();
+        let idx = a.index;
+        (was_present, d, idx)
+    };
+    if removed {
+        for driver in &drivers {
+            driver.device_removed(Arc::clone(adapter), addr);
         }
-        btd_info(a.index, &format!("Device {} removed", addr.ba2str()));
+        btd_info(index, &format!("Device {} removed", addr.ba2str()));
     }
 }
 
@@ -2281,10 +2543,13 @@ pub async fn btd_adapter_device_found(
     _rssi: i8,
     _eir: &EirData,
 ) {
-    let mut a = adapter.lock().await;
-    a.devices.entry(*addr).or_insert(());
-    for driver in &a.drivers {
-        driver.device_added(&a, addr);
+    let drivers: Vec<Arc<dyn BtdAdapterDriver>> = {
+        let mut a = adapter.lock().await;
+        a.devices.entry(*addr).or_insert(());
+        a.drivers.clone()
+    };
+    for driver in &drivers {
+        driver.device_added(Arc::clone(adapter), addr);
     }
 }
 
@@ -2756,17 +3021,31 @@ pub async fn adapter_set_io_capability(adapter: &Arc<Mutex<BtdAdapter>>, io_cap:
 // ===========================================================================
 
 /// Register an adapter driver.
+///
+/// Adds the driver to the global driver list, then probes all currently
+/// powered adapters.  The `ADAPTERS` read-lock is held only while
+/// collecting `Arc` clones of powered adapters; it is released before
+/// calling `driver.probe()` to avoid a nested-lock deadlock.
 pub async fn btd_register_adapter_driver(driver: Arc<dyn BtdAdapterDriver>) {
     let name = driver.name().to_string();
     ADAPTER_DRIVERS.write().await.push(driver.clone());
 
-    // Probe all existing powered adapters.
-    let adapters = ADAPTERS.read().await;
-    for adapter_arc in adapters.iter() {
-        let a = adapter_arc.lock().await;
-        if a.powered {
-            let _ = driver.probe(&a);
+    // Collect powered adapter Arcs while holding the ADAPTERS lock briefly.
+    let powered_adapters: Vec<Arc<Mutex<BtdAdapter>>> = {
+        let adapters = ADAPTERS.read().await;
+        let mut result = Vec::new();
+        for adapter_arc in adapters.iter() {
+            let a = adapter_arc.lock().await;
+            if a.powered {
+                result.push(Arc::clone(adapter_arc));
+            }
         }
+        result
+    }; // ADAPTERS read-lock released here.
+
+    // Probe without holding any global locks.
+    for adapter_arc in powered_adapters {
+        let _ = driver.probe(adapter_arc);
     }
     btd_debug(HCI_DEV_NONE, &format!("Adapter driver '{name}' registered"));
 }
@@ -2780,9 +3059,12 @@ pub async fn btd_unregister_adapter_driver(name: &str) {
 
 /// Notify all drivers that a device's services are resolved.
 pub async fn device_resolved_drivers(adapter: &Arc<Mutex<BtdAdapter>>, addr: &BdAddr) {
-    let a = adapter.lock().await;
-    for driver in &a.drivers {
-        driver.device_resolved(&a, addr);
+    let drivers: Vec<Arc<dyn BtdAdapterDriver>> = {
+        let a = adapter.lock().await;
+        a.drivers.clone()
+    };
+    for driver in &drivers {
+        driver.device_resolved(Arc::clone(adapter), addr);
     }
 }
 

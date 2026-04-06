@@ -44,6 +44,8 @@ use std::fs::File;
 use std::io::Read;
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
 
+use tokio::sync::Mutex as TokioMutex;
+
 use tracing::{debug, error};
 
 use crate::adapter::{
@@ -357,8 +359,10 @@ impl BtdAdapterDriver for AutopairAdapterDriver {
     /// after the lock is released.
     ///
     /// Matches C `autopair_probe()` (lines 246-251 of plugins/autopair.c).
-    fn probe(&self, adapter: &BtdAdapter) -> Result<(), BtdError> {
-        let index = adapter.index;
+    fn probe(&self, adapter: Arc<TokioMutex<BtdAdapter>>) -> Result<(), BtdError> {
+        let index = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async { adapter.lock().await.index })
+        });
 
         tokio::spawn(async move {
             if let Some(adapter_arc) = adapter_find(index).await {
@@ -385,8 +389,10 @@ impl BtdAdapterDriver for AutopairAdapterDriver {
     /// Spawns an async task to unregister the autopair PIN callback.
     ///
     /// Matches C `autopair_remove()` (lines 253-256 of plugins/autopair.c).
-    fn remove(&self, adapter: &BtdAdapter) {
-        let index = adapter.index;
+    fn remove(&self, adapter: Arc<TokioMutex<BtdAdapter>>) {
+        let index = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async { adapter.lock().await.index })
+        });
 
         tokio::spawn(async move {
             let id = STATE.lock().ok().and_then(|mut s| s.pin_cb_ids.remove(&index));

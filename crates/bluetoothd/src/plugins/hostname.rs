@@ -16,6 +16,7 @@ use std::sync::{Arc, Mutex};
 use futures::StreamExt;
 use tokio::io::Interest;
 use tokio::io::unix::AsyncFd;
+use tokio::sync::Mutex as TokioMutex;
 use tokio::task::JoinHandle;
 
 use crate::adapter::{
@@ -521,8 +522,10 @@ impl BtdAdapterDriver for HostnameAdapterDriver {
     ///
     /// Reads the current hostname and chassis state from module globals and
     /// spawns an async task to set the adapter's name and class via MGMT.
-    fn probe(&self, adapter: &BtdAdapter) -> Result<(), BtdError> {
-        let index = adapter.index;
+    fn probe(&self, adapter: Arc<TokioMutex<BtdAdapter>>) -> Result<(), BtdError> {
+        let index = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async { adapter.lock().await.index })
+        });
         tracing::debug!("hostname driver probe for hci{}", index);
 
         // Spawn an async task to update this adapter.  We cannot perform
@@ -556,7 +559,7 @@ impl BtdAdapterDriver for HostnameAdapterDriver {
     }
 
     /// Called when an adapter is removed — no‑op, matching C `hostname_remove`.
-    fn remove(&self, _adapter: &BtdAdapter) {}
+    fn remove(&self, _adapter: Arc<TokioMutex<BtdAdapter>>) {}
 }
 
 // ---------------------------------------------------------------------------

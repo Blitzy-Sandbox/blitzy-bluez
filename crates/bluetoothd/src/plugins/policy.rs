@@ -34,6 +34,7 @@
 // - HSP/HFP connected → schedule A2DP Sink connect
 
 use std::sync::{Arc, LazyLock, Mutex as StdMutex};
+use tokio::sync::Mutex as TokioMutex;
 
 use tokio::task::JoinHandle;
 use tokio::time::Duration;
@@ -1319,8 +1320,10 @@ impl BtdAdapterDriver for PolicyAdapterDriver {
     /// If `auto_enable` is configured, automatically powers on the adapter.
     ///
     /// Replaces C `policy_adapter_probe()` (lines 842-850).
-    fn probe(&self, adapter: &BtdAdapter) -> Result<(), BtdError> {
-        let adapter_index = adapter.index;
+    fn probe(&self, adapter: Arc<TokioMutex<BtdAdapter>>) -> Result<(), BtdError> {
+        let adapter_index = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async { adapter.lock().await.index })
+        });
         btd_debug(adapter_index, "policy: adapter probe");
 
         let state = POLICY_STATE.lock().unwrap();
@@ -1388,8 +1391,10 @@ impl BtdAdapterDriver for PolicyAdapterDriver {
     /// and policy data for devices on this adapter.
     ///
     /// Replaces C `policy_adapter_remove()` (lines ~850-860).
-    fn remove(&self, adapter: &BtdAdapter) {
-        let adapter_index = adapter.index;
+    fn remove(&self, adapter: Arc<TokioMutex<BtdAdapter>>) {
+        let adapter_index = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async { adapter.lock().await.index })
+        });
         btd_debug(adapter_index, "policy: adapter remove");
 
         let mut state = POLICY_STATE.lock().unwrap();
@@ -1449,8 +1454,10 @@ impl BtdAdapterDriver for PolicyAdapterDriver {
     /// reconnection after `resume_delay` seconds.
     ///
     /// Replaces C `policy_adapter_resume()` (lines 860-910).
-    fn resume(&self, adapter: &BtdAdapter) {
-        let adapter_index = adapter.index;
+    fn resume(&self, adapter: Arc<TokioMutex<BtdAdapter>>) {
+        let adapter_index = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async { adapter.lock().await.index })
+        });
         btd_debug(adapter_index, "policy: adapter resume");
 
         let mut state = POLICY_STATE.lock().unwrap();

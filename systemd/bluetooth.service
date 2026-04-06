@@ -1,0 +1,24 @@
+[Unit]
+Description=Blitzy Bluetooth Service (Rust BlueZ drop-in replacement)
+Documentation=man:bluetoothd(8)
+ConditionPathIsDirectory=/sys/class/bluetooth
+After=dbus.service
+Requires=dbus.service
+Conflicts=bluetooth.service
+
+[Service]
+Type=dbus
+BusName=org.bluez
+ExecStart=/usr/local/lib/bluetooth/bluetoothd
+NotifyAccess=main
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+LimitNPROC=1
+ProtectHome=true
+ProtectSystem=full
+User=root
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=bluetooth.target
+Alias=dbus-org.bluez.service

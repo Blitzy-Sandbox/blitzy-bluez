@@ -494,37 +494,32 @@ async fn check_adapter() -> Result<Arc<tokio::sync::Mutex<BtdAdapter>>, nix::err
 ///
 /// Matches C `store_params()` (lines 627–648).
 async fn store_params(adapter: &Arc<tokio::sync::Mutex<BtdAdapter>>, params: &OobParams) {
-    // Ensure the device is known to the adapter.
-    let _dev_addr = btd_adapter_get_device(adapter, &params.address, BDADDR_BREDR).await;
+    // Get or create the device entry on the adapter.
+    let dev_arc = btd_adapter_get_device(adapter, &params.address, BDADDR_BREDR).await;
+    if let Some(dev_arc) = dev_arc {
+        let mut device = dev_arc.lock().await;
 
-    // Construct a temporary BtdDevice to apply OOB-sourced metadata.
-    let adapter_path = {
-        let a = adapter.lock().await;
-        a.path.clone()
-    };
-    let mut device =
-        BtdDevice::new(Arc::clone(adapter), params.address, AddressType::Bredr, &adapter_path);
+        // Set Class of Device from OOB data.
+        if params.class != 0 {
+            device.set_class(params.class);
+        }
 
-    // Set Class of Device from OOB data.
-    if params.class != 0 {
-        device.set_class(params.class);
+        // Set the device name from OOB data.
+        if let Some(ref name) = params.name {
+            device.set_name(name);
+            device.store_cached_name();
+        }
+
+        // Add service UUIDs discovered from OOB EIR data.
+        if !params.services.is_empty() {
+            let eir_for_uuids = EirData { services: params.services.clone(), ..EirData::default() };
+            device.add_eir_uuids(&eir_for_uuids);
+        }
+
+        // Retrieve device address for logging.
+        let dev_addr = device.get_address();
+        debug!("Stored OOB params for device {}", dev_addr.ba2str());
     }
-
-    // Set the device name from OOB data.
-    if let Some(ref name) = params.name {
-        device.set_name(name);
-        device.store_cached_name();
-    }
-
-    // Add service UUIDs discovered from OOB EIR data.
-    if !params.services.is_empty() {
-        let eir_for_uuids = EirData { services: params.services.clone(), ..EirData::default() };
-        device.add_eir_uuids(&eir_for_uuids);
-    }
-
-    // Retrieve device address for logging.
-    let dev_addr = device.get_address();
-    debug!("Stored OOB params for device {}", dev_addr.ba2str());
 
     // Add remote OOB data (hash + randomizer concatenated as flat bytes).
     if let Some(ref hash) = params.hash {

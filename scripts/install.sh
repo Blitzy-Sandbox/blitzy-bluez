@@ -133,6 +133,18 @@ fi
 if systemctl is-enabled --quiet "$SYSTEM_SERVICE" 2>/dev/null; then
     sudo systemctl disable "$SYSTEM_SERVICE" || true
 fi
+
+# Remove stale dbus-org.bluez.service alias symlink that systemd creates
+# when the stock bluetooth.service is enabled.  If not removed, the
+# subsequent `systemctl enable --now blitzy-bluetooth` fails with
+# "Failed to enable unit: File /etc/systemd/system/dbus-org.bluez.service
+# already exists".
+STALE_ALIAS="/etc/systemd/system/dbus-org.bluez.service"
+if [ -L "$STALE_ALIAS" ]; then
+    info "Removing stale alias symlink $STALE_ALIAS..."
+    sudo rm -f "$STALE_ALIAS"
+    pass "remove stale alias symlink $STALE_ALIAS"
+fi
 pass "stop & disable $SYSTEM_SERVICE"
 
 # -------------------------------------------------------------------------

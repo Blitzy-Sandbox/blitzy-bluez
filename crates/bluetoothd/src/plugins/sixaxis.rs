@@ -45,7 +45,7 @@ use crate::adapter::{
     btd_adapter_get_device, btd_adapter_remove_device, btd_cancel_authorization,
     btd_request_authorization_cable_configured,
 };
-use crate::device::{AddressType, BtdDevice, device_create};
+use crate::device::BtdDevice;
 use crate::log::{btd_debug, btd_error, btd_info};
 use crate::plugin::PluginPriority;
 use crate::profiles::input::{
@@ -586,16 +586,11 @@ async fn handle_device_added(data: UdevAddData) {
         return;
     }
 
-    // Register the address with the adapter.
-    let _addr = btd_adapter_get_device(&adapter, &device_bdaddr, BDADDR_BREDR).await;
-
-    // Create an actual BtdDevice for method calls (set_name, set_pnp_id, etc.).
-    let adapter_path = {
-        let a = adapter.lock().await;
-        a.path.clone()
-    };
-    let device =
-        device_create(Arc::clone(&adapter), device_bdaddr, AddressType::Bredr, &adapter_path);
+    // Get or create the device entry on the adapter (registers on D-Bus,
+    // emits InterfacesAdded if new).
+    let device = btd_adapter_get_device(&adapter, &device_bdaddr, BDADDR_BREDR)
+        .await
+        .expect("btd_adapter_get_device should always create when missing");
 
     // Configure the device.
     {

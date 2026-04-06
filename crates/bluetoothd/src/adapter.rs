@@ -31,7 +31,7 @@ use tokio::sync::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{trace, warn};
-use zbus::zvariant::{ObjectPath, Value};
+use zbus::zvariant::{ObjectPath, OwnedValue, Value};
 
 use bluez_shared::mgmt::client::{MgmtEvent, MgmtResponse, MgmtSocket};
 use bluez_shared::sys::bluetooth::{
@@ -63,7 +63,8 @@ use crate::agent::{
     agent_request_pincode,
 };
 use crate::config::BtdOpts;
-use crate::device::{AddressType, BtdDevice, device_create_from_storage};
+use crate::dbus_common::try_get_dbus_connection;
+use crate::device::{AddressType, BtdDevice, device_create, device_create_from_storage};
 use crate::error::BtdError;
 use crate::gatt::database::BtdGattDatabase;
 use crate::log::{btd_debug, btd_info, btd_warn};
@@ -495,7 +496,10 @@ pub struct BtdAdapter {
     pub pairable_timeout: u32,
 
     // ---- Device state ----
-    pub devices: HashMap<BdAddr, ()>,
+    /// Known devices keyed by Bluetooth address.  Each value holds an
+    /// `Arc<Mutex<BtdDevice>>` so the device can be shared with D-Bus
+    /// interface objects and background tasks.
+    pub devices: HashMap<BdAddr, Arc<Mutex<BtdDevice>>>,
     pub discovery_filters: Vec<DiscoveryFilter>,
     pub discovery_clients: Vec<DiscoveryClient>,
 
@@ -1123,11 +1127,24 @@ impl Adapter1Interface {
 
         match addr_to_remove {
             Some(addr) => {
-                adapter.devices.remove(&addr);
+                let dev_arc = adapter.devices.remove(&addr);
                 let drivers: Vec<Arc<dyn BtdAdapterDriver>> = adapter.drivers.clone();
                 let adapter_arc = Arc::clone(&self.inner);
                 btd_info(adapter.index, &format!("Device {} removed", addr.ba2str()));
                 drop(adapter);
+                // Unregister the device from D-Bus and emit InterfacesRemoved.
+                if let Some(dev_arc) = dev_arc {
+                    let dev = dev_arc.lock().await;
+                    let dev_path = dev.path.clone();
+                    drop(dev);
+                    if let Some(conn) = try_get_dbus_connection() {
+                        let obj_server = conn.object_server();
+                        let _ = obj_server
+                            .remove::<crate::device::DeviceInterface, _>(dev_path.as_str())
+                            .await;
+                        emit_interfaces_removed_signal(conn, &dev_path).await;
+                    }
+                }
                 for driver in &drivers {
                     driver.device_removed(Arc::clone(&adapter_arc), &addr);
                 }
@@ -1294,13 +1311,21 @@ impl Adapter1Interface {
             match resp {
                 Ok(r) if r.status == MGMT_STATUS_SUCCESS => {
                     let mut adapter = self.inner.lock().await;
-                    adapter.powered = value;
-                    if value {
+                    // Read the authoritative current_settings from the MGMT
+                    // response payload (4-byte LE uint32) before updating
+                    // derived fields.  This eliminates the race where a stale
+                    // bitmask would reset adapter.powered immediately after
+                    // MGMT_OP_SET_POWERED succeeds.
+                    if r.data.len() >= 4 {
+                        adapter.current_settings =
+                            u32::from_le_bytes([r.data[0], r.data[1], r.data[2], r.data[3]]);
+                    }
+                    adapter.update_settings_from_bitmask();
+                    if adapter.powered {
                         adapter.power_state = AdapterPowerState::On;
                     } else {
                         adapter.power_state = AdapterPowerState::Off;
                     }
-                    adapter.update_settings_from_bitmask();
                     Ok(())
                 }
                 Ok(r) if r.status == MGMT_STATUS_RFKILLED => {
@@ -1486,6 +1511,85 @@ impl Adapter1Interface {
 }
 
 // ===========================================================================
+// D-Bus ObjectManager Signal Helpers
+// ===========================================================================
+
+/// Build a D-Bus property dictionary for the `org.bluez.Device1` interface
+/// from the current state of a `BtdDevice`.  Used as the payload for the
+/// `InterfacesAdded` signal.
+fn build_device1_properties(dev: &BtdDevice) -> HashMap<String, OwnedValue> {
+    // Helper: convert a String to an OwnedValue (D-Bus string variant).
+    let sv = |s: String| -> OwnedValue {
+        OwnedValue::try_from(Value::from(s)).expect("string → OwnedValue")
+    };
+
+    let mut p: HashMap<String, OwnedValue> = HashMap::new();
+    p.insert("Address".into(), sv(dev.address.ba2str()));
+    p.insert("AddressType".into(), sv(dev.address_type.as_str().to_string()));
+    if let Some(ref name) = dev.name {
+        p.insert("Name".into(), sv(name.clone()));
+    }
+    p.insert("Alias".into(), sv(dev.get_alias()));
+    p.insert("Paired".into(), OwnedValue::from(dev.paired));
+    p.insert("Bonded".into(), OwnedValue::from(dev.bonded));
+    p.insert("Trusted".into(), OwnedValue::from(dev.trusted));
+    p.insert("Blocked".into(), OwnedValue::from(dev.blocked));
+    p.insert("LegacyPairing".into(), OwnedValue::from(dev.legacy_pairing));
+    p.insert("Connected".into(), OwnedValue::from(dev.connected));
+    p.insert("ServicesResolved".into(), OwnedValue::from(dev.get_svc_resolved()));
+    p.insert("RSSI".into(), OwnedValue::from(dev.rssi));
+    p.insert("TxPower".into(), OwnedValue::from(dev.get_tx_power()));
+    p.insert("Class".into(), OwnedValue::from(dev.class));
+    p.insert("Appearance".into(), OwnedValue::from(dev.appearance));
+    if let Ok(ap) = ObjectPath::try_from(dev.adapter_path.as_str()) {
+        p.insert("Adapter".into(), OwnedValue::from(ap));
+    }
+    p.insert("WakeAllowed".into(), OwnedValue::from(dev.get_wake_allowed()));
+    p
+}
+
+/// Emit `org.freedesktop.DBus.ObjectManager.InterfacesAdded` for a Device1
+/// object.  The signal is emitted from `/org/bluez` (the ObjectManager root)
+/// with the device's object path and a full property snapshot.
+async fn emit_interfaces_added_signal(
+    conn: &zbus::Connection,
+    device_path: &str,
+    props: HashMap<String, OwnedValue>,
+) {
+    let mut interfaces: HashMap<String, HashMap<String, OwnedValue>> = HashMap::new();
+    interfaces.insert("org.bluez.Device1".into(), props);
+    if let Ok(path) = ObjectPath::try_from(device_path) {
+        let _ = conn
+            .emit_signal(
+                None::<&str>,
+                "/org/bluez",
+                "org.freedesktop.DBus.ObjectManager",
+                "InterfacesAdded",
+                &(path, interfaces),
+            )
+            .await;
+    }
+}
+
+/// Emit `org.freedesktop.DBus.ObjectManager.InterfacesRemoved` for a Device1
+/// object.  The signal is emitted from `/org/bluez` with the device's object
+/// path and the list `["org.bluez.Device1"]`.
+async fn emit_interfaces_removed_signal(conn: &zbus::Connection, device_path: &str) {
+    if let Ok(path) = ObjectPath::try_from(device_path) {
+        let interfaces = vec!["org.bluez.Device1".to_string()];
+        let _ = conn
+            .emit_signal(
+                None::<&str>,
+                "/org/bluez",
+                "org.freedesktop.DBus.ObjectManager",
+                "InterfacesRemoved",
+                &(path, interfaces),
+            )
+            .await;
+    }
+}
+
+// ===========================================================================
 // MGMT Event Processing
 // ===========================================================================
 
@@ -1499,15 +1603,59 @@ pub async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &Mg
             if ev_data.len() >= 4 {
                 let new_settings =
                     u32::from_le_bytes([ev_data[0], ev_data[1], ev_data[2], ev_data[3]]);
-                let mut adapter = adapter_arc.lock().await;
-                let old_powered = adapter.powered;
-                adapter.current_settings = new_settings;
-                adapter.update_settings_from_bitmask();
-                btd_debug(adapter.index, &format!("New settings: 0x{:08x}", new_settings));
-                let new_powered = adapter.powered;
+
+                // Extract old/new powered state while holding the adapter lock,
+                // then release it before performing heavy I/O (driver probes,
+                // D-Bus signal emission).
+                let (old_powered, new_powered, adapter_index, _adapter_path) = {
+                    let mut adapter = adapter_arc.lock().await;
+                    let old_powered = adapter.powered;
+                    adapter.current_settings = new_settings;
+                    adapter.update_settings_from_bitmask();
+                    btd_debug(adapter.index, &format!("New settings: 0x{:08x}", new_settings));
+                    let new_powered = adapter.powered;
+                    if old_powered && !new_powered {
+                        adapter.discovering = false;
+                        adapter.discovery_clients.clear();
+                    }
+                    (old_powered, new_powered, adapter.index, adapter.path.clone())
+                };
+                // Lock released here.
+
+                // Directive 2: probe all registered adapter drivers on first
+                // power-on transition so that auto-enable policies fire.
+                if !old_powered && new_powered {
+                    let drivers: Vec<Arc<dyn BtdAdapterDriver>> =
+                        ADAPTER_DRIVERS.read().await.clone();
+                    for driver in &drivers {
+                        let _ = driver.probe(Arc::clone(adapter_arc));
+                    }
+                    btd_debug(
+                        adapter_index,
+                        &format!("Power-on: probed {} adapter driver(s)", drivers.len()),
+                    );
+                }
+
+                // Directive 10: clean up all known devices when the adapter
+                // powers down — unregister each Device1 from D-Bus and emit
+                // InterfacesRemoved.
                 if old_powered && !new_powered {
-                    adapter.discovering = false;
-                    adapter.discovery_clients.clear();
+                    let devices_snapshot: Vec<(BdAddr, Arc<Mutex<BtdDevice>>)> = {
+                        let mut adapter = adapter_arc.lock().await;
+                        adapter.devices.drain().collect()
+                    };
+                    if let Some(conn) = try_get_dbus_connection() {
+                        for (_addr, dev_arc) in &devices_snapshot {
+                            let mut dev = dev_arc.lock().await;
+                            let dev_path = dev.path.clone();
+                            let _ = dev.unregister_dbus().await;
+                            emit_interfaces_removed_signal(conn, &dev_path).await;
+                        }
+                    }
+                    btd_debug(
+                        adapter_index,
+                        &format!("Power-off: cleaned up {} device(s)", devices_snapshot.len()),
+                    );
                 }
             }
         }
@@ -1531,9 +1679,12 @@ pub async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &Mg
                 } else {
                     EirData::default()
                 };
+
                 let mut adapter = adapter_arc.lock().await;
+                let adapter_path = adapter.path.clone();
+                let adapter_index = adapter.index;
                 btd_debug(
-                    adapter.index,
+                    adapter_index,
                     &format!(
                         "Device found: {} type={} rssi={} name={:?}",
                         addr.ba2str(),
@@ -1542,8 +1693,48 @@ pub async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &Mg
                         eir_data.name
                     ),
                 );
-                // Insert device placeholder if not already known.
-                adapter.devices.entry(addr).or_insert(());
+
+                if let Some(existing) = adapter.devices.get(&addr) {
+                    // Device already known — update RSSI and EIR fields
+                    // without re-registering on D-Bus.
+                    let mut dev = existing.lock().await;
+                    dev.rssi = i16::from(rssi);
+                    if let Some(ref name) = eir_data.name {
+                        dev.name = Some(name.clone());
+                    }
+                    if eir_data.class != 0 {
+                        dev.class = eir_data.class;
+                    }
+                    if eir_data.appearance != 0 {
+                        dev.appearance = eir_data.appearance;
+                    }
+                } else {
+                    // New device — create, register on D-Bus, emit
+                    // InterfacesAdded, and insert into the devices map.
+                    let at = AddressType::from_kernel(addr_type);
+                    let dev_arc = device_create(Arc::clone(adapter_arc), addr, at, &adapter_path);
+                    {
+                        let mut dev = dev_arc.lock().await;
+                        dev.rssi = i16::from(rssi);
+                        if let Some(ref name) = eir_data.name {
+                            dev.name = Some(name.clone());
+                        }
+                        if eir_data.class != 0 {
+                            dev.class = eir_data.class;
+                        }
+                        if eir_data.appearance != 0 {
+                            dev.appearance = eir_data.appearance;
+                        }
+                        let _ = dev.register_dbus().await;
+
+                        // Emit InterfacesAdded for the new Device1 object.
+                        if let Some(conn) = try_get_dbus_connection() {
+                            let props = build_device1_properties(&dev);
+                            emit_interfaces_added_signal(conn, &dev.path, props).await;
+                        }
+                    }
+                    adapter.devices.insert(addr, dev_arc);
+                }
             }
         }
         MGMT_EV_DEVICE_CONNECTED => {
@@ -1552,7 +1743,25 @@ pub async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &Mg
                 let addr_type = ev_data[6];
                 let mut adapter = adapter_arc.lock().await;
                 adapter.connections.insert(addr);
-                adapter.devices.entry(addr).or_insert(());
+                // Ensure we have a device entry for this connected peer.
+                if !adapter.devices.contains_key(&addr) {
+                    let at = AddressType::from_kernel(addr_type);
+                    let adapter_path = adapter.path.clone();
+                    let dev_arc = device_create(Arc::clone(adapter_arc), addr, at, &adapter_path);
+                    {
+                        let mut dev = dev_arc.lock().await;
+                        dev.connected = true;
+                        let _ = dev.register_dbus().await;
+                        if let Some(conn) = try_get_dbus_connection() {
+                            let props = build_device1_properties(&dev);
+                            emit_interfaces_added_signal(conn, &dev.path, props).await;
+                        }
+                    }
+                    adapter.devices.insert(addr, dev_arc);
+                } else if let Some(existing) = adapter.devices.get(&addr) {
+                    let mut dev = existing.lock().await;
+                    dev.connected = true;
+                }
                 btd_info(
                     adapter.index,
                     &format!("Device connected: {} type={}", addr.ba2str(), addr_type),
@@ -1565,6 +1774,11 @@ pub async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &Mg
                 let reason = if ev_data.len() >= 8 { ev_data[7] } else { 0 };
                 let mut adapter = adapter_arc.lock().await;
                 adapter.connections.remove(&addr);
+                // Update the connected flag on the device entry.
+                if let Some(dev_arc) = adapter.devices.get(&addr) {
+                    let mut dev = dev_arc.lock().await;
+                    dev.connected = false;
+                }
                 btd_info(
                     adapter.index,
                     &format!("Device disconnected: {} reason={}", addr.ba2str(), reason),
@@ -1979,7 +2193,20 @@ pub async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &Mg
                 let addr = bdaddr_from_bytes(&ev_data[0..6]);
                 let mut adapter = adapter_arc.lock().await;
                 btd_debug(adapter.index, &format!("Device unpaired: {}", addr.ba2str()));
-                adapter.devices.remove(&addr);
+                // Remove device and emit InterfacesRemoved if it was registered.
+                if let Some(dev_arc) = adapter.devices.remove(&addr) {
+                    let dev = dev_arc.lock().await;
+                    let dev_path = dev.path.clone();
+                    drop(dev);
+                    if let Some(conn) = try_get_dbus_connection() {
+                        // Unregister the Device1 interface from the object server.
+                        let obj_server = conn.object_server();
+                        let _ = obj_server
+                            .remove::<crate::device::DeviceInterface, _>(dev_path.as_str())
+                            .await;
+                        emit_interfaces_removed_signal(conn, &dev_path).await;
+                    }
+                }
             }
         }
         MGMT_EV_EXP_FEATURE_CHANGE => {
@@ -2508,26 +2735,58 @@ pub async fn btd_adapter_unregister_connection_fd(adapter: &Arc<Mutex<BtdAdapter
 }
 
 /// Get or create a device entry for a given address.
+///
+/// If the address is already known, returns the existing
+/// `Arc<Mutex<BtdDevice>>`.  Otherwise creates a new device, registers
+/// it on D-Bus, emits `InterfacesAdded`, inserts it into the adapter's
+/// device map, and returns the new `Arc`.
 pub async fn btd_adapter_get_device(
     adapter: &Arc<Mutex<BtdAdapter>>,
     addr: &BdAddr,
-    _addr_type: u8,
-) -> BdAddr {
+    addr_type: u8,
+) -> Option<Arc<Mutex<BtdDevice>>> {
     let mut a = adapter.lock().await;
-    a.devices.entry(*addr).or_insert(());
-    *addr
+    if let Some(existing) = a.devices.get(addr) {
+        return Some(Arc::clone(existing));
+    }
+    let at = AddressType::from_kernel(addr_type);
+    let adapter_path = a.path.clone();
+    let dev_arc = device_create(Arc::clone(adapter), *addr, at, &adapter_path);
+    {
+        let mut dev = dev_arc.lock().await;
+        let _ = dev.register_dbus().await;
+        if let Some(conn) = try_get_dbus_connection() {
+            let props = build_device1_properties(&dev);
+            emit_interfaces_added_signal(conn, &dev.path, props).await;
+        }
+    }
+    a.devices.insert(*addr, Arc::clone(&dev_arc));
+    Some(dev_arc)
 }
 
 /// Remove a device from the adapter and unpair it.
+///
+/// Unregisters the `Device1` D-Bus interface, emits `InterfacesRemoved`,
+/// notifies registered adapter drivers, and finally removes the device
+/// from the adapter's device map.
 pub async fn btd_adapter_remove_device(adapter: &Arc<Mutex<BtdAdapter>>, addr: &BdAddr) {
-    let (removed, drivers, index) = {
+    let (dev_arc, drivers, index) = {
         let mut a = adapter.lock().await;
-        let was_present = a.devices.remove(addr).is_some();
+        let dev = a.devices.remove(addr);
         let d = a.drivers.clone();
         let idx = a.index;
-        (was_present, d, idx)
+        (dev, d, idx)
     };
-    if removed {
+    if let Some(dev_arc) = dev_arc {
+        let dev = dev_arc.lock().await;
+        let dev_path = dev.path.clone();
+        drop(dev);
+        // Unregister from D-Bus and emit InterfacesRemoved.
+        if let Some(conn) = try_get_dbus_connection() {
+            let obj_server = conn.object_server();
+            let _ = obj_server.remove::<crate::device::DeviceInterface, _>(dev_path.as_str()).await;
+            emit_interfaces_removed_signal(conn, &dev_path).await;
+        }
         for driver in &drivers {
             driver.device_removed(Arc::clone(adapter), addr);
         }
@@ -2536,17 +2795,52 @@ pub async fn btd_adapter_remove_device(adapter: &Arc<Mutex<BtdAdapter>>, addr: &
 }
 
 /// Process a device-found event from MGMT.
+///
+/// If the device is new, creates a `BtdDevice`, registers it on D-Bus,
+/// emits `InterfacesAdded`, and inserts it into the adapter's device map.
+/// If the device already exists, updates RSSI and name from the EIR data.
+/// In both cases, notifies registered adapter drivers.
 pub async fn btd_adapter_device_found(
     adapter: &Arc<Mutex<BtdAdapter>>,
     addr: &BdAddr,
-    _addr_type: u8,
-    _rssi: i8,
-    _eir: &EirData,
+    addr_type: u8,
+    rssi: i8,
+    eir: &EirData,
 ) {
     let drivers: Vec<Arc<dyn BtdAdapterDriver>> = {
         let mut a = adapter.lock().await;
-        a.devices.entry(*addr).or_insert(());
-        a.drivers.clone()
+        if let Some(existing) = a.devices.get(addr) {
+            // Update RSSI and name on the existing device.
+            let mut dev = existing.lock().await;
+            dev.rssi = i16::from(rssi);
+            if let Some(ref n) = eir.name {
+                if !n.is_empty() {
+                    dev.name = Some(n.clone());
+                }
+            }
+            a.drivers.clone()
+        } else {
+            // Create a new device.
+            let at = AddressType::from_kernel(addr_type);
+            let adapter_path = a.path.clone();
+            let dev_arc = device_create(Arc::clone(adapter), *addr, at, &adapter_path);
+            {
+                let mut dev = dev_arc.lock().await;
+                dev.rssi = i16::from(rssi);
+                if let Some(ref n) = eir.name {
+                    if !n.is_empty() {
+                        dev.name = Some(n.clone());
+                    }
+                }
+                let _ = dev.register_dbus().await;
+                if let Some(conn) = try_get_dbus_connection() {
+                    let props = build_device1_properties(&dev);
+                    emit_interfaces_added_signal(conn, &dev.path, props).await;
+                }
+            }
+            a.devices.insert(*addr, dev_arc);
+            a.drivers.clone()
+        }
     };
     for driver in &drivers {
         driver.device_added(Arc::clone(adapter), addr);
@@ -2554,6 +2848,10 @@ pub async fn btd_adapter_device_found(
 }
 
 /// Iterate all devices on an adapter.
+///
+/// The callback receives both the device address and a reference to the
+/// `Arc<Mutex<BtdDevice>>`, allowing callers to inspect or mutate the
+/// device if needed.
 pub async fn btd_adapter_for_each_device<F>(adapter: &Arc<Mutex<BtdAdapter>>, f: F)
 where
     F: Fn(&BdAddr),

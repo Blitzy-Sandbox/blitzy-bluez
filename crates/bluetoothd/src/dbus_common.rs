@@ -53,6 +53,15 @@ pub fn btd_get_dbus_connection() -> &'static Connection {
     DBUS_CONNECTION.get().expect("btd_get_dbus_connection called before set_dbus_connection")
 }
 
+/// Try to retrieve the shared D-Bus connection without panicking.
+///
+/// Returns `None` if [`set_dbus_connection`] has not yet been called.
+/// Useful in contexts where the D-Bus connection may not be initialised
+/// (e.g. unit tests or early daemon startup).
+pub fn try_get_dbus_connection() -> Option<&'static Connection> {
+    DBUS_CONNECTION.get()
+}
+
 // ---------------------------------------------------------------------------
 // D-Bus dictionary append helpers
 // ---------------------------------------------------------------------------

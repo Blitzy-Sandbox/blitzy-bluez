@@ -990,6 +990,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_device_set_disconnect_known_device_no_mgmt() {
+        use crate::device::{AddressType, device_create};
         use bluez_shared::sys::bluetooth::BdAddr;
         let adapter = test_adapter();
         let addr = BdAddr { b: [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF] };
@@ -997,7 +998,8 @@ mod tests {
         // ba2str() reverses bytes: b[5]:b[4]:...:b[0] = FF:EE:DD:CC:BB:AA
         {
             let mut a = adapter.lock().await;
-            a.devices.insert(addr, ());
+            let dev = device_create(Arc::clone(&adapter), addr, AddressType::Bredr, &a.path);
+            a.devices.insert(addr, dev);
         }
         let path = format!("/org/bluez/hci0/dev_{}", addr.ba2str().replace(':', "_"));
         let inner = test_set_data(Arc::clone(&adapter), vec![path]);
@@ -1009,12 +1011,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_device_set_connect_known_device_no_mgmt() {
+        use crate::device::{AddressType, device_create};
         use bluez_shared::sys::bluetooth::BdAddr;
         let adapter = test_adapter();
         let addr = BdAddr { b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66] };
         {
             let mut a = adapter.lock().await;
-            a.devices.insert(addr, ());
+            let dev = device_create(Arc::clone(&adapter), addr, AddressType::Bredr, &a.path);
+            a.devices.insert(addr, dev);
         }
         let path = format!("/org/bluez/hci0/dev_{}", addr.ba2str().replace(':', "_"));
         let inner = test_set_data(Arc::clone(&adapter), vec![path]);

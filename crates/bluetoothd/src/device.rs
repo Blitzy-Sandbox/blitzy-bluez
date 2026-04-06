@@ -939,6 +939,11 @@ impl BtdDevice {
         self.svc_resolved = true;
     }
 
+    /// Returns whether services have been resolved for this device.
+    pub fn get_svc_resolved(&self) -> bool {
+        self.svc_resolved
+    }
+
     pub fn probe_profile(&mut self, u: &str) {
         let l = u.to_lowercase();
         if !self.uuids.contains(&l) {
@@ -1235,6 +1240,10 @@ impl BtdDevice {
 
     pub fn set_wake_allowed(&mut self, v: bool) {
         self.wake_allowed = v;
+    }
+    /// Returns whether the device is allowed to wake the host.
+    pub fn get_wake_allowed(&self) -> bool {
+        self.wake_allowed
     }
     pub fn get_wake_support(&self) -> bool {
         self.wake_support

@@ -173,6 +173,11 @@ name = "startup"
 path = "benches/startup.rs"
 harness = false
 
+[[bench]]
+name = "headphone_audio"
+path = "benches/headphone_audio.rs"
+harness = false
+
 # ---------------------------------------------------------------------------
 # Unit test targets — tests/unit/*.rs (converted from unit/test-*.c)
 # ---------------------------------------------------------------------------

@@ -583,7 +583,7 @@ fn handle_add_src_req(src: &mut BcastSrc, data: &[u8]) -> i32 {
                 }
 
                 // Get or create device for the broadcast source.
-                let _dev_addr = btd_adapter_get_device(&adapter, &addr, addr_type).await;
+                let _dev = btd_adapter_get_device(&adapter, &addr, addr_type).await;
 
                 // Look up GATT database.
                 if let Some(gatt_db_arc) = btd_adapter_get_database(&adapter).await {

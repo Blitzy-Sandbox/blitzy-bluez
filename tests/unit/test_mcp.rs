@@ -44,7 +44,7 @@
 // Converted from unit/test-mcp.c (2043 lines, ~80 test cases).
 
 use std::os::unix::io::{AsRawFd, OwnedFd};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use nix::sys::socket::{AddressFamily, SockFlag, SockType, socketpair};
@@ -61,6 +61,25 @@ use bluez_shared::gatt::client::BtGattClient;
 use bluez_shared::gatt::db::{GattDb, GattDbAttribute, GattDbCcc};
 use bluez_shared::gatt::server::BtGattServer;
 use bluez_shared::util::queue::Queue;
+
+// ---------------------------------------------------------------------------
+// Global serialization lock for MCP tests.
+//
+// The MCS module uses a process-global `MCS_GLOBAL` Mutex for CCID
+// allocation and server registration. When multiple test threads call
+// `bt_mcs_test_util_reset_ccid()` and `BtMcs::register()` concurrently
+// the global state is corrupted, leading to flaky failures (e.g.
+// `sr_mcp_stop_from_paused`). Acquiring this lock at the start of every
+// test — via `create_mcs_server` / `create_mcp_client` — ensures tests
+// run sequentially against a clean global state.
+// ---------------------------------------------------------------------------
+static MCP_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// Acquire the test-level serialization lock, returning the guard that
+/// must be held for the entire duration of the test.
+fn acquire_mcp_test_lock() -> MutexGuard<'static, ()> {
+    MCP_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 // ============================================================================
 // MCS Handle Constants (matching C test-mcp.c defines)
@@ -532,6 +551,10 @@ impl McpListenerCallback for TestMcpListenerCallback {
 /// Encapsulates the ATT transport, GATT server, and socketpair endpoints
 /// needed for MCS server PDU exchange tests.
 struct McsServerContext {
+    /// Serialization guard — held for the lifetime of the test to prevent
+    /// concurrent access to the process-global `MCS_GLOBAL` state. Must be
+    /// the first field so it is dropped **after** all MCS resources.
+    _lock: MutexGuard<'static, ()>,
     /// Tokio runtime — kept alive for GattDb attribute handler spawning.
     rt: Runtime,
     /// Shared ATT transport reference.
@@ -552,6 +575,7 @@ struct McsServerContext {
 
 /// Create a GATT server context with an MCS (or GMCS) service registered.
 fn create_mcs_server(is_gmcs: bool) -> McsServerContext {
+    let lock = acquire_mcp_test_lock();
     bt_mcs_test_util_reset_ccid();
 
     let rt = Runtime::new().expect("Failed to create tokio runtime for test");
@@ -573,7 +597,17 @@ fn create_mcs_server(is_gmcs: bool) -> McsServerContext {
 
     let ccc_states = Queue::new();
 
-    McsServerContext { rt, att, _server: server, mcs, ccc_states, peer: fd2, att_fd: fd1, mcs_cb }
+    McsServerContext {
+        _lock: lock,
+        rt,
+        att,
+        _server: server,
+        mcs,
+        ccc_states,
+        peer: fd2,
+        att_fd: fd1,
+        mcs_cb,
+    }
 }
 
 /// Perform MTU exchange on the server context (client sends MTU=64).
@@ -1192,6 +1226,7 @@ fn sr_spn_bv02_track_title_notification() {
 
 #[test]
 fn mcs_register_unregister() {
+    let _lock = acquire_mcp_test_lock();
     bt_mcs_test_util_reset_ccid();
     let db = GattDb::new();
     db.ccc_register(GattDbCcc { read_func: None, write_func: None, notify_func: None });
@@ -1215,6 +1250,7 @@ fn mcs_register_unregister() {
 
 #[test]
 fn mcs_gmcs_register() {
+    let _lock = acquire_mcp_test_lock();
     bt_mcs_test_util_reset_ccid();
     let db = GattDb::new();
     db.ccc_register(GattDbCcc { read_func: None, write_func: None, notify_func: None });
@@ -1231,6 +1267,7 @@ fn mcs_gmcs_register() {
 
 #[test]
 fn mcs_state_transitions() {
+    let _lock = acquire_mcp_test_lock();
     bt_mcs_test_util_reset_ccid();
     let db = GattDb::new();
     db.ccc_register(GattDbCcc { read_func: None, write_func: None, notify_func: None });
@@ -1259,6 +1296,7 @@ fn mcs_state_transitions() {
 
 #[test]
 fn mcs_changed_notification() {
+    let _lock = acquire_mcp_test_lock();
     bt_mcs_test_util_reset_ccid();
     let db = GattDb::new();
     db.ccc_register(GattDbCcc { read_func: None, write_func: None, notify_func: None });
@@ -1277,6 +1315,7 @@ fn mcs_changed_notification() {
 
 #[test]
 fn mcs_ccid_allocation() {
+    let _lock = acquire_mcp_test_lock();
     bt_mcs_test_util_reset_ccid();
     let db = GattDb::new();
     db.ccc_register(GattDbCcc { read_func: None, write_func: None, notify_func: None });
@@ -1430,6 +1469,8 @@ fn queue_ccc_state_tracking() {
 /// with MCS (or GMCS) registered on the server side and BtMcp attached
 /// on the client side after GATT service discovery completes.
 struct McsClientServerContext {
+    /// Serialization guard — see `MCP_TEST_LOCK` documentation.
+    _lock: MutexGuard<'static, ()>,
     /// Tokio runtime — kept alive for async operations.
     rt: Runtime,
     /// Server-side ATT transport.
@@ -1472,6 +1513,7 @@ fn pump_both(
 
 /// Create a full client-server MCP context with GATT discovery completed.
 fn create_mcs_client_server(is_gmcs: bool) -> McsClientServerContext {
+    let lock = acquire_mcp_test_lock();
     bt_mcs_test_util_reset_ccid();
 
     let rt = Runtime::new().expect("Failed to create tokio runtime");
@@ -1519,6 +1561,7 @@ fn create_mcs_client_server(is_gmcs: bool) -> McsClientServerContext {
     let mcp_cb = TestMcpCallback::new();
 
     McsClientServerContext {
+        _lock: lock,
         rt,
         server_att,
         client_att,
@@ -1952,6 +1995,7 @@ fn mcp_test_util_get_client_fn() {
 /// GattDbAttribute::read_result (from C test's gatt_ccc_read_cb pattern).
 #[test]
 fn ccc_attribute_handle_and_read_result() {
+    let _lock = acquire_mcp_test_lock();
     bt_mcs_test_util_reset_ccid();
     let db = GattDb::new();
 
@@ -2008,6 +2052,7 @@ fn att_set_debug_coverage() {
 /// Exercise BtGattServer::set_debug for diagnostic output.
 #[test]
 fn gatt_server_set_debug_coverage() {
+    let _lock = acquire_mcp_test_lock();
     bt_mcs_test_util_reset_ccid();
     let db = GattDb::new();
     db.ccc_register(GattDbCcc { read_func: None, write_func: None, notify_func: None });
@@ -2025,6 +2070,7 @@ fn gatt_server_set_debug_coverage() {
 /// Exercise BtGattClient::set_debug for diagnostic output.
 #[test]
 fn gatt_client_set_debug_coverage() {
+    let _lock = acquire_mcp_test_lock();
     bt_mcs_test_util_reset_ccid();
     let rt = Runtime::new().expect("runtime");
     let cdb = GattDb::new();
@@ -2042,6 +2088,7 @@ fn gatt_client_set_debug_coverage() {
 /// Exercise BtGattClient::ready_register callback.
 #[test]
 fn gatt_client_ready_register_coverage() {
+    let _lock = acquire_mcp_test_lock();
     bt_mcs_test_util_reset_ccid();
     let rt = Runtime::new().expect("runtime");
 
@@ -2082,6 +2129,7 @@ fn gatt_client_ready_register_coverage() {
 /// Exercise BtGattClient::idle_register callback.
 #[test]
 fn gatt_client_idle_register_coverage() {
+    let _lock = acquire_mcp_test_lock();
     bt_mcs_test_util_reset_ccid();
     let rt = Runtime::new().expect("runtime");
 
@@ -2124,6 +2172,7 @@ fn gatt_client_idle_register_coverage() {
 /// Exercise BtGattServer::send_notification for MCS characteristic.
 #[test]
 fn gatt_server_send_notification_coverage() {
+    let _lock = acquire_mcp_test_lock();
     bt_mcs_test_util_reset_ccid();
     let rt = Runtime::new().expect("runtime");
     let db = GattDb::new();

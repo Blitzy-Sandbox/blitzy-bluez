@@ -1748,18 +1748,34 @@ impl DeviceInterface {
 
         // Build MGMT_OP_ADD_DEVICE parameter:
         //   struct mgmt_cp_add_device { bdaddr[6], type, action }
-        //   action = 0x02 (auto-connect)
+        //
+        // Directive 7: The action byte must be conditional on address type:
+        //   - LE devices (BDADDR_LE_PUBLIC=0x01 or BDADDR_LE_RANDOM=0x02):
+        //     action = 0x02 (ACTION_AUTO_CONNECT)
+        //   - BR/EDR devices (BDADDR_BREDR=0x00):
+        //     action = 0x01 (ACTION_ALLOW_CONNECT)
+        let action: u8 = if self.kernel_addr_type == BDADDR_LE_PUBLIC
+            || self.kernel_addr_type == BDADDR_LE_RANDOM
+        {
+            0x02 // ACTION_AUTO_CONNECT for LE
+        } else {
+            0x01 // ACTION_ALLOW_CONNECT for BR/EDR
+        };
         let mut param = [0u8; 8];
         param[..6].copy_from_slice(&self.bdaddr.b);
         param[6] = self.kernel_addr_type;
-        param[7] = 0x02; // ACTION_AUTO_CONNECT
+        param[7] = action;
         let resp = mgmt.send_command(MGMT_OP_ADD_DEVICE, idx, &param).await;
         match resp {
             Ok(r) if r.status == MGMT_STATUS_SUCCESS => Ok(()),
-            Ok(r) => {
-                Err(BtdError::failed(&format!("MGMT_OP_ADD_DEVICE failed: status {}", r.status)))
-            }
-            Err(e) => Err(BtdError::failed(&format!("MGMT send error: {}", e))),
+            Ok(r) => Err(BtdError::failed(&format!(
+                "MGMT_OP_ADD_DEVICE failed: addr_type={} action={} status={}",
+                self.kernel_addr_type, action, r.status
+            ))),
+            Err(e) => Err(BtdError::failed(&format!(
+                "MGMT send error (addr_type={} action={}): {}",
+                self.kernel_addr_type, action, e
+            ))),
         }
     }
 

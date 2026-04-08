@@ -921,6 +921,436 @@ pub fn device_cache_path(adapter: &str, device: &str) -> PathBuf {
 }
 
 // ---------------------------------------------------------------------------
+// LE bond key structures
+// ---------------------------------------------------------------------------
+
+/// Stored Long-Term Key (LTK) for LE bonding.
+///
+/// Represents data from the `[LongTermKey]` INI section of a device `info`
+/// file.  All byte-array fields use lowercase hex encoding matching the C
+/// `GKeyFile`-based implementation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredLtk {
+    /// 128-bit key value (16 bytes).
+    pub key: [u8; 16],
+    /// Random number used during key distribution (64-bit).
+    pub rand: u64,
+    /// Encrypted Diversifier (16-bit).
+    pub ediv: u16,
+    /// Whether the key was generated with MITM protection.
+    pub authenticated: u8,
+    /// Encryption key size in bytes (7–16).
+    pub enc_size: u8,
+    /// Device address this key belongs to.
+    pub addr: BdAddr,
+    /// Kernel address type (`BDADDR_LE_PUBLIC` or `BDADDR_LE_RANDOM`).
+    pub addr_type: u8,
+    /// LTK type (0 = unauthenticated, 1 = authenticated, etc.).
+    pub ltk_type: u8,
+    /// Master flag (1 = central, 0 = peripheral).
+    pub master: u8,
+}
+
+/// Stored Identity Resolving Key (IRK) for LE privacy.
+///
+/// Represents data from the `[IdentityResolvingKey]` INI section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredIrk {
+    /// 128-bit IRK value (16 bytes).
+    pub key: [u8; 16],
+    /// Device address this key belongs to.
+    pub addr: BdAddr,
+    /// Kernel address type.
+    pub addr_type: u8,
+}
+
+/// Stored Connection Signature Resolving Key (CSRK).
+///
+/// Represents data from the `[SignatureResolvingKey]` INI section.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredCsrk {
+    /// 128-bit CSRK value (16 bytes).
+    pub key: [u8; 16],
+    /// CSRK type (0 = local unauthenticated, 1 = local authenticated,
+    ///            2 = remote unauthenticated, 3 = remote authenticated).
+    pub csrk_type: u8,
+    /// Device address this key belongs to.
+    pub addr: BdAddr,
+    /// Kernel address type.
+    pub addr_type: u8,
+}
+
+// ---------------------------------------------------------------------------
+// Hex encoding/decoding helpers for 16-byte keys
+// ---------------------------------------------------------------------------
+
+/// Encode a 16-byte key as a 32-character lowercase hex string.
+fn hex_encode_key(key: &[u8; 16]) -> String {
+    let mut s = String::with_capacity(32);
+    for byte in key {
+        s.push_str(&format!("{byte:02x}"));
+    }
+    s
+}
+
+/// Decode a 32-character hex string into a 16-byte key.
+///
+/// Returns `None` if the string is not exactly 32 hex characters.
+fn hex_decode_key(hex: &str) -> Option<[u8; 16]> {
+    let hex = hex.trim();
+    if hex.len() != 32 {
+        return None;
+    }
+    let mut key = [0u8; 16];
+    for i in 0..16 {
+        key[i] = u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()?;
+    }
+    Some(key)
+}
+
+// ---------------------------------------------------------------------------
+// Address type string helpers
+// ---------------------------------------------------------------------------
+
+/// Convert an `AddressType` string (from the `[General]` section) to a
+/// kernel address type byte.
+fn addr_type_from_ini_string(addr_type_str: &str) -> u8 {
+    match addr_type_str.trim().to_lowercase().as_str() {
+        "public" => BDADDR_LE_PUBLIC,
+        "random" => BDADDR_LE_RANDOM,
+        "static" => BDADDR_LE_RANDOM,
+        _ => BDADDR_BREDR,
+    }
+}
+
+use bluez_shared::sys::bluetooth::{BDADDR_LE_PUBLIC, BDADDR_LE_RANDOM, BDADDR_BREDR};
+
+// ---------------------------------------------------------------------------
+// Per-device key parsing from INI
+// ---------------------------------------------------------------------------
+
+/// Parse a [`StoredLtk`] from a device `info` INI file.
+///
+/// Reads the `[LongTermKey]` section.  Returns `None` if the section is
+/// absent or any required field is missing/malformed.
+pub fn parse_ltk_from_info(
+    ini: &Ini,
+    addr: &BdAddr,
+    addr_type: u8,
+) -> Option<StoredLtk> {
+    let sect = ini.section(Some("LongTermKey"))?;
+    let key_hex = sect.get("Key")?;
+    let key = hex_decode_key(key_hex)?;
+    let authenticated: u8 = sect.get("Authenticated")?.trim().parse().ok()?;
+    let enc_size: u8 = sect.get("EncSize")?.trim().parse().ok()?;
+    let ediv: u16 = sect.get("EDiv")?.trim().parse().ok()?;
+    let rand: u64 = sect.get("Rand")?.trim().parse().ok()?;
+    Some(StoredLtk {
+        key,
+        rand,
+        ediv,
+        authenticated,
+        enc_size,
+        addr: *addr,
+        addr_type,
+        ltk_type: if authenticated != 0 { 1 } else { 0 },
+        master: 1, // Assume central by default; overridden if SlaveLongTermKey present
+    })
+}
+
+/// Parse a slave (peripheral) [`StoredLtk`] from a device `info` INI file.
+///
+/// Reads the `[SlaveLongTermKey]` section.  Same format as `[LongTermKey]`
+/// but with `master = 0`.
+pub fn parse_slave_ltk_from_info(
+    ini: &Ini,
+    addr: &BdAddr,
+    addr_type: u8,
+) -> Option<StoredLtk> {
+    let sect = ini.section(Some("SlaveLongTermKey"))?;
+    let key_hex = sect.get("Key")?;
+    let key = hex_decode_key(key_hex)?;
+    let authenticated: u8 = sect.get("Authenticated")?.trim().parse().ok()?;
+    let enc_size: u8 = sect.get("EncSize")?.trim().parse().ok()?;
+    let ediv: u16 = sect.get("EDiv")?.trim().parse().ok()?;
+    let rand: u64 = sect.get("Rand")?.trim().parse().ok()?;
+    Some(StoredLtk {
+        key,
+        rand,
+        ediv,
+        authenticated,
+        enc_size,
+        addr: *addr,
+        addr_type,
+        ltk_type: if authenticated != 0 { 1 } else { 0 },
+        master: 0,
+    })
+}
+
+/// Parse a [`StoredIrk`] from a device `info` INI file.
+///
+/// Reads the `[IdentityResolvingKey]` section.
+pub fn parse_irk_from_info(
+    ini: &Ini,
+    addr: &BdAddr,
+    addr_type: u8,
+) -> Option<StoredIrk> {
+    let sect = ini.section(Some("IdentityResolvingKey"))?;
+    let key_hex = sect.get("Key")?;
+    let key = hex_decode_key(key_hex)?;
+    Some(StoredIrk {
+        key,
+        addr: *addr,
+        addr_type,
+    })
+}
+
+/// Parse a [`StoredCsrk`] from a device `info` INI file.
+///
+/// Reads the `[SignatureResolvingKey]` section.
+pub fn parse_csrk_from_info(
+    ini: &Ini,
+    addr: &BdAddr,
+    addr_type: u8,
+) -> Option<StoredCsrk> {
+    let sect = ini.section(Some("SignatureResolvingKey"))?;
+    let key_hex = sect.get("Key")?;
+    let key = hex_decode_key(key_hex)?;
+    let csrk_type: u8 = sect.get("Type").and_then(|v| v.trim().parse().ok()).unwrap_or(0);
+    Some(StoredCsrk {
+        key,
+        csrk_type,
+        addr: *addr,
+        addr_type,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Adapter-level key loading
+// ---------------------------------------------------------------------------
+
+/// Internal: Load LTKs from a specific directory path.
+///
+/// This is the core implementation used by both [`load_ltks_for_adapter`]
+/// (which resolves the path via the global storage prefix) and unit tests
+/// (which pass a temp directory directly).
+fn load_ltks_from_directory(adapter_dir: &Path) -> Vec<StoredLtk> {
+    let entries = match fs::read_dir(adapter_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!("Cannot read adapter storage dir {}: {e}", adapter_dir.display());
+            return Vec::new();
+        }
+    };
+
+    let mut ltks = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // Skip non-directories and special entries like "cache".
+        if !path.is_dir() {
+            continue;
+        }
+        let dir_name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_owned(),
+            None => continue,
+        };
+        // Device directories are named like "XX:XX:XX:XX:XX:XX".
+        if dir_name.len() != 17 || dir_name.chars().filter(|&c| c == ':').count() != 5 {
+            continue;
+        }
+
+        let info_path = path.join("info");
+        let ini = match read_ini_file(&info_path) {
+            Ok(i) => i,
+            Err(_) => continue,
+        };
+
+        // Determine device address and type from INI content and directory name.
+        let addr = match BdAddr::from_str(&dir_name) {
+            Ok(a) => a,
+            Err(_) => continue,
+        };
+
+        let addr_type = ini
+            .section(Some("General"))
+            .and_then(|g| g.get("AddressType"))
+            .map(addr_type_from_ini_string)
+            .unwrap_or(BDADDR_LE_PUBLIC);
+
+        // Parse central (master) LTK.
+        if let Some(ltk) = parse_ltk_from_info(&ini, &addr, addr_type) {
+            ltks.push(ltk);
+        }
+        // Parse peripheral (slave) LTK.
+        if let Some(ltk) = parse_slave_ltk_from_info(&ini, &addr, addr_type) {
+            ltks.push(ltk);
+        }
+    }
+
+    ltks
+}
+
+/// Load all stored LTKs (Long-Term Keys) for an adapter.
+///
+/// Scans all device directories under `<storage_prefix>/<adapter_addr>/`
+/// and parses `[LongTermKey]` and `[SlaveLongTermKey]` sections from each
+/// device's `info` file.
+///
+/// Returns an empty `Vec` if the directory does not exist or is empty.
+/// Logs a warning (non-fatal) on I/O errors.
+pub fn load_ltks_for_adapter(adapter_addr: &str) -> Vec<StoredLtk> {
+    let adapter_dir = create_filename(&format!("/{adapter_addr}"));
+    let ltks = load_ltks_from_directory(&adapter_dir);
+    debug!("Loaded {} LTK(s) for adapter {}", ltks.len(), adapter_addr);
+    ltks
+}
+
+/// Internal: Load IRKs from a specific directory path.
+fn load_irks_from_directory(adapter_dir: &Path) -> Vec<StoredIrk> {
+    let entries = match fs::read_dir(adapter_dir) {
+        Ok(e) => e,
+        Err(e) => {
+            warn!("Cannot read adapter storage dir {}: {e}", adapter_dir.display());
+            return Vec::new();
+        }
+    };
+
+    let mut irks = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let dir_name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(n) => n.to_owned(),
+            None => continue,
+        };
+        if dir_name.len() != 17 || dir_name.chars().filter(|&c| c == ':').count() != 5 {
+            continue;
+        }
+
+        let info_path = path.join("info");
+        let ini = match read_ini_file(&info_path) {
+            Ok(i) => i,
+            Err(_) => continue,
+        };
+
+        let addr = match BdAddr::from_str(&dir_name) {
+            Ok(a) => a,
+            Err(_) => continue,
+        };
+
+        let addr_type = ini
+            .section(Some("General"))
+            .and_then(|g| g.get("AddressType"))
+            .map(addr_type_from_ini_string)
+            .unwrap_or(BDADDR_LE_PUBLIC);
+
+        if let Some(irk) = parse_irk_from_info(&ini, &addr, addr_type) {
+            irks.push(irk);
+        }
+    }
+
+    irks
+}
+
+/// Load all stored IRKs (Identity Resolving Keys) for an adapter.
+///
+/// Scans all device directories under `<storage_prefix>/<adapter_addr>/`
+/// and parses `[IdentityResolvingKey]` sections from each device's `info`
+/// file.
+pub fn load_irks_for_adapter(adapter_addr: &str) -> Vec<StoredIrk> {
+    let adapter_dir = create_filename(&format!("/{adapter_addr}"));
+    let irks = load_irks_from_directory(&adapter_dir);
+    debug!("Loaded {} IRK(s) for adapter {}", irks.len(), adapter_addr);
+    irks
+}
+
+// ---------------------------------------------------------------------------
+// Key persistence
+// ---------------------------------------------------------------------------
+
+/// Persist a Long-Term Key to the device's `info` file.
+///
+/// Creates or updates the `[LongTermKey]` (or `[SlaveLongTermKey]` for
+/// peripheral keys) section in `<storage_prefix>/<adapter>/<device>/info`.
+/// The `[General]` section is preserved.
+///
+/// This function performs blocking file I/O and should be called from
+/// `tokio::task::spawn_blocking` or an equivalent context.
+pub fn persist_ltk(adapter_addr: &str, device_addr: &str, ltk: &StoredLtk) {
+    let info_path = device_info_path(adapter_addr, device_addr);
+    let mut ini = read_ini_file(&info_path).unwrap_or_else(|_| {
+        let mut ini = Ini::new();
+        ini.with_section(Some("General")).set("Name", "").set("AddressType", "public");
+        ini
+    });
+
+    let section_name = if ltk.master != 0 { "LongTermKey" } else { "SlaveLongTermKey" };
+
+    ini.with_section(Some(section_name))
+        .set("Key", hex_encode_key(&ltk.key))
+        .set("Authenticated", ltk.authenticated.to_string())
+        .set("EncSize", ltk.enc_size.to_string())
+        .set("EDiv", ltk.ediv.to_string())
+        .set("Rand", ltk.rand.to_string());
+
+    if let Err(e) = write_ini_file(&info_path, &ini) {
+        warn!("Failed to persist LTK for {device_addr}: {e}");
+    } else {
+        debug!("Persisted LTK for {device_addr} (master={})", ltk.master);
+    }
+}
+
+/// Persist an Identity Resolving Key to the device's `info` file.
+///
+/// Creates or updates the `[IdentityResolvingKey]` section in
+/// `<storage_prefix>/<adapter>/<device>/info`.
+///
+/// This function performs blocking file I/O.
+pub fn persist_irk(adapter_addr: &str, device_addr: &str, irk: &StoredIrk) {
+    let info_path = device_info_path(adapter_addr, device_addr);
+    let mut ini = read_ini_file(&info_path).unwrap_or_else(|_| {
+        let mut ini = Ini::new();
+        ini.with_section(Some("General")).set("Name", "").set("AddressType", "public");
+        ini
+    });
+
+    ini.with_section(Some("IdentityResolvingKey"))
+        .set("Key", hex_encode_key(&irk.key));
+
+    if let Err(e) = write_ini_file(&info_path, &ini) {
+        warn!("Failed to persist IRK for {device_addr}: {e}");
+    } else {
+        debug!("Persisted IRK for {device_addr}");
+    }
+}
+
+/// Persist a Connection Signature Resolving Key to the device's `info` file.
+///
+/// Creates or updates the `[SignatureResolvingKey]` section.
+///
+/// This function performs blocking file I/O.
+pub fn persist_csrk(adapter_addr: &str, device_addr: &str, csrk: &StoredCsrk) {
+    let info_path = device_info_path(adapter_addr, device_addr);
+    let mut ini = read_ini_file(&info_path).unwrap_or_else(|_| {
+        let mut ini = Ini::new();
+        ini.with_section(Some("General")).set("Name", "").set("AddressType", "public");
+        ini
+    });
+
+    ini.with_section(Some("SignatureResolvingKey"))
+        .set("Key", hex_encode_key(&csrk.key))
+        .set("Type", csrk.csrk_type.to_string());
+
+    if let Err(e) = write_ini_file(&info_path, &ini) {
+        warn!("Failed to persist CSRK for {device_addr}: {e}");
+    } else {
+        debug!("Persisted CSRK for {device_addr}");
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
 
@@ -1218,5 +1648,334 @@ mod tests {
         assert_eq!(ini_get_value(&ini, None, "RootKey").as_deref(), Some("rootval"));
         assert_eq!(ini_get_value(&ini, Some("Named"), "A").as_deref(), Some("B"));
         assert_eq!(ini_get_value(&ini, Some("Named"), "Missing"), None);
+    }
+
+    // =======================================================================
+    // LE bond key storage tests (Directive 1)
+    // =======================================================================
+
+    #[test]
+    fn test_hex_encode_key() {
+        let key: [u8; 16] = [
+            0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45,
+            0x67, 0x89,
+        ];
+        assert_eq!(hex_encode_key(&key), "abcdef0123456789abcdef0123456789");
+    }
+
+    #[test]
+    fn test_hex_decode_key_valid() {
+        let hex = "abcdef0123456789abcdef0123456789";
+        let key = hex_decode_key(hex).unwrap();
+        assert_eq!(
+            key,
+            [0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89]
+        );
+    }
+
+    #[test]
+    fn test_hex_decode_key_invalid_length() {
+        assert!(hex_decode_key("abcdef").is_none());
+        assert!(hex_decode_key("").is_none());
+    }
+
+    #[test]
+    fn test_hex_decode_key_invalid_chars() {
+        assert!(hex_decode_key("zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz").is_none());
+    }
+
+    #[test]
+    fn test_hex_encode_decode_roundtrip() {
+        let original: [u8; 16] = [
+            0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54,
+            0x32, 0x10,
+        ];
+        let encoded = hex_encode_key(&original);
+        let decoded = hex_decode_key(&encoded).unwrap();
+        assert_eq!(original, decoded);
+    }
+
+    #[test]
+    fn test_parse_ltk_from_fixture() {
+        let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/bluetooth_info_le_public.ini");
+        let ini = Ini::load_from_file(&fixture_path).expect("fixture file should load");
+
+        let addr = bdaddr_t { b: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06] };
+        let ltk = parse_ltk_from_info(&ini, &addr, BDADDR_LE_PUBLIC).expect("LTK should parse");
+
+        assert_eq!(
+            ltk.key,
+            [0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89]
+        );
+        assert_eq!(ltk.authenticated, 0);
+        assert_eq!(ltk.enc_size, 16);
+        assert_eq!(ltk.ediv, 43981);
+        assert_eq!(ltk.rand, 1311768467294899695);
+        assert_eq!(ltk.addr_type, BDADDR_LE_PUBLIC);
+        assert_eq!(ltk.master, 1);
+    }
+
+    #[test]
+    fn test_parse_irk_from_fixture() {
+        let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/bluetooth_info_le_public.ini");
+        let ini = Ini::load_from_file(&fixture_path).expect("fixture file should load");
+
+        let addr = bdaddr_t { b: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06] };
+        let irk = parse_irk_from_info(&ini, &addr, BDADDR_LE_PUBLIC).expect("IRK should parse");
+
+        assert_eq!(
+            irk.key,
+            [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]
+        );
+        assert_eq!(irk.addr_type, BDADDR_LE_PUBLIC);
+    }
+
+    #[test]
+    fn test_parse_csrk_from_fixture() {
+        let fixture_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/fixtures/bluetooth_info_le_public.ini");
+        let ini = Ini::load_from_file(&fixture_path).expect("fixture file should load");
+
+        let addr = bdaddr_t { b: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06] };
+        let csrk =
+            parse_csrk_from_info(&ini, &addr, BDADDR_LE_PUBLIC).expect("CSRK should parse");
+
+        assert_eq!(
+            csrk.key,
+            [0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10]
+        );
+        assert_eq!(csrk.csrk_type, 0);
+        assert_eq!(csrk.addr_type, BDADDR_LE_PUBLIC);
+    }
+
+    #[test]
+    fn test_persist_and_reload_ltk() {
+        let dir = temp_dir();
+
+        // Override storage prefix for this test — we write directly to a
+        // known path instead of using the global prefix.
+        let adapter = "AA:BB:CC:DD:EE:FF";
+        let device = "11:22:33:44:55:66";
+        let info_path = dir.join(format!("{adapter}/{device}/info"));
+
+        // Manually create a minimal info file first.
+        let parent = info_path.parent().unwrap();
+        fs::create_dir_all(parent).unwrap();
+        let mut ini = Ini::new();
+        ini.with_section(Some("General"))
+            .set("Name", "PersistTest")
+            .set("AddressType", "public");
+        ini.write_to_file(&info_path).unwrap();
+
+        // Construct a StoredLtk and persist it.
+        let ltk = StoredLtk {
+            key: [0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89],
+            rand: 1234567890,
+            ediv: 0xABCD,
+            authenticated: 1,
+            enc_size: 16,
+            addr: bdaddr_t { b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66] },
+            addr_type: BDADDR_LE_PUBLIC,
+            ltk_type: 1,
+            master: 1,
+        };
+
+        // Persist by writing directly to the info path.
+        let mut reload_ini = read_ini_file(&info_path).unwrap();
+        let section_name = if ltk.master != 0 { "LongTermKey" } else { "SlaveLongTermKey" };
+        reload_ini
+            .with_section(Some(section_name))
+            .set("Key", hex_encode_key(&ltk.key))
+            .set("Authenticated", ltk.authenticated.to_string())
+            .set("EncSize", ltk.enc_size.to_string())
+            .set("EDiv", ltk.ediv.to_string())
+            .set("Rand", ltk.rand.to_string());
+        write_ini_file(&info_path, &reload_ini).unwrap();
+
+        // Reload and verify.
+        let loaded_ini = read_ini_file(&info_path).unwrap();
+        let addr = bdaddr_t { b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66] };
+        let loaded_ltk = parse_ltk_from_info(&loaded_ini, &addr, BDADDR_LE_PUBLIC).unwrap();
+
+        assert_eq!(loaded_ltk.key, ltk.key);
+        assert_eq!(loaded_ltk.rand, ltk.rand);
+        assert_eq!(loaded_ltk.ediv, ltk.ediv);
+        assert_eq!(loaded_ltk.authenticated, ltk.authenticated);
+        assert_eq!(loaded_ltk.enc_size, ltk.enc_size);
+
+        // Verify [General] section is preserved.
+        let general = loaded_ini.section(Some("General")).unwrap();
+        assert_eq!(general.get("Name"), Some("PersistTest"));
+        assert_eq!(general.get("AddressType"), Some("public"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_persist_and_reload_irk() {
+        let dir = temp_dir();
+        let adapter = "AA:BB:CC:DD:EE:FF";
+        let device = "11:22:33:44:55:66";
+        let info_path = dir.join(format!("{adapter}/{device}/info"));
+
+        let parent = info_path.parent().unwrap();
+        fs::create_dir_all(parent).unwrap();
+        let mut ini = Ini::new();
+        ini.with_section(Some("General"))
+            .set("Name", "IRKTest")
+            .set("AddressType", "random");
+        ini.write_to_file(&info_path).unwrap();
+
+        let irk = StoredIrk {
+            key: [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef],
+            addr: bdaddr_t { b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66] },
+            addr_type: BDADDR_LE_RANDOM,
+        };
+
+        // Persist directly.
+        let mut reload_ini = read_ini_file(&info_path).unwrap();
+        reload_ini
+            .with_section(Some("IdentityResolvingKey"))
+            .set("Key", hex_encode_key(&irk.key));
+        write_ini_file(&info_path, &reload_ini).unwrap();
+
+        // Reload and verify.
+        let loaded_ini = read_ini_file(&info_path).unwrap();
+        let addr = bdaddr_t { b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66] };
+        let loaded_irk = parse_irk_from_info(&loaded_ini, &addr, BDADDR_LE_RANDOM).unwrap();
+
+        assert_eq!(loaded_irk.key, irk.key);
+        assert_eq!(loaded_irk.addr_type, BDADDR_LE_RANDOM);
+
+        // Verify [General] is preserved.
+        let general = loaded_ini.section(Some("General")).unwrap();
+        assert_eq!(general.get("Name"), Some("IRKTest"));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_persist_and_reload_csrk() {
+        let dir = temp_dir();
+        let adapter = "AA:BB:CC:DD:EE:FF";
+        let device = "11:22:33:44:55:66";
+        let info_path = dir.join(format!("{adapter}/{device}/info"));
+
+        let parent = info_path.parent().unwrap();
+        fs::create_dir_all(parent).unwrap();
+        let mut ini = Ini::new();
+        ini.with_section(Some("General"))
+            .set("Name", "CSRKTest")
+            .set("AddressType", "public");
+        ini.write_to_file(&info_path).unwrap();
+
+        let csrk = StoredCsrk {
+            key: [0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10],
+            csrk_type: 2,
+            addr: bdaddr_t { b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66] },
+            addr_type: BDADDR_LE_PUBLIC,
+        };
+
+        // Persist directly.
+        let mut reload_ini = read_ini_file(&info_path).unwrap();
+        reload_ini
+            .with_section(Some("SignatureResolvingKey"))
+            .set("Key", hex_encode_key(&csrk.key))
+            .set("Type", csrk.csrk_type.to_string());
+        write_ini_file(&info_path, &reload_ini).unwrap();
+
+        // Reload and verify.
+        let loaded_ini = read_ini_file(&info_path).unwrap();
+        let addr = bdaddr_t { b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66] };
+        let loaded_csrk = parse_csrk_from_info(&loaded_ini, &addr, BDADDR_LE_PUBLIC).unwrap();
+
+        assert_eq!(loaded_csrk.key, csrk.key);
+        assert_eq!(loaded_csrk.csrk_type, 2);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_addr_type_from_ini_string() {
+        assert_eq!(addr_type_from_ini_string("public"), BDADDR_LE_PUBLIC);
+        assert_eq!(addr_type_from_ini_string("random"), BDADDR_LE_RANDOM);
+        assert_eq!(addr_type_from_ini_string("static"), BDADDR_LE_RANDOM);
+        assert_eq!(addr_type_from_ini_string("Public"), BDADDR_LE_PUBLIC);
+        assert_eq!(addr_type_from_ini_string("RANDOM"), BDADDR_LE_RANDOM);
+        assert_eq!(addr_type_from_ini_string("bredr"), BDADDR_BREDR);
+        assert_eq!(addr_type_from_ini_string("unknown"), BDADDR_BREDR);
+    }
+
+    #[test]
+    fn test_load_ltks_for_adapter_empty_dir() {
+        let dir = temp_dir();
+        // Point storage prefix to our temp dir for isolation.
+        let adapter_addr = "00:11:22:33:44:55";
+        let adapter_dir = dir.join(adapter_addr);
+        fs::create_dir_all(&adapter_dir).unwrap();
+
+        // Since load_ltks_for_adapter uses the global storage prefix, we
+        // test the parsing logic directly to avoid side effects.
+        let ltks = load_ltks_from_directory(&adapter_dir);
+        assert!(ltks.is_empty());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_load_ltks_from_directory_with_device() {
+        let dir = temp_dir();
+        let adapter_addr = "00:11:22:33:44:55";
+        let device_addr = "AA:BB:CC:DD:EE:FF";
+        let adapter_dir = dir.join(adapter_addr);
+        let device_dir = adapter_dir.join(device_addr);
+        fs::create_dir_all(&device_dir).unwrap();
+
+        let mut ini = Ini::new();
+        ini.with_section(Some("General"))
+            .set("Name", "TestDev")
+            .set("AddressType", "public");
+        ini.with_section(Some("LongTermKey"))
+            .set("Key", "abcdef0123456789abcdef0123456789")
+            .set("Authenticated", "0")
+            .set("EncSize", "16")
+            .set("EDiv", "1234")
+            .set("Rand", "5678");
+        ini.write_to_file(device_dir.join("info")).unwrap();
+
+        let ltks = load_ltks_from_directory(&adapter_dir);
+        assert_eq!(ltks.len(), 1);
+        assert_eq!(ltks[0].ediv, 1234);
+        assert_eq!(ltks[0].rand, 5678);
+        assert_eq!(ltks[0].enc_size, 16);
+        assert_eq!(ltks[0].master, 1);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_load_irks_from_directory_with_device() {
+        let dir = temp_dir();
+        let adapter_addr = "00:11:22:33:44:55";
+        let device_addr = "AA:BB:CC:DD:EE:FF";
+        let adapter_dir = dir.join(adapter_addr);
+        let device_dir = adapter_dir.join(device_addr);
+        fs::create_dir_all(&device_dir).unwrap();
+
+        let mut ini = Ini::new();
+        ini.with_section(Some("General"))
+            .set("Name", "TestDev")
+            .set("AddressType", "random");
+        ini.with_section(Some("IdentityResolvingKey"))
+            .set("Key", "0123456789abcdef0123456789abcdef");
+        ini.write_to_file(device_dir.join("info")).unwrap();
+
+        let irks = load_irks_from_directory(&adapter_dir);
+        assert_eq!(irks.len(), 1);
+        assert_eq!(irks[0].addr_type, BDADDR_LE_RANDOM);
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

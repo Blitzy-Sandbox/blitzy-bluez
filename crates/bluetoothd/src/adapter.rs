@@ -46,14 +46,16 @@ use bluez_shared::sys::mgmt::{
     MGMT_EV_LOCAL_NAME_CHANGED, MGMT_EV_NEW_CONN_PARAM, MGMT_EV_NEW_CSRK, MGMT_EV_NEW_IRK,
     MGMT_EV_NEW_LINK_KEY, MGMT_EV_NEW_LONG_TERM_KEY, MGMT_EV_NEW_SETTINGS,
     MGMT_EV_PIN_CODE_REQUEST, MGMT_EV_USER_CONFIRM_REQUEST, MGMT_EV_USER_PASSKEY_REQUEST,
-    MGMT_INDEX_NONE, MGMT_OP_ADD_DEVICE, MGMT_OP_ADD_UUID, MGMT_OP_DISCONNECT, MGMT_OP_PAIR_DEVICE,
+    MGMT_INDEX_NONE, MGMT_OP_ADD_DEVICE, MGMT_OP_ADD_UUID, MGMT_OP_DISCONNECT,
+    MGMT_OP_LOAD_IRKS, MGMT_OP_LOAD_LONG_TERM_KEYS, MGMT_OP_PAIR_DEVICE,
     MGMT_OP_PIN_CODE_NEG_REPLY, MGMT_OP_PIN_CODE_REPLY, MGMT_OP_READ_INDEX_LIST, MGMT_OP_READ_INFO,
     MGMT_OP_REMOVE_UUID, MGMT_OP_SET_BONDABLE, MGMT_OP_SET_DEV_CLASS, MGMT_OP_SET_DISCOVERABLE,
     MGMT_OP_SET_FAST_CONNECTABLE, MGMT_OP_SET_LOCAL_NAME, MGMT_OP_SET_POWERED,
-    MGMT_OP_START_DISCOVERY, MGMT_OP_STOP_DISCOVERY, MGMT_OP_UNPAIR_DEVICE,
-    MGMT_OP_USER_CONFIRM_NEG_REPLY, MGMT_OP_USER_CONFIRM_REPLY, MGMT_OP_USER_PASSKEY_NEG_REPLY,
-    MGMT_OP_USER_PASSKEY_REPLY, MGMT_STATUS_RFKILLED, MGMT_STATUS_SUCCESS, MgmtSettings,
-    mgmt_blocked_key_info, mgmt_conn_param, mgmt_errstr, mgmt_rp_read_info,
+    MGMT_OP_SET_SECURE_CONN, MGMT_OP_START_DISCOVERY, MGMT_OP_STOP_DISCOVERY,
+    MGMT_OP_UNPAIR_DEVICE, MGMT_OP_USER_CONFIRM_NEG_REPLY, MGMT_OP_USER_CONFIRM_REPLY,
+    MGMT_OP_USER_PASSKEY_NEG_REPLY, MGMT_OP_USER_PASSKEY_REPLY, MGMT_STATUS_RFKILLED,
+    MGMT_STATUS_SUCCESS, MgmtSettings, mgmt_blocked_key_info, mgmt_conn_param, mgmt_errstr,
+    mgmt_rp_read_info,
 };
 use bluez_shared::util::eir::{EirData, eir_parse};
 use bluez_shared::util::uuid::BtUuid;
@@ -69,7 +71,9 @@ use crate::error::BtdError;
 use crate::gatt::database::BtdGattDatabase;
 use crate::log::{btd_debug, btd_info, btd_warn};
 use crate::sdp::SdpRecord;
-use crate::storage::STORAGEDIR;
+use crate::storage::{
+    self, StoredIrk, StoredLtk, STORAGEDIR,
+};
 
 // ===========================================================================
 // Constants
@@ -1862,6 +1866,32 @@ pub async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &Mg
                     // ltk_type: 0 = unauthenticated, non-zero = authenticated
                     d.set_ltk(val, master != 0, ltk_type != 0, enc_size, ediv, rand);
                     d.store();
+
+                    // Directive 4: Persist the new LTK to the filesystem so it
+                    // survives daemon restarts and is reloaded by Directive 2.
+                    let adapter_addr_str = {
+                        let a = adapter_arc.lock().await;
+                        a.address.ba2str()
+                    };
+                    let device_addr_str = addr.ba2str();
+                    let ltk_to_persist = StoredLtk {
+                        key: val,
+                        rand,
+                        ediv,
+                        authenticated: ltk_type,
+                        enc_size,
+                        addr,
+                        addr_type: addr_type_byte,
+                        ltk_type,
+                        master,
+                    };
+                    tokio::task::spawn_blocking(move || {
+                        storage::persist_ltk(
+                            &adapter_addr_str,
+                            &device_addr_str,
+                            &ltk_to_persist,
+                        );
+                    });
                 }
             }
         }
@@ -1894,6 +1924,26 @@ pub async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &Mg
                     let mut d = dev.lock().await;
                     d.set_irk(val);
                     d.store();
+
+                    // Directive 4: Persist the new IRK to the filesystem so it
+                    // survives daemon restarts and is reloaded by Directive 3.
+                    let adapter_addr_str = {
+                        let a = adapter_arc.lock().await;
+                        a.address.ba2str()
+                    };
+                    let device_addr_str = addr.ba2str();
+                    let irk_to_persist = StoredIrk {
+                        key: val,
+                        addr,
+                        addr_type: addr_type_byte,
+                    };
+                    tokio::task::spawn_blocking(move || {
+                        storage::persist_irk(
+                            &adapter_addr_str,
+                            &device_addr_str,
+                            &irk_to_persist,
+                        );
+                    });
                 }
             }
         }
@@ -2382,6 +2432,138 @@ async fn adapter_add(index: u16, mgmt: Arc<MgmtSocket>) {
     let path = format!("/org/bluez/hci{index}");
     if let Err(e) = conn.object_server().at(path.as_str(), iface).await {
         btd_warn(index, &format!("Failed to register Adapter1 D-Bus interface: {e}"));
+    }
+
+    // ---------------------------------------------------------------
+    // Directive 6: Set BONDABLE and SECURE_CONN if not already set
+    // ---------------------------------------------------------------
+    {
+        let cur = MgmtSettings::from_bits_truncate(info.current_settings);
+        if !cur.contains(MgmtSettings::BONDABLE) {
+            match mgmt.send_command(MGMT_OP_SET_BONDABLE, index, &[0x01u8]).await {
+                Ok(r) if r.status == MGMT_STATUS_SUCCESS => {
+                    btd_info(index, "Set bondable mode enabled");
+                }
+                Ok(r) => {
+                    btd_warn(
+                        index,
+                        &format!(
+                            "MGMT_OP_SET_BONDABLE failed: {}",
+                            mgmt_errstr(r.status)
+                        ),
+                    );
+                }
+                Err(e) => {
+                    btd_warn(index, &format!("MGMT_OP_SET_BONDABLE error: {e}"));
+                }
+            }
+        }
+        if !cur.contains(MgmtSettings::SECURE_CONN) {
+            match mgmt.send_command(MGMT_OP_SET_SECURE_CONN, index, &[0x01u8]).await {
+                Ok(r) if r.status == MGMT_STATUS_SUCCESS => {
+                    btd_info(index, "Set secure connections enabled");
+                }
+                Ok(r) => {
+                    btd_warn(
+                        index,
+                        &format!(
+                            "MGMT_OP_SET_SECURE_CONN failed: {}",
+                            mgmt_errstr(r.status)
+                        ),
+                    );
+                }
+                Err(e) => {
+                    btd_warn(index, &format!("MGMT_OP_SET_SECURE_CONN error: {e}"));
+                }
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Directive 2: Load LTKs from persistent storage and issue
+    // MGMT_OP_LOAD_LONG_TERM_KEYS so the kernel can resume encrypted
+    // LE connections across daemon restarts.
+    // ---------------------------------------------------------------
+    {
+        let ltks = storage::load_ltks_for_adapter(&addr_str);
+        let key_count = ltks.len() as u16;
+        // Param layout: le16 key_count + key_count × 36 bytes each
+        // Per-key: bdaddr(6) + addr_type(1) + type(1) + master(1) +
+        //          enc_size(1) + ediv(2-le) + rand(8-le) + val(16) = 36
+        let mut param = Vec::with_capacity(2 + ltks.len() * 36);
+        param.extend_from_slice(&key_count.to_le_bytes());
+        for ltk in &ltks {
+            param.extend_from_slice(&ltk.addr.b);
+            param.push(ltk.addr_type);
+            param.push(ltk.ltk_type);
+            param.push(ltk.master);
+            param.push(ltk.enc_size);
+            param.extend_from_slice(&ltk.ediv.to_le_bytes());
+            param.extend_from_slice(&ltk.rand.to_le_bytes());
+            param.extend_from_slice(&ltk.key);
+        }
+        match mgmt
+            .send_command(MGMT_OP_LOAD_LONG_TERM_KEYS, index, &param)
+            .await
+        {
+            Ok(r) if r.status == MGMT_STATUS_SUCCESS => {
+                btd_info(
+                    index,
+                    &format!("Loaded {} LTK(s) from persistent storage", ltks.len()),
+                );
+            }
+            Ok(r) => {
+                btd_warn(
+                    index,
+                    &format!(
+                        "MGMT_OP_LOAD_LONG_TERM_KEYS failed: {}",
+                        mgmt_errstr(r.status)
+                    ),
+                );
+            }
+            Err(e) => {
+                btd_warn(
+                    index,
+                    &format!("MGMT_OP_LOAD_LONG_TERM_KEYS error: {e}"),
+                );
+            }
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // Directive 3: Load IRKs from persistent storage and issue
+    // MGMT_OP_LOAD_IRKS so the kernel can resolve random addresses
+    // of previously bonded LE devices.
+    // ---------------------------------------------------------------
+    {
+        let irks = storage::load_irks_for_adapter(&addr_str);
+        let irk_count = irks.len() as u16;
+        // Param layout: le16 irk_count + irk_count × 23 bytes each
+        // Per-IRK: bdaddr(6) + addr_type(1) + val(16) = 23
+        let mut param = Vec::with_capacity(2 + irks.len() * 23);
+        param.extend_from_slice(&irk_count.to_le_bytes());
+        for irk in &irks {
+            param.extend_from_slice(&irk.addr.b);
+            param.push(irk.addr_type);
+            param.extend_from_slice(&irk.key);
+        }
+        match mgmt.send_command(MGMT_OP_LOAD_IRKS, index, &param).await {
+            Ok(r) if r.status == MGMT_STATUS_SUCCESS => {
+                btd_info(
+                    index,
+                    &format!("Loaded {} IRK(s) from persistent storage", irks.len()),
+                );
+            }
+            Ok(r) => {
+                btd_warn(
+                    index,
+                    &format!("MGMT_OP_LOAD_IRKS failed: {}", mgmt_errstr(r.status)),
+                );
+            }
+            Err(e) => {
+                btd_warn(index, &format!("MGMT_OP_LOAD_IRKS error: {e}"));
+            }
+        }
     }
 
     // Subscribe to all 21 per-adapter MGMT events and merge into a
@@ -2952,6 +3134,11 @@ pub async fn adapter_create_bonding(
 }
 
 /// Cancel an in-progress bonding.
+///
+/// The `MGMT_OP_UNPAIR_DEVICE` parameter layout is:
+/// `bdaddr(6) + addr_type(1) + disconnect(1)` = 8 bytes.
+/// We set `disconnect = 0x01` (true) to immediately tear down any active
+/// ACL/LE link with the device being unpaired.
 pub async fn adapter_cancel_bonding(
     adapter: &Arc<Mutex<BtdAdapter>>,
     addr: &BdAddr,
@@ -2960,9 +3147,10 @@ pub async fn adapter_cancel_bonding(
     let a = adapter.lock().await;
     if let Some(mgmt) = a.mgmt.clone() {
         let idx = a.index;
-        let mut param = Vec::with_capacity(7);
+        let mut param = Vec::with_capacity(8);
         param.extend_from_slice(&addr.b);
         param.push(addr_type);
+        param.push(0x01); // disconnect = true
         drop(a);
         let resp = mgmt.send_command(MGMT_OP_UNPAIR_DEVICE, idx, &param).await;
         match resp {

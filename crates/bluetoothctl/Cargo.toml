@@ -1,0 +1,19 @@
+[package]
+name = "bluetoothctl"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "bluetoothctl"
+path = "src/main.rs"
+
+[lib]
+name = "bluetoothctl_lib"
+path = "src/lib.rs"
+
+[dependencies]
+bluez-shared = { path = "../bluez-shared" }
+tokio = { workspace = true }
+zbus = { workspace = true }
+rustyline = { workspace = true }

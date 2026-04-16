@@ -184,3 +184,7 @@ cscope.out
 cscope.po.out
 
 **/__pycache__
+
+# Rust/Cargo
+target/
+Cargo.lock

@@ -1,0 +1,33 @@
+[package]
+name = "bluez-shared"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "BlueZ shared Bluetooth protocol types and utilities"
+
+[dependencies]
+thiserror.workspace = true
+bitflags.workspace = true
+tokio.workspace = true
+nix.workspace = true
+libc.workspace = true
+tracing.workspace = true
+aes.workspace = true
+cmac.workspace = true
+cipher.workspace = true
+rand.workspace = true
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "crypto_bench"
+harness = false
+
+[[bench]]
+name = "gatt_bench"
+harness = false
+
+[[bench]]
+name = "iov_bench"
+harness = false

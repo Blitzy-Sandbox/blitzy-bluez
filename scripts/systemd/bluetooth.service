@@ -1,0 +1,21 @@
+[Unit]
+Description=Bluetooth service (Rust)
+Documentation=man:bluetoothd(8)
+ConditionPathIsDirectory=/sys/class/bluetooth
+After=dbus.service
+Requires=dbus.service
+
+[Service]
+Type=dbus
+BusName=org.bluez
+ExecStart=/usr/libexec/bluetooth/bluetoothd
+NotifyAccess=main
+WatchdogSec=10
+Restart=on-failure
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_BIND_SERVICE
+ProtectHome=true
+ProtectSystem=full
+
+[Install]
+WantedBy=bluetooth.target
+Alias=dbus-org.bluez.service

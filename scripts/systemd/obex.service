@@ -1,0 +1,12 @@
+[Unit]
+Description=Bluetooth OBEX service (Rust)
+After=bluetooth.service
+
+[Service]
+Type=dbus
+BusName=org.bluez.obex
+ExecStart=/usr/libexec/bluetooth/obexd
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

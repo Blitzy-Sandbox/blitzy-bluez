@@ -152,6 +152,53 @@ Print the command usage
 :Example Show detailed usage for add-or-pattern command:
 	| **> print-usage add-or-pattern**
 
+MGMT-Based Monitor Commands
+===========================
+
+These commands are available via the mgmt-based advertisement monitor
+sub-submenu (registered from the management interface).
+
+features
+--------
+
+Show advertisement monitor features supported by the controller.
+
+:Usage: **> features**
+:Example:
+	| **> features**
+
+remove
+------
+
+Remove an advertisement monitor by handle.
+
+:Usage: **> remove <handle>**
+:<handle>: Handle ID of the monitor to remove (required)
+:Example Remove monitor with handle 1:
+	| **> remove 1**
+
+add-pattern
+-----------
+
+Add a pattern-based advertisement monitor.
+
+:Usage: **> add-pattern [-,h] <patterns>**
+:[-,h]: Pattern options (optional)
+:<patterns>: One or more advertisement patterns to match
+:Example:
+	| **> add-pattern 0 9 53616d73756e67**
+
+add-pattern-rssi
+----------------
+
+Add a pattern-based advertisement monitor with RSSI filtering.
+
+:Usage: **> add-pattern-rssi [options] <patterns>**
+:[options]: RSSI filter options (high threshold, low threshold, timeout, sampling period)
+:<patterns>: One or more advertisement patterns to match
+:Example:
+	| **> add-pattern-rssi -h -40 -l -80 0 9 53616d73756e67**
+
 RESOURCES
 =========
 

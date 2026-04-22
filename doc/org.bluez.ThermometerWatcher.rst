@@ -1,10 +1,16 @@
-============================
-org.bluez.ThermometerWatcher
-============================
+===============================================
+org.bluez.ThermometerWatcher [legacy, not implemented]
+===============================================
 
 --------------------------------------------------------
 BlueZ D-Bus Health Thermometer Watcher API documentation
 --------------------------------------------------------
+
+.. note::
+
+   This is a legacy client-side callback interface from 2011 associated with
+   the Health Thermometer Profile. It is **not implemented** in the current
+   Rust codebase and is retained here solely as a historical reference.
 
 :Version: BlueZ
 :Date: July 2011

@@ -1,0 +1,81 @@
+[package]
+name = "bluez-tools"
+version = "5.86.0"
+edition = "2024"
+description = "BlueZ integration test suite — emulator-driven regression testers for Bluetooth subsystem verification"
+license = "GPL-2.0-or-later"
+publish = false
+
+[lib]
+name = "bluez_tools"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mgmt-tester"
+path = "src/bin/mgmt_tester.rs"
+
+[[bin]]
+name = "l2cap-tester"
+path = "src/bin/l2cap_tester.rs"
+
+[[bin]]
+name = "iso-tester"
+path = "src/bin/iso_tester.rs"
+
+[[bin]]
+name = "sco-tester"
+path = "src/bin/sco_tester.rs"
+
+[[bin]]
+name = "hci-tester"
+path = "src/bin/hci_tester.rs"
+
+[[bin]]
+name = "mesh-tester"
+path = "src/bin/mesh_tester.rs"
+
+[[bin]]
+name = "mesh-cfgtest"
+path = "src/bin/mesh_cfgtest.rs"
+
+[[bin]]
+name = "rfcomm-tester"
+path = "src/bin/rfcomm_tester.rs"
+
+[[bin]]
+name = "bnep-tester"
+path = "src/bin/bnep_tester.rs"
+
+[[bin]]
+name = "gap-tester"
+path = "src/bin/gap_tester.rs"
+
+[[bin]]
+name = "smp-tester"
+path = "src/bin/smp_tester.rs"
+
+[[bin]]
+name = "userchan-tester"
+path = "src/bin/userchan_tester.rs"
+
+[dependencies]
+bluez-shared = { path = "../bluez-shared" }
+bluez-emulator = { path = "../bluez-emulator" }
+tokio = { workspace = true }
+zbus = { workspace = true }
+nix = { workspace = true, features = ["uio"] }
+libc = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+bitflags = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[features]
+default = []
+
+[lints]
+workspace = true

@@ -66,7 +66,7 @@ OPTIONS
 
 -d TTY, --tty TTY           Read data from *TTY*.
 
--B SPEED, --rate SPEED      Set TTY speed. The default *SPEED* is 115300
+-B SPEED, --tty-speed SPEED  Set TTY speed. The default *SPEED* is 115200
 
 -V COMPID, --vendor COMPID  Set the default company identifier. The *COMPID* is
                             a unique number assigned by the Bluetooth SIG to
@@ -358,10 +358,10 @@ MGMT protocol traffic.
 
 **Process log messages** (debug output from bluetoothd and other daemons)::
 
-    = bluetoothd: src/adapter.c:connected_callback() hci0 devic..   12:36:18.975307
+    = bluetoothd: adapter: connected_callback() hci0 device ..     12:36:18.975307
       │           │                                                  │
       │           │                                                  └─ Timestamp
-      │           └─ Source file, function, and message (may be truncated)
+      │           └─ Module, function, and message (may be truncated)
       └─ Process name
 
 These appear when ``bluetoothd`` is running with debug enabled (``-d``)
@@ -522,7 +522,7 @@ MGMT Command Complete event back to bluetoothd.
             Role: Peripheral (0x01)
             Peer address: AA:BB:CC:DD:EE:FF (OUI Company)
     @ MGMT Event: Device Connec.. (0x000b) plen 13  {0x0001} [hci0] 12:36:18.974319
-    = bluetoothd: src/adapter.c:connected_callback() hci0 devic..   12:36:18.975307
+    = bluetoothd: adapter: connected_callback() hci0 device ..     12:36:18.975307
     < ACL: Handle 2048 [1.. flags 0x00 dlen 16  #493 [hci0] 12:36:18.977915
           LE L2CAP: Connection Parameter Update Request (0x12) ident 1 len 8
     < ACL: Handle 2048 [2/6] flags 0x00 dlen 7  #494 [hci0] 12:36:18.978488
@@ -673,7 +673,7 @@ Full Error Code Table
 The complete set of HCI error codes (0x00-0x45) is defined in the
 Bluetooth Core Specification, Volume 1, Part F. btmon decodes all
 of them automatically in ``Status:`` and ``Reason:`` fields. The
-source mapping is in ``monitor/packet.c`` (``error2str_table``).
+source mapping is in ``crates/btmon/src/packet.rs`` (``error2str_table``).
 
 ANALYZE MODE
 ============
@@ -816,7 +816,7 @@ and generally not actionable without vendor documentation.
 
 Intel controllers emit extended telemetry events (subevent 0x8780)
 that include connection quality metrics, error counters, and firmware
-state. Partial decoding is available in ``monitor/intel.c``.
+state. Partial decoding is available in ``crates/btmon/src/vendor/intel.rs``.
 
 RESOURCES
 =========

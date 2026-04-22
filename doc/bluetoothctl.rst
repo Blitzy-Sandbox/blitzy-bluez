@@ -229,6 +229,17 @@ mechanism.
 :Example Pair using device object path:
 	| **> pair /org/bluez/hci0/dev_00_11_22_33_44_55**
 
+cancel-pairing
+--------------
+
+Cancel an ongoing pairing operation with a device.
+
+:Usage: **> cancel-pairing [dev]**
+:Uses: **org.bluez.Device(5)** method **CancelPairing**
+:[dev]: Device MAC address (XX:XX:XX:XX:XX:XX) or object path (optional, uses current device if omitted)
+:Example Cancel pairing:
+	| **> cancel-pairing 00:11:22:33:44:55**
+
 pairable
 --------
 
@@ -516,6 +527,23 @@ Get/Set preferred bearer.
 	| > bearer <addr> bredr
 	| [CHG] Device <addr> PreferredBearer: bredr
 	| Changing bredr succeeded
+
+wake
+----
+
+Get/Set the WakeAllowed property of a device, which controls whether the device
+is allowed to wake the host from suspend.
+
+:Usage: **> wake [dev] <on/off>**
+:Uses: **org.bluez.Device(5)** property **WakeAllowed**
+:[dev]: Device MAC address (XX:XX:XX:XX:XX:XX) or object path (optional, uses current device if omitted)
+:<on/off>: "on" to allow wake, "off" to disallow (optional — omit to query current value)
+:Example Query wake status:
+	| **> wake 00:11:22:33:44:55**
+:Example Allow device to wake host:
+	| **> wake 00:11:22:33:44:55 on**
+:Example Disallow device from waking host:
+	| **> wake 00:11:22:33:44:55 off**
 
 Advertise Submenu
 =================

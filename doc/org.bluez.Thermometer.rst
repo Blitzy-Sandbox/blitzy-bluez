@@ -12,11 +12,17 @@ BlueZ D-Bus Health Thermometer API documentation
 :Manual section: 5
 :Manual group: Linux System Administration
 
+.. note::
+
+   This interface is a **legacy specification** from 2011. It is **not
+   implemented** in the current Rust-based BlueZ daemon. The documentation
+   is retained for historical reference only.
+
 Interface
 =========
 
 :Service:	org.bluez
-:Interface:	org.bluez.Thermometer1
+:Interface:	org.bluez.Thermometer1 [legacy, not implemented]
 :Object path:	[variable prefix]/{hci0,hci1,...}/dev_XX_XX_XX_XX_XX_XX
 
 Properties

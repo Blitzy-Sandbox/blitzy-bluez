@@ -1,0 +1,47 @@
+[package]
+name = "bluetoothd"
+version = "5.86.0"
+edition = "2024"
+description = "BlueZ Bluetooth daemon — manages adapters, devices, pairing, profiles, and D-Bus services"
+license = "GPL-2.0-or-later"
+publish = false
+
+[lib]
+name = "bluetoothd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "bluetoothd"
+path = "src/main.rs"
+
+[dependencies]
+alsa = { workspace = true }
+bluez-shared = { path = "../bluez-shared" }
+tokio = { workspace = true }
+zbus = { workspace = true }
+inventory = { workspace = true }
+libloading = { workspace = true }
+rust-ini = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter", "registry"] }
+serde = { workspace = true }
+nix = { workspace = true, features = ["signal", "fs", "ioctl"] }
+libc = { workspace = true }
+thiserror = { workspace = true }
+bitflags = { workspace = true }
+bytes = { workspace = true }
+futures = { workspace = true }
+tokio-stream = { workspace = true }
+quick-xml = { workspace = true }
+zerocopy = { workspace = true }
+tokio-udev = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[features]
+default = []
+test-support = []
+
+[lints]
+workspace = true

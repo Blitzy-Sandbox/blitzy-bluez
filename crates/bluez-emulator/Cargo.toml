@@ -1,0 +1,30 @@
+[package]
+name = "bluez-emulator"
+version = "5.86.0"
+edition = "2024"
+description = "HCI emulator library for BlueZ Rust — virtual Bluetooth controllers via VHCI for integration testing"
+license = "LGPL-2.1-or-later"
+publish = false
+
+[lib]
+name = "bluez_emulator"
+path = "src/lib.rs"
+
+[dependencies]
+bluez-shared = { path = "../bluez-shared" }
+tokio = { workspace = true }
+nix = { workspace = true, features = ["uio", "term"] }
+libc = { workspace = true }
+tracing = { workspace = true }
+bitflags = { workspace = true }
+bytes = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[features]
+default = []
+
+[lints]
+workspace = true

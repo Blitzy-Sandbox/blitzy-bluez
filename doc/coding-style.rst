@@ -2,18 +2,29 @@
 BlueZ coding style
 ==================
 
-Every project has its coding style, and BlueZ is not an exception. This
-document describes the preferred coding style for BlueZ code, in order to keep
-some level of consistency among developers so that code can be easily
-understood and maintained.
+.. note::
 
-First of all, BlueZ coding style must follow every rule for Linux kernel
+   **Rust codebase**: The BlueZ stack has been rewritten in Rust. The Rust
+   codebase follows standard Rust coding conventions enforced by ``rustfmt``
+   (see ``rustfmt.toml`` at the workspace root) and ``clippy`` (see
+   ``clippy.toml``). Run ``cargo fmt --check`` to verify formatting and
+   ``cargo clippy --workspace -- -D clippy::all`` to verify lint compliance.
+   The rules below are retained as a historical reference for the legacy C
+   codebase and for any contributors working on C-compatible FFI boundary
+   modules.
+
+Legacy C Coding Style
+---------------------
+
+Every project has its coding style, and BlueZ is not an exception. This
+document describes the preferred coding style for the legacy BlueZ C code, in
+order to keep some level of consistency among developers so that code can be
+easily understood and maintained.
+
+First of all, the legacy C coding style follows every rule for Linux kernel
 (https://www.kernel.org/doc/Documentation/process/coding-style.rst). There also
-exists a tool named checkpatch.pl to help you check the compliance with it.
-Just type ``checkpatch.pl --no-tree patch_name`` to check your patch. In theory,
-you need to clean up all the warnings and errors except this one: ``ERROR:
-Missing Signed-off-by: line(s)``. BlueZ does not used ``Signed-off-by`` lines, so
-including them is actually an error. In certain circumstances one can ignore
+existed a tool named checkpatch.pl to help check compliance with it.
+In certain circumstances one can ignore
 the 80 character per line limit. This is generally only allowed if the
 alternative would make the code even less readable.
 

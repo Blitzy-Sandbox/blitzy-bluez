@@ -43,8 +43,8 @@ array{string} ServiceAllowList [readonly, adapter-only]
 
 Current value of service allow list.
 
-bool IsAffectedByPolicy [readonly, device-only]
-```````````````````````````````````````````````
+bool AffectedByPolicy [readonly, device-only]
+``````````````````````````````````````````````
 
 Indicate if there is any auto-connect profile in this device is not allowed by
 admin policy.

@@ -1,0 +1,28 @@
+[package]
+name = "bluetoothctl"
+version = "5.86.0"
+edition = "2024"
+description = "BlueZ interactive Bluetooth control client — Rust rewrite of bluetoothctl"
+license = "GPL-2.0-or-later"
+publish = false
+
+[[bin]]
+name = "bluetoothctl"
+path = "src/main.rs"
+
+[dependencies]
+bluez-shared = { path = "../bluez-shared" }
+tokio = { workspace = true }
+zbus = { workspace = true }
+nix = { workspace = true }
+rustyline = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+futures = { workspace = true }
+tokio-stream = { workspace = true }
+
+[features]
+default = []
+
+[lints]
+workspace = true

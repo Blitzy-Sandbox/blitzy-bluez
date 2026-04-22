@@ -1,0 +1,43 @@
+# BlueZ Rust Workspace — rustfmt formatting configuration
+# SPDX-License-Identifier: GPL-2.0-or-later
+#
+# All options below are stable rustfmt directives (no nightly features).
+# Applies to every crate in the workspace via Cargo workspace inheritance.
+
+# Parser edition matching workspace Cargo.toml [workspace.package] edition.
+edition = "2024"
+
+# Style guide edition — use 2024 style rules for consistent modern formatting.
+style_edition = "2024"
+
+# Maximum line width. 100 columns is the Rust community standard for systems
+# code and wider than the C-era 80-column limit from .editorconfig while
+# remaining readable in side-by-side diffs and code review tools.
+max_width = 100
+
+# Indentation width in spaces. Matches .editorconfig [*.rs] indent_size = 4
+# and standard Rust convention. Soft tabs only (hard_tabs = false is default).
+tab_spaces = 4
+
+# Maximize use of available line width for function arguments, struct literals,
+# array literals, and chain expressions rather than breaking early.
+use_small_heuristics = "Max"
+
+# Enforce Unix (LF) line endings across all platforms, matching .editorconfig
+# end_of_line = lf for *.rs files.
+newline_style = "Unix"
+
+# Reorder use/extern-crate statements alphabetically within their group for
+# deterministic import ordering across all 8 workspace crates.
+reorder_imports = true
+
+# Reorder mod declarations alphabetically for consistent module ordering.
+reorder_modules = true
+
+# Use field initialization shorthand (e.g., `Foo { bar }` instead of
+# `Foo { bar: bar }`) for concise struct construction.
+use_field_init_shorthand = true
+
+# Merge multiple #[derive(...)] attributes on the same item into a single
+# attribute for compact derive lists.
+merge_derives = true

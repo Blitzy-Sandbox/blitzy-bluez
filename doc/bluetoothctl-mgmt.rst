@@ -1293,6 +1293,48 @@ Set device flags
 :Example Clear all flags for LE public device:
 	| **> set-flags -f 0x00 -t le_public 11:22:33:44:55:66**
 
+hci-cmd
+-------
+
+Send a raw HCI command to the controller.
+
+:Usage: **> hci-cmd <opcode> [parameters]**
+:<opcode>: HCI opcode in decimal or 0x-prefixed hex (required)
+:[parameters]: Hex-encoded parameter bytes separated by spaces (optional)
+:Example Send HCI Reset (opcode 0x0C03):
+	| **> hci-cmd 0x0C03**
+:Example Send command with parameters:
+	| **> hci-cmd 0x2001 01**
+
+mesh-features
+-------------
+
+Read mesh features supported by the controller.
+
+:Usage: **> mesh-features**
+:Example:
+	| **> mesh-features**
+
+mesh-send
+---------
+
+Send a mesh packet via the controller.
+
+:Usage: **> mesh-send [options] <data>**
+:[options]: Send options (optional)
+:<data>: Hex-encoded mesh data payload (required)
+:Example:
+	| **> mesh-send 0102030405**
+
+mesh-send-cancel
+----------------
+
+Cancel an ongoing mesh send operation.
+
+:Usage: **> mesh-send-cancel**
+:Example:
+	| **> mesh-send-cancel**
+
 RESOURCES
 =========
 

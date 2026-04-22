@@ -184,3 +184,9 @@ cscope.out
 cscope.po.out
 
 **/__pycache__
+
+# Rust build artifacts
+/target/
+
+# Temporary files from build tools
+/tmp/

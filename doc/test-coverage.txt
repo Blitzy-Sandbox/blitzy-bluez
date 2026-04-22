@@ -7,32 +7,49 @@ Automated unit testing
 
 Application		Count	Description
 -------------------------------------------
-test-crc		   9	Link Layer CRC-24 checksum
-test-eir		  14	EIR and AD parsing
-test-lib		  14	SDP library functions
-test-sdp		 133	SDP qualification test cases
-test-uuid		  30	UUID conversion handling
-test-mgmt		   9	Management interface handling
-test-crypto		   5	Cryptographic toolbox helpers
-test-textfile		   4	Old textfile storage format
-test-ringbuf		   3	Ring buffer functionality
-test-queue		   6	Queue handling functionality
-test-uhid		   6	Userspace HID functionality
-test-hfp		  29	HFP Audio Gateway functionality
-test-avdtp		  60	AVDTP qualification test cases
-test-avctp		   9	AVCTP qualification test cases
-test-avrcp		 110	AVRCP qualification test cases
-test-gobex		  31	Generic OBEX functionality
-test-gobex-packet	   9	OBEX packet handling
-test-gobex-header	  28	OBEX header handling
-test-gobex-apparam	  18	OBEX apparam handling
-test-gobex-transfer	  36	OBEX transfer handling
-test-gdbus-client	  13	D-Bus client handling
-test-gatt		 180	GATT qualification test cases
-test-hog		   6	HID Over GATT qualification test cases
+test-att		  14	ATT protocol handling
+test-avctp		  15	AVCTP qualification test cases
+test-avdtp		 104	AVDTP qualification test cases
+test-avrcp		  84	AVRCP qualification test cases
+test-bap		  37	BAP (Basic Audio Profile) test cases
+test-bass		   8	BASS (Broadcast Audio Scan Service) test cases
 test-battery		  10	Battery charge test cases
+test-ccp		  21	CCP (Call Control Profile) test cases
+test-crc		  13	Link Layer CRC-24 checksum
+test-crypto		  13	Cryptographic toolbox helpers
+test-csip		  23	CSIP (Coordinated Set Identification) test cases
+test-ecc		   5	Elliptic Curve Cryptography
+test-eir		  28	EIR and AD parsing
+test-gatt		 103	GATT qualification test cases
+test-gattrib		  33	GAttrib legacy GATT transport
+test-gdbus-client	  15	D-Bus client handling
+test-gmap		  17	GMAP (Gaming Audio Profile) test cases
+test-gobex		  35	Generic OBEX functionality
+test-gobex-apparam	  32	OBEX apparam handling
+test-gobex-header	  28	OBEX header handling
+test-gobex-packet	  10	OBEX packet handling
+test-gobex-transfer	  39	OBEX transfer handling
+test-hfp		  71	HFP Audio Gateway functionality
+test-hog		  47	HID Over GATT qualification test cases
+test-lib		  81	SDP library functions
+test-mcp		 103	MCP (Media Control Profile) test cases
+test-mesh-crypto	  46	Mesh cryptographic functions
+test-mgmt		   3	Management interface handling
+test-micp		  10	MICP (Microphone Control) test cases
+test-midi		  19	BLE-MIDI functionality
+test-profile		  17	Profile registration test cases
+test-queue		   8	Queue handling functionality
+test-rap		  20	RAP (Ranging Profile) test cases
+test-ringbuf		  13	Ring buffer functionality
+test-sdp		 116	SDP qualification test cases
+test-tester		  27	Test harness framework
+test-textfile		  10	Old textfile storage format
+test-tmap		  15	TMAP (Telephony and Media Audio) test cases
+test-uhid		  18	Userspace HID functionality
+test-uuid		  62	UUID conversion handling
+test-vcp		  25	VCP (Volume Control Profile) test cases
 			-----
-			 771
+			1398
 
 
 Automated end-to-end testing
@@ -53,22 +70,7 @@ userchan-tester		   3	Kernel HCI User Channel testting
 			 408
 
 
-Android end-to-end testing
-==========================
+.. note::
 
-Application		Count	Description
--------------------------------------------
-android-tester		 194	Android HAL interface testing
-ipc-tester		 132	Android IPC resistance testing
-			-----
-			 326
-
-
-Android automated unit testing
-==============================
-
-Application		Count	Description
--------------------------------------------
-test-ipc		  14	Android IPC library functions
-			-----
-			  14
+   Android-specific testers (android-tester, ipc-tester, test-ipc) were part
+   of the legacy C codebase and are not included in the Rust rewrite.

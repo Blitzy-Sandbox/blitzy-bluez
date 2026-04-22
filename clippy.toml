@@ -1,0 +1,29 @@
+# Workspace-wide Clippy configuration for the BlueZ Rust workspace.
+#
+# This file configures lint thresholds appropriate for a systems-level
+# Bluetooth protocol stack. These are threshold adjustments, NOT lint
+# suppressions — all code must still be clean under `cargo clippy
+# --workspace -- -D clippy::all`.
+#
+# Reference: AAP sections 0.8.1 (zero clippy warnings) and 0.4.1 (workspace structure).
+
+# Minimum Supported Rust Version — must match workspace Cargo.toml rust-version.
+# Required for the Rust 2024 edition (edition = "2024").
+msrv = "1.85"
+
+# Bluetooth protocol functions legitimately require many parameters due to
+# socket options, HCI commands, MGMT TLV construction, and codec configuration.
+# The default threshold of 7 is too restrictive for this domain.
+too-many-arguments-threshold = 12
+
+# Complex nested generic types are expected in a Bluetooth protocol stack that
+# combines async I/O, channel-based communication, and trait-object dispatch
+# (e.g., Arc<Mutex<HashMap<u16, mpsc::Sender<...>>>>). The default of 250 is
+# too restrictive.
+type-complexity-threshold = 350
+
+# Protocol state machines (BAP ASE lifecycle, AVDTP signaling, HFP AT command
+# parsing, MGMT command sequencing) have inherent control-flow complexity that
+# cannot be meaningfully decomposed without sacrificing readability. The default
+# of 25 is too restrictive for faithful C-to-Rust protocol engine translation.
+cognitive-complexity-threshold = 40

@@ -518,6 +518,6 @@ mod tests {
         let result = get_blocked(0);
         // We cannot assert the exact value since it depends on the
         // environment, but it should be one of -1, 0, or 1.
-        assert!(result >= -1 && result <= 1);
+        assert!((-1..=1).contains(&result));
     }
 }

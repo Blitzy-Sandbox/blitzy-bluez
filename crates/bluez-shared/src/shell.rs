@@ -775,18 +775,14 @@ fn parse_arg_spec(spec: &str) -> (usize, usize, bool) {
     for ch in spec.chars() {
         match ch {
             '<' => in_angle = true,
-            '>' => {
-                if in_angle {
-                    mandatory += 1;
-                    in_angle = false;
-                }
+            '>' if in_angle => {
+                mandatory += 1;
+                in_angle = false;
             }
             '[' => in_bracket = true,
-            ']' => {
-                if in_bracket {
-                    optional += 1;
-                    in_bracket = false;
-                }
+            ']' if in_bracket => {
+                optional += 1;
+                in_bracket = false;
             }
             _ => {}
         }

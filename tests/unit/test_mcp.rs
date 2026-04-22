@@ -62,6 +62,13 @@ use bluez_shared::gatt::db::{GattDb, GattDbAttribute, GattDbCcc};
 use bluez_shared::gatt::server::BtGattServer;
 use bluez_shared::util::queue::Queue;
 
+/// Alias for the owned GATT-DB read-attribute callback used by the MCP server
+/// tests.  The tuple of parameters matches
+/// `GattDbAttribute::register_read_handler`'s closure contract and is factored
+/// out here so local test helpers do not trip clippy's `type_complexity` lint.
+type AttrReadFn =
+    Arc<dyn Fn(GattDbAttribute, u32, u16, u8, Option<Arc<Mutex<BtAtt>>>) + Send + Sync>;
+
 // ---------------------------------------------------------------------------
 // Global serialization lock for MCP tests.
 //
@@ -2003,9 +2010,7 @@ fn ccc_attribute_handle_and_read_result() {
     let ccc_states: Arc<Mutex<Queue<(u16, Vec<u8>)>>> = Arc::new(Mutex::new(Queue::new()));
     let ccc_st2 = ccc_states.clone();
 
-    let read_fn: Option<
-        Arc<dyn Fn(GattDbAttribute, u32, u16, u8, Option<Arc<Mutex<BtAtt>>>) + Send + Sync>,
-    > = Some(Arc::new(
+    let read_fn: Option<AttrReadFn> = Some(Arc::new(
         move |attr: GattDbAttribute,
               id: u32,
               _offset: u16,

@@ -172,6 +172,29 @@ impl MidiReadParser {
     /// complete MIDI message decoded from the BLE-MIDI framing.
     ///
     /// Mirrors the C `midi_read_raw()` function from `libmidi.c`.
+    ///
+    /// # BLE-MIDI timestamp disambiguation
+    ///
+    /// Per the Apple BLE-MIDI spec §2, every MIDI message group within a
+    /// packet is prefixed by a single timestamp-low byte (bit 7 set, bits
+    /// 0-6 = low 7 bits of the 13-bit millisecond timestamp).  Because the
+    /// writer emits `ts_low = 0x80 | (rtime & 0x7F)`, the legal value range
+    /// for `ts_low` is `0x80..=0xFF` — which inclusively covers the MIDI
+    /// real-time status byte range `0xF8..=0xFF`.
+    ///
+    /// At a message-group boundary (after the header byte, after a completed
+    /// channel/system-common message, after SysEx end, or after an inline
+    /// real-time message), the next byte with bit 7 set is **unconditionally**
+    /// a timestamp-low byte even if its value happens to fall in the
+    /// 0xF8-0xFF real-time range.  This mirrors the C reference behaviour in
+    /// `libmidi.c` lines 364-372, where the timestamp byte is consumed
+    /// without any real-time filtering.
+    ///
+    /// We track this state via a local `expecting_timestamp` flag so that
+    /// timestamp bytes in the 0xF8-0xFF range (produced when
+    /// `(rtime & 0x7F) ∈ 0x78..=0x7F`) are correctly consumed as timestamps
+    /// rather than mistakenly interpreted as Clock/Start/Continue/Stop/
+    /// Sensing/Reset real-time messages.
     pub fn midi_read_raw(&mut self, data: &[u8]) -> Vec<Event<'static>> {
         let mut events: Vec<Event<'static>> = Vec::new();
         let len = data.len();
@@ -186,52 +209,72 @@ impl MidiReadParser {
         self.timestamp = (u16::from(data[0]) & 0x3F) << 7;
         let mut i: usize = 1;
 
+        // After the header byte we are at a message-group boundary and the
+        // next bit-7-set byte is unconditionally a timestamp-low prefix.
+        // This flag is reset to `true` after every complete message.
+        let mut expecting_timestamp = true;
+
         while i < len {
-            // Check for timestamp-low byte: bit 7 set and not a MIDI status
-            // byte.  In the BLE-MIDI spec, a byte with bit 7 set that follows
-            // the header or a completed message is always a timestamp byte
-            // (even if it falls in the 0x80-0xBF range that overlaps with
-            // channel status bytes).
-            if data[i] & 0x80 != 0 && !self.sysex_started {
-                // Could be timestamp-low or a new status byte.
-                // BLE-MIDI rule: if we're expecting a timestamp (start of a
-                // new message group), treat the byte as timestamp-low.
-                if self.next_is_timestamp(data, i) {
-                    self.tstamp = data[i] & 0x7F;
-                    self.timestamp = (self.timestamp & 0x1F80) | u16::from(self.tstamp);
-                    i += 1;
-                    if i >= len {
-                        break;
-                    }
-                }
+            // Timestamp-low consumption: at a message-group boundary and
+            // outside of SysEx framing, a byte with bit 7 set is the
+            // timestamp-low prefix (regardless of whether the value
+            // collides with the 0xF8-0xFF real-time status range).
+            if expecting_timestamp && !self.sysex_started && data[i] & 0x80 != 0 {
+                self.tstamp = data[i] & 0x7F;
+                self.timestamp = (self.timestamp & 0x1F80) | u16::from(self.tstamp);
+                i += 1;
+                expecting_timestamp = false;
+                continue;
             }
 
             // SysEx continuation: accumulate data bytes until F7.
+            //
+            // Per the BLE-MIDI spec and the C reference `sysex_eox_len()`
+            // (`libmidi.c` line 329), the End-of-SysEx byte (0xF7) is
+            // preceded by a timestamp-low prefix (bit 7 set).  Any byte
+            // with bit 7 set appearing during SysEx framing is therefore
+            // a timestamp-low byte, NOT a real-time status message —
+            // this includes values in the 0xF8-0xFF range (produced when
+            // `(rtime & 0x7F) ∈ 0x78..=0x7F`).  We mirror the C reference
+            // by treating every bit-7-set byte during SysEx as a
+            // timestamp-low prefix for the (possibly-upcoming) 0xF7 EOX.
             if self.sysex_started {
                 while i < len {
                     let b = data[i];
                     if b == 0xF7 {
-                        // SysEx end.
+                        // Direct EOX without timestamp-low prefix.
                         self.sysex_buf.push(0xF7);
                         self.sysex_started = false;
                         i += 1;
-                        // Emit the complete SysEx event.
                         let sysex_data = std::mem::take(&mut self.sysex_buf);
                         events.push(Event::new_ext(EventType::Sysex, sysex_data));
+                        expecting_timestamp = true;
                         break;
-                    } else if is_midi_realtime(b) {
-                        // Real-time messages can appear inside SysEx.
-                        if let Some(ev) = realtime_to_event(b) {
-                            events.push(ev);
-                        }
-                        i += 1;
                     } else if b & 0x80 != 0 {
-                        // Timestamp byte inside SysEx — skip it.
+                        // Timestamp-low prefix inside SysEx.  Do NOT
+                        // classify as a real-time message even if the
+                        // value lands in the 0xF8-0xFF range — during
+                        // SysEx, bit-7-set bytes are always timestamp
+                        // prefixes (matching C `sysex_eox_len()`).
                         self.tstamp = b & 0x7F;
                         self.timestamp = (self.timestamp & 0x1F80) | u16::from(self.tstamp);
                         i += 1;
+                        // If the next byte is 0xF7, this was the EOX
+                        // timestamp prefix; emit the SysEx event.
+                        if i < len && data[i] == 0xF7 {
+                            self.sysex_buf.push(0xF7);
+                            self.sysex_started = false;
+                            i += 1;
+                            let sysex_data = std::mem::take(&mut self.sysex_buf);
+                            events.push(Event::new_ext(EventType::Sysex, sysex_data));
+                            expecting_timestamp = true;
+                            break;
+                        }
+                        // Otherwise, continue accumulating — the SysEx
+                        // is incomplete within this packet (C marks such
+                        // cases with `err = true` but still buffers).
                     } else {
-                        // SysEx data byte.
+                        // SysEx data byte (bit 7 clear).
                         if self.sysex_buf.len() < MIDI_SYSEX_MAX_SIZE {
                             self.sysex_buf.push(b);
                         }
@@ -250,20 +293,25 @@ impl MidiReadParser {
             // New status byte?
             if b & 0x80 != 0 {
                 if b == 0xF0 {
-                    // SysEx start.
+                    // SysEx start.  SysEx continues across bytes until F7,
+                    // so we are no longer at a message-group boundary.
                     self.sysex_started = true;
                     self.sysex_buf.clear();
                     self.sysex_buf.push(0xF0);
                     i += 1;
+                    expecting_timestamp = false;
                     continue;
                 }
 
                 if is_midi_realtime(b) {
-                    // Real-time status — emit immediately.
+                    // Real-time status — emit immediately.  Real-time
+                    // messages are single-byte and complete the current
+                    // message group, so the next byte must be a timestamp.
                     if let Some(ev) = realtime_to_event(b) {
                         events.push(ev);
                     }
                     i += 1;
+                    expecting_timestamp = true;
                     continue;
                 }
 
@@ -294,6 +342,9 @@ impl MidiReadParser {
                         events.push(ev);
                     }
                 }
+                // Message processed (even if truncated); the next byte must
+                // be a new timestamp-low prefix.
+                expecting_timestamp = true;
             } else {
                 // Data byte without status → running status.
                 if self.running_status == 0 {
@@ -323,36 +374,13 @@ impl MidiReadParser {
                         events.push(ev);
                     }
                 }
+                // Running-status message processed; the next byte must be a
+                // new timestamp-low prefix.
+                expecting_timestamp = true;
             }
         }
 
         events
-    }
-
-    /// Determine if the byte at position `i` is a timestamp-low byte
-    /// rather than a MIDI status byte.
-    ///
-    /// BLE-MIDI disambiguation: after the header byte or after a completed
-    /// message, a byte with bit 7 set is a timestamp.
-    fn next_is_timestamp(&self, data: &[u8], i: usize) -> bool {
-        let b = data[i];
-
-        // Real-time status (0xF8-0xFF) is never a timestamp.
-        if is_midi_realtime(b) {
-            return false;
-        }
-
-        // If the next byte (i+1) exists and also has bit 7 set, the first
-        // byte is likely a timestamp and the second is the status.
-        if i + 1 < data.len() && data[i + 1] & 0x80 != 0 {
-            return true;
-        }
-
-        // If the next byte is a data byte and this byte could be a channel
-        // status, it might be a running-status continuation.  But in
-        // standard BLE-MIDI framing, each message group starts with a
-        // timestamp byte.
-        true
     }
 }
 

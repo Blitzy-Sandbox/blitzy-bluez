@@ -1730,7 +1730,7 @@ mod tests {
             pkt,
         };
         let delay = MgmtBackend::compute_tx_delay(&tx);
-        assert!(delay >= 10 && delay < 100);
+        assert!((10..100).contains(&delay));
     }
 
     #[test]

@@ -46,10 +46,10 @@ use bluez_shared::sys::mgmt::{
     MGMT_EV_LOCAL_NAME_CHANGED, MGMT_EV_NEW_CONN_PARAM, MGMT_EV_NEW_CSRK, MGMT_EV_NEW_IRK,
     MGMT_EV_NEW_LINK_KEY, MGMT_EV_NEW_LONG_TERM_KEY, MGMT_EV_NEW_SETTINGS,
     MGMT_EV_PIN_CODE_REQUEST, MGMT_EV_USER_CONFIRM_REQUEST, MGMT_EV_USER_PASSKEY_REQUEST,
-    MGMT_INDEX_NONE, MGMT_OP_ADD_DEVICE, MGMT_OP_ADD_UUID, MGMT_OP_DISCONNECT,
-    MGMT_OP_LOAD_IRKS, MGMT_OP_LOAD_LONG_TERM_KEYS, MGMT_OP_PAIR_DEVICE,
-    MGMT_OP_PIN_CODE_NEG_REPLY, MGMT_OP_PIN_CODE_REPLY, MGMT_OP_READ_INDEX_LIST, MGMT_OP_READ_INFO,
-    MGMT_OP_REMOVE_UUID, MGMT_OP_SET_BONDABLE, MGMT_OP_SET_DEV_CLASS, MGMT_OP_SET_DISCOVERABLE,
+    MGMT_INDEX_NONE, MGMT_OP_ADD_DEVICE, MGMT_OP_ADD_UUID, MGMT_OP_DISCONNECT, MGMT_OP_LOAD_IRKS,
+    MGMT_OP_LOAD_LONG_TERM_KEYS, MGMT_OP_PAIR_DEVICE, MGMT_OP_PIN_CODE_NEG_REPLY,
+    MGMT_OP_PIN_CODE_REPLY, MGMT_OP_READ_INDEX_LIST, MGMT_OP_READ_INFO, MGMT_OP_REMOVE_UUID,
+    MGMT_OP_SET_BONDABLE, MGMT_OP_SET_DEV_CLASS, MGMT_OP_SET_DISCOVERABLE,
     MGMT_OP_SET_FAST_CONNECTABLE, MGMT_OP_SET_LOCAL_NAME, MGMT_OP_SET_POWERED,
     MGMT_OP_SET_SECURE_CONN, MGMT_OP_START_DISCOVERY, MGMT_OP_STOP_DISCOVERY,
     MGMT_OP_UNPAIR_DEVICE, MGMT_OP_USER_CONFIRM_NEG_REPLY, MGMT_OP_USER_CONFIRM_REPLY,
@@ -71,9 +71,7 @@ use crate::error::BtdError;
 use crate::gatt::database::BtdGattDatabase;
 use crate::log::{btd_debug, btd_info, btd_warn};
 use crate::sdp::SdpRecord;
-use crate::storage::{
-    self, StoredIrk, StoredLtk, STORAGEDIR,
-};
+use crate::storage::{self, STORAGEDIR, StoredIrk, StoredLtk};
 
 // ===========================================================================
 // Constants
@@ -1886,11 +1884,7 @@ pub async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &Mg
                         master,
                     };
                     tokio::task::spawn_blocking(move || {
-                        storage::persist_ltk(
-                            &adapter_addr_str,
-                            &device_addr_str,
-                            &ltk_to_persist,
-                        );
+                        storage::persist_ltk(&adapter_addr_str, &device_addr_str, &ltk_to_persist);
                     });
                 }
             }
@@ -1932,17 +1926,9 @@ pub async fn process_mgmt_event(adapter_arc: &Arc<Mutex<BtdAdapter>>, event: &Mg
                         a.address.ba2str()
                     };
                     let device_addr_str = addr.ba2str();
-                    let irk_to_persist = StoredIrk {
-                        key: val,
-                        addr,
-                        addr_type: addr_type_byte,
-                    };
+                    let irk_to_persist = StoredIrk { key: val, addr, addr_type: addr_type_byte };
                     tokio::task::spawn_blocking(move || {
-                        storage::persist_irk(
-                            &adapter_addr_str,
-                            &device_addr_str,
-                            &irk_to_persist,
-                        );
+                        storage::persist_irk(&adapter_addr_str, &device_addr_str, &irk_to_persist);
                     });
                 }
             }
@@ -2447,10 +2433,7 @@ async fn adapter_add(index: u16, mgmt: Arc<MgmtSocket>) {
                 Ok(r) => {
                     btd_warn(
                         index,
-                        &format!(
-                            "MGMT_OP_SET_BONDABLE failed: {}",
-                            mgmt_errstr(r.status)
-                        ),
+                        &format!("MGMT_OP_SET_BONDABLE failed: {}", mgmt_errstr(r.status)),
                     );
                 }
                 Err(e) => {
@@ -2466,10 +2449,7 @@ async fn adapter_add(index: u16, mgmt: Arc<MgmtSocket>) {
                 Ok(r) => {
                     btd_warn(
                         index,
-                        &format!(
-                            "MGMT_OP_SET_SECURE_CONN failed: {}",
-                            mgmt_errstr(r.status)
-                        ),
+                        &format!("MGMT_OP_SET_SECURE_CONN failed: {}", mgmt_errstr(r.status)),
                     );
                 }
                 Err(e) => {
@@ -2502,30 +2482,18 @@ async fn adapter_add(index: u16, mgmt: Arc<MgmtSocket>) {
             param.extend_from_slice(&ltk.rand.to_le_bytes());
             param.extend_from_slice(&ltk.key);
         }
-        match mgmt
-            .send_command(MGMT_OP_LOAD_LONG_TERM_KEYS, index, &param)
-            .await
-        {
+        match mgmt.send_command(MGMT_OP_LOAD_LONG_TERM_KEYS, index, &param).await {
             Ok(r) if r.status == MGMT_STATUS_SUCCESS => {
-                btd_info(
-                    index,
-                    &format!("Loaded {} LTK(s) from persistent storage", ltks.len()),
-                );
+                btd_info(index, &format!("Loaded {} LTK(s) from persistent storage", ltks.len()));
             }
             Ok(r) => {
                 btd_warn(
                     index,
-                    &format!(
-                        "MGMT_OP_LOAD_LONG_TERM_KEYS failed: {}",
-                        mgmt_errstr(r.status)
-                    ),
+                    &format!("MGMT_OP_LOAD_LONG_TERM_KEYS failed: {}", mgmt_errstr(r.status)),
                 );
             }
             Err(e) => {
-                btd_warn(
-                    index,
-                    &format!("MGMT_OP_LOAD_LONG_TERM_KEYS error: {e}"),
-                );
+                btd_warn(index, &format!("MGMT_OP_LOAD_LONG_TERM_KEYS error: {e}"));
             }
         }
     }
@@ -2549,16 +2517,10 @@ async fn adapter_add(index: u16, mgmt: Arc<MgmtSocket>) {
         }
         match mgmt.send_command(MGMT_OP_LOAD_IRKS, index, &param).await {
             Ok(r) if r.status == MGMT_STATUS_SUCCESS => {
-                btd_info(
-                    index,
-                    &format!("Loaded {} IRK(s) from persistent storage", irks.len()),
-                );
+                btd_info(index, &format!("Loaded {} IRK(s) from persistent storage", irks.len()));
             }
             Ok(r) => {
-                btd_warn(
-                    index,
-                    &format!("MGMT_OP_LOAD_IRKS failed: {}", mgmt_errstr(r.status)),
-                );
+                btd_warn(index, &format!("MGMT_OP_LOAD_IRKS failed: {}", mgmt_errstr(r.status)));
             }
             Err(e) => {
                 btd_warn(index, &format!("MGMT_OP_LOAD_IRKS error: {e}"));

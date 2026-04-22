@@ -317,10 +317,8 @@ fn parse_properties(
 
     for (key, value) in properties {
         match key.as_str() {
-            "Capabilities" => {
-                if !parse_prov_caps(caps, value) {
-                    return false;
-                }
+            "Capabilities" if !parse_prov_caps(caps, value) => {
+                return false;
             }
             "URI" => {
                 if let Some(uri_string) = extract_string(value) {
@@ -339,13 +337,12 @@ fn parse_properties(
                     return false;
                 }
             }
-            "OutOfBandInfo" => {
-                if !parse_oob_info(caps, value) {
-                    return false;
-                }
+            "OutOfBandInfo" if !parse_oob_info(caps, value) => {
+                return false;
             }
             _ => {
-                // Ignore unknown properties — forward compatibility.
+                // Other arms (incl. successful Capabilities / OutOfBandInfo parses) are
+                // no-ops; their parser side-effects already mutated `caps`.
             }
         }
     }

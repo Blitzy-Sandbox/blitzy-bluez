@@ -57,7 +57,7 @@ const ATT_OP_READ_BY_GRP_TYPE_RSP: u8 = 0x11;
 const ATT_OP_WRITE_REQ: u8 = 0x12;
 /// ATT opcode: Write Response
 const ATT_OP_WRITE_RSP: u8 = 0x13;
-/// ATT opcode: Handle Value Notification
+// ATT opcode: Handle Value Notification — declared in transport but unused here.
 
 // ============================================================================
 // ATT Error Constants
@@ -251,7 +251,9 @@ fn server_exchange_vec(
     buf[..n].to_vec()
 }
 
-/// Try to read a notification from the peer fd (non-blocking with short timeout).
+// Try to read a notification from the peer fd (non-blocking with short timeout)
+// — helper removed but documentation preserved above the following section.
+
 // ============================================================================
 // VCP Server Context
 // ============================================================================

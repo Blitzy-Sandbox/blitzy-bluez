@@ -1023,7 +1023,7 @@ fn addr_type_from_ini_string(addr_type_str: &str) -> u8 {
     }
 }
 
-use bluez_shared::sys::bluetooth::{BDADDR_LE_PUBLIC, BDADDR_LE_RANDOM, BDADDR_BREDR};
+use bluez_shared::sys::bluetooth::{BDADDR_BREDR, BDADDR_LE_PUBLIC, BDADDR_LE_RANDOM};
 
 // ---------------------------------------------------------------------------
 // Per-device key parsing from INI
@@ -1033,11 +1033,7 @@ use bluez_shared::sys::bluetooth::{BDADDR_LE_PUBLIC, BDADDR_LE_RANDOM, BDADDR_BR
 ///
 /// Reads the `[LongTermKey]` section.  Returns `None` if the section is
 /// absent or any required field is missing/malformed.
-pub fn parse_ltk_from_info(
-    ini: &Ini,
-    addr: &BdAddr,
-    addr_type: u8,
-) -> Option<StoredLtk> {
+pub fn parse_ltk_from_info(ini: &Ini, addr: &BdAddr, addr_type: u8) -> Option<StoredLtk> {
     let sect = ini.section(Some("LongTermKey"))?;
     let key_hex = sect.get("Key")?;
     let key = hex_decode_key(key_hex)?;
@@ -1062,11 +1058,7 @@ pub fn parse_ltk_from_info(
 ///
 /// Reads the `[SlaveLongTermKey]` section.  Same format as `[LongTermKey]`
 /// but with `master = 0`.
-pub fn parse_slave_ltk_from_info(
-    ini: &Ini,
-    addr: &BdAddr,
-    addr_type: u8,
-) -> Option<StoredLtk> {
+pub fn parse_slave_ltk_from_info(ini: &Ini, addr: &BdAddr, addr_type: u8) -> Option<StoredLtk> {
     let sect = ini.section(Some("SlaveLongTermKey"))?;
     let key_hex = sect.get("Key")?;
     let key = hex_decode_key(key_hex)?;
@@ -1090,39 +1082,22 @@ pub fn parse_slave_ltk_from_info(
 /// Parse a [`StoredIrk`] from a device `info` INI file.
 ///
 /// Reads the `[IdentityResolvingKey]` section.
-pub fn parse_irk_from_info(
-    ini: &Ini,
-    addr: &BdAddr,
-    addr_type: u8,
-) -> Option<StoredIrk> {
+pub fn parse_irk_from_info(ini: &Ini, addr: &BdAddr, addr_type: u8) -> Option<StoredIrk> {
     let sect = ini.section(Some("IdentityResolvingKey"))?;
     let key_hex = sect.get("Key")?;
     let key = hex_decode_key(key_hex)?;
-    Some(StoredIrk {
-        key,
-        addr: *addr,
-        addr_type,
-    })
+    Some(StoredIrk { key, addr: *addr, addr_type })
 }
 
 /// Parse a [`StoredCsrk`] from a device `info` INI file.
 ///
 /// Reads the `[SignatureResolvingKey]` section.
-pub fn parse_csrk_from_info(
-    ini: &Ini,
-    addr: &BdAddr,
-    addr_type: u8,
-) -> Option<StoredCsrk> {
+pub fn parse_csrk_from_info(ini: &Ini, addr: &BdAddr, addr_type: u8) -> Option<StoredCsrk> {
     let sect = ini.section(Some("SignatureResolvingKey"))?;
     let key_hex = sect.get("Key")?;
     let key = hex_decode_key(key_hex)?;
     let csrk_type: u8 = sect.get("Type").and_then(|v| v.trim().parse().ok()).unwrap_or(0);
-    Some(StoredCsrk {
-        key,
-        csrk_type,
-        addr: *addr,
-        addr_type,
-    })
+    Some(StoredCsrk { key, csrk_type, addr: *addr, addr_type })
 }
 
 // ---------------------------------------------------------------------------
@@ -1316,8 +1291,7 @@ pub fn persist_irk(adapter_addr: &str, device_addr: &str, irk: &StoredIrk) {
         ini
     });
 
-    ini.with_section(Some("IdentityResolvingKey"))
-        .set("Key", hex_encode_key(&irk.key));
+    ini.with_section(Some("IdentityResolvingKey")).set("Key", hex_encode_key(&irk.key));
 
     if let Err(e) = write_ini_file(&info_path, &ini) {
         warn!("Failed to persist IRK for {device_addr}: {e}");
@@ -1669,7 +1643,10 @@ mod tests {
         let key = hex_decode_key(hex).unwrap();
         assert_eq!(
             key,
-            [0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89]
+            [
+                0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45,
+                0x67, 0x89
+            ]
         );
     }
 
@@ -1706,7 +1683,10 @@ mod tests {
 
         assert_eq!(
             ltk.key,
-            [0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89]
+            [
+                0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45,
+                0x67, 0x89
+            ]
         );
         assert_eq!(ltk.authenticated, 0);
         assert_eq!(ltk.enc_size, 16);
@@ -1727,7 +1707,10 @@ mod tests {
 
         assert_eq!(
             irk.key,
-            [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef]
+            [
+                0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab,
+                0xcd, 0xef
+            ]
         );
         assert_eq!(irk.addr_type, BDADDR_LE_PUBLIC);
     }
@@ -1739,12 +1722,14 @@ mod tests {
         let ini = Ini::load_from_file(&fixture_path).expect("fixture file should load");
 
         let addr = bdaddr_t { b: [0x01, 0x02, 0x03, 0x04, 0x05, 0x06] };
-        let csrk =
-            parse_csrk_from_info(&ini, &addr, BDADDR_LE_PUBLIC).expect("CSRK should parse");
+        let csrk = parse_csrk_from_info(&ini, &addr, BDADDR_LE_PUBLIC).expect("CSRK should parse");
 
         assert_eq!(
             csrk.key,
-            [0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10]
+            [
+                0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54,
+                0x32, 0x10
+            ]
         );
         assert_eq!(csrk.csrk_type, 0);
         assert_eq!(csrk.addr_type, BDADDR_LE_PUBLIC);
@@ -1764,14 +1749,15 @@ mod tests {
         let parent = info_path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         let mut ini = Ini::new();
-        ini.with_section(Some("General"))
-            .set("Name", "PersistTest")
-            .set("AddressType", "public");
+        ini.with_section(Some("General")).set("Name", "PersistTest").set("AddressType", "public");
         ini.write_to_file(&info_path).unwrap();
 
         // Construct a StoredLtk and persist it.
         let ltk = StoredLtk {
-            key: [0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89],
+            key: [
+                0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45,
+                0x67, 0x89,
+            ],
             rand: 1234567890,
             ediv: 0xABCD,
             authenticated: 1,
@@ -1823,22 +1809,21 @@ mod tests {
         let parent = info_path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         let mut ini = Ini::new();
-        ini.with_section(Some("General"))
-            .set("Name", "IRKTest")
-            .set("AddressType", "random");
+        ini.with_section(Some("General")).set("Name", "IRKTest").set("AddressType", "random");
         ini.write_to_file(&info_path).unwrap();
 
         let irk = StoredIrk {
-            key: [0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef],
+            key: [
+                0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab,
+                0xcd, 0xef,
+            ],
             addr: bdaddr_t { b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66] },
             addr_type: BDADDR_LE_RANDOM,
         };
 
         // Persist directly.
         let mut reload_ini = read_ini_file(&info_path).unwrap();
-        reload_ini
-            .with_section(Some("IdentityResolvingKey"))
-            .set("Key", hex_encode_key(&irk.key));
+        reload_ini.with_section(Some("IdentityResolvingKey")).set("Key", hex_encode_key(&irk.key));
         write_ini_file(&info_path, &reload_ini).unwrap();
 
         // Reload and verify.
@@ -1866,13 +1851,14 @@ mod tests {
         let parent = info_path.parent().unwrap();
         fs::create_dir_all(parent).unwrap();
         let mut ini = Ini::new();
-        ini.with_section(Some("General"))
-            .set("Name", "CSRKTest")
-            .set("AddressType", "public");
+        ini.with_section(Some("General")).set("Name", "CSRKTest").set("AddressType", "public");
         ini.write_to_file(&info_path).unwrap();
 
         let csrk = StoredCsrk {
-            key: [0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10],
+            key: [
+                0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54,
+                0x32, 0x10,
+            ],
             csrk_type: 2,
             addr: bdaddr_t { b: [0x11, 0x22, 0x33, 0x44, 0x55, 0x66] },
             addr_type: BDADDR_LE_PUBLIC,
@@ -1934,9 +1920,7 @@ mod tests {
         fs::create_dir_all(&device_dir).unwrap();
 
         let mut ini = Ini::new();
-        ini.with_section(Some("General"))
-            .set("Name", "TestDev")
-            .set("AddressType", "public");
+        ini.with_section(Some("General")).set("Name", "TestDev").set("AddressType", "public");
         ini.with_section(Some("LongTermKey"))
             .set("Key", "abcdef0123456789abcdef0123456789")
             .set("Authenticated", "0")
@@ -1965,9 +1949,7 @@ mod tests {
         fs::create_dir_all(&device_dir).unwrap();
 
         let mut ini = Ini::new();
-        ini.with_section(Some("General"))
-            .set("Name", "TestDev")
-            .set("AddressType", "random");
+        ini.with_section(Some("General")).set("Name", "TestDev").set("AddressType", "random");
         ini.with_section(Some("IdentityResolvingKey"))
             .set("Key", "0123456789abcdef0123456789abcdef");
         ini.write_to_file(device_dir.join("info")).unwrap();

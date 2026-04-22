@@ -1088,7 +1088,7 @@ mod tests {
     #[test]
     fn test_ini_storage_roundtrip() {
         let uuid_strs =
-            vec!["00001800-0000-1000-8000-00805f9b34fb", "0000110a-0000-1000-8000-00805f9b34fb"];
+            ["00001800-0000-1000-8000-00805f9b34fb", "0000110a-0000-1000-8000-00805f9b34fb"];
         let joined = uuid_strs.join(";");
 
         let mut ini = Ini::new();

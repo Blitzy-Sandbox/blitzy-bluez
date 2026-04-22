@@ -1,5 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #![allow(dead_code)]
+// Each `#[tokio::test]` deliberately holds a `Mutex<()>` across `.await`
+// points to serialise the 38 OBEX-transfer tests against shared kernel
+// socketpair resources and bounded `drive_write` / `drive_read` timeouts.
+// The lock is uncontended beyond the test body (no data is protected),
+// never re-entered, and the future is explicitly `!Send`-compatible via
+// `#[tokio::test]`'s current-thread runtime, so the classic await-holding
+// deadlock / hang scenarios clippy warns about cannot occur here.
+#![allow(clippy::await_holding_lock)]
 //
 // OBEX transfer test suite — Rust rewrite of unit/test-gobex-transfer.c
 // (2472 lines, 38 GLib test functions) from BlueZ v5.86.

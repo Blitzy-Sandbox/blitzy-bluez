@@ -1677,15 +1677,14 @@ impl BtAtt {
                 full_pdu.push(opcode);
                 full_pdu.extend_from_slice(body);
                 match bt_crypto_verify_att_sign(&remote_sign.key, &full_pdu) {
-                    Ok(true) => {
-                        // Strip the 12-byte signature from the body.
-                        if body.len() >= BT_ATT_SIGNATURE_LEN {
-                            &body[..body.len() - BT_ATT_SIGNATURE_LEN]
-                        } else {
-                            return; // Malformed signed PDU.
-                        }
+                    // Strip the 12-byte signature from the body after successful
+                    // verification.  A PDU shorter than the signature length is
+                    // treated identically to a verification failure (return).
+                    Ok(true) if body.len() >= BT_ATT_SIGNATURE_LEN => {
+                        &body[..body.len() - BT_ATT_SIGNATURE_LEN]
                     }
-                    _ => return, // Signature verification failed.
+                    // Signature verification failed, missing, or malformed PDU.
+                    _ => return,
                 }
             } else {
                 return; // No remote signing key configured.

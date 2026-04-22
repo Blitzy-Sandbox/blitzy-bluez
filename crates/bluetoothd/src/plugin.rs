@@ -758,8 +758,9 @@ pub fn plugin_init(enable: Option<&str>, disable: Option<&str>, opts: &BtdOpts) 
     let mut descs: Vec<&'static PluginDesc> = inventory::iter::<PluginDesc>().collect();
 
     // Sort by priority descending (high priority first), matching C's
-    // compare_priority: plugin2->desc->priority - plugin1->desc->priority
-    descs.sort_by(|a, b| b.priority.value().cmp(&a.priority.value()));
+    // compare_priority: plugin2->desc->priority - plugin1->desc->priority.
+    // Negating the key inverts the natural ascending sort into descending order.
+    descs.sort_by_key(|d| std::cmp::Reverse(d.priority.value()));
 
     let mut plugins_list: Vec<LoadedPlugin> = Vec::new();
 

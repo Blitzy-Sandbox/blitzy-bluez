@@ -301,14 +301,18 @@ fn test_midi_parse_sysex() {
 #[test]
 fn test_midi_parse_realtime() {
     let mut parser = MidiReadParser::new();
-    // Packet with a NoteOn and an interleaved Timing Clock (0xF8).
-    // header=0x80, ts=0x80, NoteOn ch0=0x90 note=60 vel=100,
-    // then realtime 0xF8 (Timing Clock) — the parser should recognise it.
+    // Packet with a NoteOn and a trailing 0xF8 byte.
+    // header=0x80, ts=0x80, NoteOn ch0=0x90 note=60 vel=100, 0xF8.
+    //
+    // Per the BLE-MIDI spec, every message group (including single-byte
+    // real-time messages) must be preceded by a timestamp-low prefix.  The
+    // trailing 0xF8 here arrives at a message-group boundary (immediately
+    // after NoteOn completes), so it is consumed unconditionally as a
+    // timestamp-low byte and does NOT emit a Clock real-time event.  This
+    // mirrors the C reference behaviour in `libmidi.c` where any bit-7-set
+    // byte at the start of a new message group is treated as a timestamp.
     let packet: &[u8] = &[0x80, 0x80, 0x90, 0x3c, 0x64, 0xf8];
     let events = parser.midi_read_raw(packet);
-    // Expect NoteOn event.  The parser treats 0xF8 as a realtime status byte.
-    // Realtime bytes with is_midi_realtime check → next_is_timestamp returns false,
-    // so 0xF8 is handled as a status byte requiring 0 data bytes.
     assert!(!events.is_empty(), "should parse at least one event");
     assert_note_event(&events[0], EventType::Noteon, 0, 60, 100);
 }

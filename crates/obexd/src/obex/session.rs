@@ -1749,28 +1749,28 @@ mod tests {
 
     #[test]
     fn test_errno_to_rsp_eagain() {
-        assert_eq!(errno_to_rsp(-(libc::EAGAIN as i32)), RSP_CONTINUE);
+        assert_eq!(errno_to_rsp(-libc::EAGAIN), RSP_CONTINUE);
     }
 
     #[test]
     fn test_errno_to_rsp_permission() {
-        assert_eq!(errno_to_rsp(-(libc::EPERM as i32)), RSP_FORBIDDEN);
-        assert_eq!(errno_to_rsp(-(libc::EACCES as i32)), RSP_FORBIDDEN);
+        assert_eq!(errno_to_rsp(-libc::EPERM), RSP_FORBIDDEN);
+        assert_eq!(errno_to_rsp(-libc::EACCES), RSP_FORBIDDEN);
     }
 
     #[test]
     fn test_errno_to_rsp_not_found() {
-        assert_eq!(errno_to_rsp(-(libc::ENOENT as i32)), RSP_NOT_FOUND);
+        assert_eq!(errno_to_rsp(-libc::ENOENT), RSP_NOT_FOUND);
     }
 
     #[test]
     fn test_errno_to_rsp_bad_request() {
-        assert_eq!(errno_to_rsp(-(libc::EINVAL as i32)), RSP_BAD_REQUEST);
+        assert_eq!(errno_to_rsp(-libc::EINVAL), RSP_BAD_REQUEST);
     }
 
     #[test]
     fn test_errno_to_rsp_not_implemented() {
-        assert_eq!(errno_to_rsp(-(libc::ENOSYS as i32)), RSP_NOT_IMPLEMENTED);
+        assert_eq!(errno_to_rsp(-libc::ENOSYS), RSP_NOT_IMPLEMENTED);
     }
 
     #[test]
@@ -1889,12 +1889,12 @@ mod tests {
     #[test]
     fn test_errno_to_rsp_efault() {
         // EFAULT maps to SERVICE_UNAVAILABLE (matching C code).
-        assert_eq!(errno_to_rsp(-(libc::EFAULT as i32)), RSP_SERVICE_UNAVAILABLE);
+        assert_eq!(errno_to_rsp(-libc::EFAULT), RSP_SERVICE_UNAVAILABLE);
     }
 
     #[test]
     fn test_errno_to_rsp_precondition_failed() {
-        assert_eq!(errno_to_rsp(-(libc::ENOTEMPTY as i32)), RSP_PRECONDITION_FAILED);
-        assert_eq!(errno_to_rsp(-(libc::EEXIST as i32)), RSP_PRECONDITION_FAILED);
+        assert_eq!(errno_to_rsp(-libc::ENOTEMPTY), RSP_PRECONDITION_FAILED);
+        assert_eq!(errno_to_rsp(-libc::EEXIST), RSP_PRECONDITION_FAILED);
     }
 }

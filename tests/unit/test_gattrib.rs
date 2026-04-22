@@ -156,9 +156,16 @@ fn create_gattrib(mtu: u16) -> (GAttrib, OwnedFd) {
     (gattrib, peer)
 }
 
+/// Alias for the owned ATT result callback delivered after a Request completes.
+///
+/// The four arguments match `BtAtt::send()`'s result closure contract:
+/// `status: u8`, `pdu: &[u8]`, `len: u16`.  Factored into a type alias so that
+/// helper signatures do not trip clippy's `type_complexity` lint.
+type AttResultCb = Box<dyn FnOnce(u8, &[u8], u16) + Send>;
+
 /// Create a no-op result callback suitable for ATT Request opcodes.
 /// ATT Request opcodes require a non-None callback from `BtAtt::send()`.
-fn dummy_result_cb() -> Option<Box<dyn FnOnce(u8, &[u8], u16) + Send>> {
+fn dummy_result_cb() -> Option<AttResultCb> {
     Some(Box::new(|_status, _pdu, _len| {}))
 }
 

@@ -747,12 +747,11 @@ impl ManagementInterface {
                         return Err(MeshDbusError::InvalidArgs("Invalid options".into()));
                     }
                 }
+                "Extended" if extract_byte_array(value).is_some() => {
+                    ext = true;
+                }
                 "Extended" => {
-                    if extract_byte_array(value).is_some() {
-                        ext = true;
-                    } else {
-                        return Err(MeshDbusError::InvalidArgs("Invalid options".into()));
-                    }
+                    return Err(MeshDbusError::InvalidArgs("Invalid options".into()));
                 }
                 _ => {
                     return Err(MeshDbusError::InvalidArgs("Invalid options".into()));
@@ -1800,7 +1799,7 @@ mod tests {
     #[test]
     fn test_extract_byte_array_from_array_value() {
         let bytes: Vec<Value<'_>> = vec![Value::U8(0x01), Value::U8(0x02), Value::U8(0xFF)];
-        let arr = zbus::zvariant::Array::try_from(bytes).unwrap();
+        let arr = zbus::zvariant::Array::from(bytes);
         let val = Value::Array(arr);
         let result = extract_byte_array(&val);
         assert_eq!(result, Some(vec![0x01, 0x02, 0xFF]));

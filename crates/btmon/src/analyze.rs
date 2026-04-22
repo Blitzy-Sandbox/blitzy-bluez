@@ -468,7 +468,7 @@ fn print_stats(stats: &HciStats, label: &str) {
         label,
         stats.min,
         stats.max,
-        if stats.num > 0 { stats.bytes / stats.num } else { 0 }
+        stats.bytes.checked_div(stats.num).unwrap_or(0)
     );
 
     let total_ms = tv_msec(&stats.latency.total);
@@ -1250,20 +1250,15 @@ fn acl_pkt(dev_list: &mut Vec<HciDev>, tv: &libc::timeval, index: u16, out: bool
 
     let mut chan_idx: Option<usize> = None;
 
-    match pb_flag {
-        0x00 | 0x02 => {
-            // First or start packet — parse L2CAP header
-            if payload.len() >= size_of::<l2cap_hdr>() {
-                let cid = bt_get_le16(&payload[2..]);
-                chan_idx = Some(chan_lookup(&mut dev_list[dev_idx].conn_list[conn_idx], cid, out));
+    // First or start packet — parse L2CAP header
+    if matches!(pb_flag, 0x00 | 0x02) && payload.len() >= size_of::<l2cap_hdr>() {
+        let cid = bt_get_le16(&payload[2..]);
+        chan_idx = Some(chan_lookup(&mut dev_list[dev_idx].conn_list[conn_idx], cid, out));
 
-                if cid == 1 && payload.len() > 4 {
-                    // L2CAP signaling channel — parse signaling commands
-                    l2cap_sig(&mut dev_list[dev_idx].conn_list[conn_idx], out, &payload[4..]);
-                }
-            }
+        if cid == 1 && payload.len() > 4 {
+            // L2CAP signaling channel — parse signaling commands
+            l2cap_sig(&mut dev_list[dev_idx].conn_list[conn_idx], out, &payload[4..]);
         }
-        _ => {}
     }
 
     if out {

@@ -1345,7 +1345,8 @@ mod tests {
     #[test]
     fn test_lmp_packet_reserved_escapes_silent() {
         for esc in [124u8, 125, 126] {
-            let byte0 = (esc << 1) | 0;
+            // LMP byte0 encoding: opcode in high 7 bits, TID in bit 0 (0 = central here)
+            let byte0 = esc << 1;
             let data: [u8; 1] = [byte0];
             lmp_packet(&data, 1, false);
         }
@@ -1377,7 +1378,8 @@ mod tests {
 
     #[test]
     fn test_lmp_packet_unknown_basic_opcode() {
-        let byte0 = (120u8 << 1) | 0;
+        // LMP byte0 encoding: opcode in high 7 bits, TID in bit 0 (0 = central here)
+        let byte0 = 120u8 << 1;
         let data: [u8; 3] = [byte0, 0xaa, 0xbb];
         lmp_packet(&data, 3, false);
     }
@@ -1509,8 +1511,8 @@ mod tests {
     fn test_lmp_packet_au_rand() {
         let mut data = [0u8; 17];
         data[0] = 0x16;
-        for i in 1..17 {
-            data[i] = i as u8;
+        for (i, slot) in data.iter_mut().enumerate().take(17).skip(1) {
+            *slot = i as u8;
         }
         lmp_packet(&data, 17, false);
     }

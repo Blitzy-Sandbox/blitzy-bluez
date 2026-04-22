@@ -2031,6 +2031,47 @@ async fn handle_unix_session(stream: tokio::net::UnixStream) {
 }
 
 // ---------------------------------------------------------------------------
+// Test-support API — only available under the `test-support` feature
+//
+// These helpers MUST appear *before* the `#[cfg(test)] mod tests { ... }`
+// block to satisfy clippy's `items_after_test_module` lint: the convention is
+// that a `#[cfg(test)] mod tests` block is the final item in the file, and
+// any other production/test-support items should precede it.
+// ---------------------------------------------------------------------------
+
+/// Populate the global SDP database with the given records and set a fixed
+/// timestamp.  Clears any existing records and continuation states.
+///
+/// This function is gated behind the `test-support` Cargo feature so it
+/// is never included in production daemon builds.
+#[cfg(feature = "test-support")]
+pub fn populate_test_database(records: Vec<super::xml::SdpRecord>, timestamp: u32) {
+    use bluez_shared::sys::bluetooth::BDADDR_ANY;
+    let mut db = SDP_DB.try_lock().expect("SDP_DB lock for test setup");
+    db.reset();
+    db.set_fixed_timestamp(timestamp);
+    for rec in records {
+        db.add_record(&BDADDR_ANY, rec);
+    }
+    // Also clear continuation states.
+    let mut cs = CSTATES.try_lock().expect("CSTATES lock for test setup");
+    cs.clear();
+}
+
+/// Clear the global SDP database and continuation states.
+///
+/// Should be called after each test to prevent state leaking.
+#[cfg(feature = "test-support")]
+pub fn cleanup_test_database() {
+    if let Ok(mut db) = SDP_DB.try_lock() {
+        db.reset();
+    }
+    if let Ok(mut cs) = CSTATES.try_lock() {
+        cs.clear();
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Unit tests
 // ---------------------------------------------------------------------------
 #[cfg(test)]
@@ -2785,41 +2826,5 @@ mod tests {
         assert_eq!(cstates.len(), 2);
         assert_eq!(cstates[0].sock, 2);
         assert_eq!(cstates[1].sock, 3);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Test-support API — only available under the `test-support` feature
-// ---------------------------------------------------------------------------
-
-/// Populate the global SDP database with the given records and set a fixed
-/// timestamp.  Clears any existing records and continuation states.
-///
-/// This function is gated behind the `test-support` Cargo feature so it
-/// is never included in production daemon builds.
-#[cfg(feature = "test-support")]
-pub fn populate_test_database(records: Vec<super::xml::SdpRecord>, timestamp: u32) {
-    use bluez_shared::sys::bluetooth::BDADDR_ANY;
-    let mut db = SDP_DB.try_lock().expect("SDP_DB lock for test setup");
-    db.reset();
-    db.set_fixed_timestamp(timestamp);
-    for rec in records {
-        db.add_record(&BDADDR_ANY, rec);
-    }
-    // Also clear continuation states.
-    let mut cs = CSTATES.try_lock().expect("CSTATES lock for test setup");
-    cs.clear();
-}
-
-/// Clear the global SDP database and continuation states.
-///
-/// Should be called after each test to prevent state leaking.
-#[cfg(feature = "test-support")]
-pub fn cleanup_test_database() {
-    if let Ok(mut db) = SDP_DB.try_lock() {
-        db.reset();
-    }
-    if let Ok(mut cs) = CSTATES.try_lock() {
-        cs.clear();
     }
 }

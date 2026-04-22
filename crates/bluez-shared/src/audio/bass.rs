@@ -966,15 +966,14 @@ fn handle_mod_src(
             PA_SYNC_NO_SYNC => {
                 src.pa_sync_state = BassPaSyncState::NotSynchronized;
             }
-            PA_SYNC_PAST => {
-                if src.pa_sync_state != BassPaSyncState::Synchronized {
-                    src.pa_sync_state = BassPaSyncState::SyncInfoRe;
-                }
+            // PA_SYNC_PAST / PA_SYNC_NO_PAST only promote the state if the broadcast
+            // source is not already fully synchronized; otherwise the existing state
+            // is preserved (matched by the `_ => {}` fallthrough below).
+            PA_SYNC_PAST if src.pa_sync_state != BassPaSyncState::Synchronized => {
+                src.pa_sync_state = BassPaSyncState::SyncInfoRe;
             }
-            PA_SYNC_NO_PAST => {
-                if src.pa_sync_state != BassPaSyncState::Synchronized {
-                    src.pa_sync_state = BassPaSyncState::NoPast;
-                }
+            PA_SYNC_NO_PAST if src.pa_sync_state != BassPaSyncState::Synchronized => {
+                src.pa_sync_state = BassPaSyncState::NoPast;
             }
             _ => {}
         }

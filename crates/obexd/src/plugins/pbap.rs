@@ -1372,7 +1372,7 @@ fn generate_response(entries: &[CacheEntry], params: &ApparamField) -> (String, 
     // Apply ORDER sorting
     match params.order {
         0 => filtered.sort_by_key(|e| e.handle), // indexed
-        1 => filtered.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase())), // alpha
+        1 => filtered.sort_by_key(|e| e.name.to_lowercase()), // alpha
         2 => {
             // phonetical: sort by sound, fallback to handle
             filtered.sort_by(|a, b| {

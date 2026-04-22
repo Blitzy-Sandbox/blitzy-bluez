@@ -596,7 +596,7 @@ mod tests {
     /// Verify SerialError variants format correctly.
     #[test]
     fn serial_error_display() {
-        let err = SerialError::Io(std::io::Error::new(std::io::ErrorKind::Other, "test"));
+        let err = SerialError::Io(std::io::Error::other("test"));
         let msg = format!("{err}");
         assert!(msg.contains("I/O error"));
 

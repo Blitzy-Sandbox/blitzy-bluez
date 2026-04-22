@@ -78,8 +78,8 @@ const CONTROL_MIN_LEN: usize = AVCTP_HEADER_LEN + AVC_HDR_LEN + AVRCP_VENDORDEP_
 /// AV/C Remote SVC class ID (PID in AVCTP header).
 const AV_REMOTE_SVCLASS_ID: u16 = 0x110E;
 
-/// AVC subunit byte for PANEL with subunit ID 0.
-const AVC_PANEL_SUBUNIT: u8 = (AVC_SUBUNIT_PANEL << 3) | 0x00; // 0x48
+/// AVC subunit byte for PANEL with subunit ID 0 (subunit ID `0` is elided).
+const AVC_PANEL_SUBUNIT: u8 = AVC_SUBUNIT_PANEL << 3; // 0x48
 
 /// AVC subunit byte for UNIT (0xFF).
 const AVC_UNIT_SUBUNIT: u8 = 0xFF;
@@ -2620,7 +2620,7 @@ fn test_avrcp_rcr_bv_04_c() {
         AVC_STABLE,
         AVRCP_GET_ELEMENT_ATTRIBUTES,
         AVRCP_PKT_START,
-        &vec![0xDD; 80],
+        &[0xDD; 80],
     );
     ctx.engine_ctrl_send(&start_rsp);
     ctx.ctrl_recv();

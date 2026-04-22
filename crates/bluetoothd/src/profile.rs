@@ -679,7 +679,8 @@ pub async fn btd_profile_find_remote_uuid(uuid: &str) -> Option<Arc<BtdProfile>>
 ///    its position)
 pub fn btd_profile_sort_list(profiles: &mut [Arc<BtdProfile>]) {
     // Stable sort by priority (descending — higher priority first).
-    profiles.sort_by(|a, b| b.priority.cmp(&a.priority));
+    // std::cmp::Reverse inverts the natural ordering so higher priorities come first.
+    profiles.sort_by_key(|p| std::cmp::Reverse(p.priority));
 
     // Topological pass: move profiles that depend on others to after their
     // dependencies. Uses the same iterative approach as the C implementation

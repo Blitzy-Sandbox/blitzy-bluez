@@ -1880,10 +1880,11 @@ mod tests {
 
     #[test]
     fn link_states_ordered() {
-        assert!(PB_REMOTE_STATE_IDLE < PB_REMOTE_STATE_LINK_OPENING);
-        assert!(PB_REMOTE_STATE_LINK_OPENING < PB_REMOTE_STATE_LINK_ACTIVE);
-        assert!(PB_REMOTE_STATE_LINK_ACTIVE < PB_REMOTE_STATE_OB_PKT_TX);
-        assert!(PB_REMOTE_STATE_OB_PKT_TX < PB_REMOTE_STATE_LINK_CLOSING);
+        // Static ordering checks — verified at compile time to match the C enum order.
+        const _: () = assert!(PB_REMOTE_STATE_IDLE < PB_REMOTE_STATE_LINK_OPENING);
+        const _: () = assert!(PB_REMOTE_STATE_LINK_OPENING < PB_REMOTE_STATE_LINK_ACTIVE);
+        const _: () = assert!(PB_REMOTE_STATE_LINK_ACTIVE < PB_REMOTE_STATE_OB_PKT_TX);
+        const _: () = assert!(PB_REMOTE_STATE_OB_PKT_TX < PB_REMOTE_STATE_LINK_CLOSING);
     }
 
     // ── Type bitmasks ───────────────────────────────────────────────────

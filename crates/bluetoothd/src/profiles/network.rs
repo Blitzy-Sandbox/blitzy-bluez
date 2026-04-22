@@ -1739,7 +1739,7 @@ mod tests {
             0x11, 0x17, // src = GN (invalid for NAP dst)
         ];
         let result = bnep_setup_decode(&data);
-        assert_eq!(result.unwrap_err(), BNEP_CONN_INVALID_SRC as u16);
+        assert_eq!(result.unwrap_err(), BNEP_CONN_INVALID_SRC);
     }
 
     #[test]
@@ -1761,7 +1761,7 @@ mod tests {
             0x11, 0x15, // src = PANU
         ];
         let result = bnep_setup_decode(&data);
-        assert_eq!(result.unwrap_err(), BNEP_CONN_INVALID_DST as u16);
+        assert_eq!(result.unwrap_err(), BNEP_CONN_INVALID_DST);
     }
 
     #[test]
@@ -1783,7 +1783,7 @@ mod tests {
             0x00, 0x00, 0x11, 0x15,
         ];
         let result = bnep_setup_decode(&data);
-        assert_eq!(result.unwrap_err(), BNEP_CONN_INVALID_SVC as u16);
+        assert_eq!(result.unwrap_err(), BNEP_CONN_INVALID_SVC);
     }
 
     #[test]
@@ -1889,6 +1889,6 @@ mod tests {
         data.extend_from_slice(&src_uuid);
 
         let result = bnep_setup_decode(&data);
-        assert_eq!(result.unwrap_err(), BNEP_CONN_INVALID_DST as u16);
+        assert_eq!(result.unwrap_err(), BNEP_CONN_INVALID_DST);
     }
 }

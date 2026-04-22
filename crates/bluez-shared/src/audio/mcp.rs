@@ -2332,42 +2332,35 @@ fn mcp_update_cached_value_inner(_svc: &McpServiceHandles, _uuid: u16, _data: &[
 }
 
 /// Dispatch a notification to a listener based on UUID.
+///
+/// Characteristics with payload-length preconditions (4 bytes for LE32, 1 byte for
+/// LE8) are encoded as match guards.  When the guard fails (e.g. a malformed zero-
+/// length notification), the match falls through to `_ => {}` and the notification
+/// is silently dropped, matching the original nested-if behavior.
 fn dispatch_listener_notification(listener: &Arc<dyn McpListenerCallback>, uuid: u16, data: &[u8]) {
     match uuid {
         MCS_MEDIA_PLAYER_NAME_CHRC_UUID => listener.media_player_name(data),
         MCS_TRACK_CHANGED_CHRC_UUID => listener.track_changed(),
         MCS_TRACK_TITLE_CHRC_UUID => listener.track_title(data),
-        MCS_TRACK_DURATION_CHRC_UUID => {
-            if data.len() >= 4 {
-                let duration = get_le32(data) as i32;
-                listener.track_duration(duration);
-            }
+        MCS_TRACK_DURATION_CHRC_UUID if data.len() >= 4 => {
+            let duration = get_le32(data) as i32;
+            listener.track_duration(duration);
         }
-        MCS_TRACK_POSITION_CHRC_UUID => {
-            if data.len() >= 4 {
-                let position = get_le32(data) as i32;
-                listener.track_position(position);
-            }
+        MCS_TRACK_POSITION_CHRC_UUID if data.len() >= 4 => {
+            let position = get_le32(data) as i32;
+            listener.track_position(position);
         }
-        MCS_PLAYBACK_SPEED_CHRC_UUID => {
-            if !data.is_empty() {
-                listener.playback_speed(data[0] as i8);
-            }
+        MCS_PLAYBACK_SPEED_CHRC_UUID if !data.is_empty() => {
+            listener.playback_speed(data[0] as i8);
         }
-        MCS_SEEKING_SPEED_CHRC_UUID => {
-            if !data.is_empty() {
-                listener.seeking_speed(data[0] as i8);
-            }
+        MCS_SEEKING_SPEED_CHRC_UUID if !data.is_empty() => {
+            listener.seeking_speed(data[0] as i8);
         }
-        MCS_PLAYING_ORDER_CHRC_UUID => {
-            if !data.is_empty() {
-                listener.playing_order(data[0]);
-            }
+        MCS_PLAYING_ORDER_CHRC_UUID if !data.is_empty() => {
+            listener.playing_order(data[0]);
         }
-        MCS_MEDIA_STATE_CHRC_UUID => {
-            if !data.is_empty() {
-                listener.media_state(data[0]);
-            }
+        MCS_MEDIA_STATE_CHRC_UUID if !data.is_empty() => {
+            listener.media_state(data[0]);
         }
         _ => {}
     }

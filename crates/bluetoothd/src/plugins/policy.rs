@@ -510,29 +510,27 @@ fn sink_cb(event: &ServiceStateEvent) {
             // Schedule HSP/HFP connection.
             policy_set_hs_timer(&mut state, idx, CONTROL_CONNECT_TIMEOUT);
         }
-        ServiceState::Disconnected => {
-            if event.old_state == ServiceState::Connecting
-                || event.old_state == ServiceState::Connected
-            {
-                let err = event.err;
+        ServiceState::Disconnected
+            if matches!(event.old_state, ServiceState::Connecting | ServiceState::Connected) =>
+        {
+            let err = event.err;
 
-                if err == libc::EAGAIN {
-                    debug!("policy: A2DP Sink EAGAIN for {:?}, scheduling retry", addr);
-                    let mut state = POLICY_STATE.lock().unwrap();
-                    let idx = policy_data_find_or_create(&mut state, &addr);
-                    if state.devices[idx].sink_retries < SINK_RETRIES {
-                        policy_set_sink_timer(&mut state, idx, SINK_RETRY_TIMEOUT);
-                    } else {
-                        state.devices[idx].sink_retries = 0;
-                    }
+            if err == libc::EAGAIN {
+                debug!("policy: A2DP Sink EAGAIN for {:?}, scheduling retry", addr);
+                let mut state = POLICY_STATE.lock().unwrap();
+                let idx = policy_data_find_or_create(&mut state, &addr);
+                if state.devices[idx].sink_retries < SINK_RETRIES {
+                    policy_set_sink_timer(&mut state, idx, SINK_RETRY_TIMEOUT);
+                } else {
+                    state.devices[idx].sink_retries = 0;
                 }
-
-                // Disconnect the coupled AVRCP Remote.
-                let state = POLICY_STATE.lock().unwrap();
-                let dev_addr = addr;
-                drop(state);
-                policy_disconnect_profile(&dev_addr, AVRCP_REMOTE_UUID);
             }
+
+            // Disconnect the coupled AVRCP Remote.
+            let state = POLICY_STATE.lock().unwrap();
+            let dev_addr = addr;
+            drop(state);
+            policy_disconnect_profile(&dev_addr, AVRCP_REMOTE_UUID);
         }
         _ => {}
     }
@@ -571,26 +569,24 @@ fn source_cb(event: &ServiceStateEvent) {
 
             policy_set_tg_timer(&mut state, idx, CONTROL_CONNECT_TIMEOUT);
         }
-        ServiceState::Disconnected => {
-            if event.old_state == ServiceState::Connecting
-                || event.old_state == ServiceState::Connected
-            {
-                let err = event.err;
+        ServiceState::Disconnected
+            if matches!(event.old_state, ServiceState::Connecting | ServiceState::Connected) =>
+        {
+            let err = event.err;
 
-                if err == libc::EAGAIN {
-                    debug!("policy: A2DP Source EAGAIN for {:?}, scheduling retry", addr);
-                    let mut state = POLICY_STATE.lock().unwrap();
-                    let idx = policy_data_find_or_create(&mut state, &addr);
-                    if state.devices[idx].source_retries < SOURCE_RETRIES {
-                        policy_set_source_timer(&mut state, idx, SOURCE_RETRY_TIMEOUT);
-                    } else {
-                        state.devices[idx].source_retries = 0;
-                    }
+            if err == libc::EAGAIN {
+                debug!("policy: A2DP Source EAGAIN for {:?}, scheduling retry", addr);
+                let mut state = POLICY_STATE.lock().unwrap();
+                let idx = policy_data_find_or_create(&mut state, &addr);
+                if state.devices[idx].source_retries < SOURCE_RETRIES {
+                    policy_set_source_timer(&mut state, idx, SOURCE_RETRY_TIMEOUT);
+                } else {
+                    state.devices[idx].source_retries = 0;
                 }
-
-                // Disconnect the coupled AVRCP Target.
-                policy_disconnect_profile(&addr, AVRCP_TARGET_UUID);
             }
+
+            // Disconnect the coupled AVRCP Target.
+            policy_disconnect_profile(&addr, AVRCP_TARGET_UUID);
         }
         _ => {}
     }
@@ -624,16 +620,16 @@ fn controller_cb(event: &ServiceStateEvent) {
             // Schedule A2DP Sink connection.
             policy_set_sink_timer(&mut state, idx, CONTROL_CONNECT_TIMEOUT);
         }
-        ServiceState::Disconnected => {
-            if event.old_state == ServiceState::Connecting && event.err == libc::EAGAIN {
-                debug!("policy: AVRCP Remote EAGAIN for {:?}, scheduling retry", addr);
-                let mut state = POLICY_STATE.lock().unwrap();
-                let idx = policy_data_find_or_create(&mut state, &addr);
-                if state.devices[idx].ct_retries < CT_RETRIES {
-                    policy_set_ct_timer(&mut state, idx, CT_RETRY_TIMEOUT);
-                } else {
-                    state.devices[idx].ct_retries = 0;
-                }
+        ServiceState::Disconnected
+            if event.old_state == ServiceState::Connecting && event.err == libc::EAGAIN =>
+        {
+            debug!("policy: AVRCP Remote EAGAIN for {:?}, scheduling retry", addr);
+            let mut state = POLICY_STATE.lock().unwrap();
+            let idx = policy_data_find_or_create(&mut state, &addr);
+            if state.devices[idx].ct_retries < CT_RETRIES {
+                policy_set_ct_timer(&mut state, idx, CT_RETRY_TIMEOUT);
+            } else {
+                state.devices[idx].ct_retries = 0;
             }
         }
         _ => {}
@@ -668,16 +664,16 @@ fn target_cb(event: &ServiceStateEvent) {
             // Schedule A2DP Source connection.
             policy_set_source_timer(&mut state, idx, CONTROL_CONNECT_TIMEOUT);
         }
-        ServiceState::Disconnected => {
-            if event.old_state == ServiceState::Connecting && event.err == libc::EAGAIN {
-                debug!("policy: AVRCP Target EAGAIN for {:?}, scheduling retry", addr);
-                let mut state = POLICY_STATE.lock().unwrap();
-                let idx = policy_data_find_or_create(&mut state, &addr);
-                if state.devices[idx].tg_retries < TG_RETRIES {
-                    policy_set_tg_timer(&mut state, idx, TG_RETRY_TIMEOUT);
-                } else {
-                    state.devices[idx].tg_retries = 0;
-                }
+        ServiceState::Disconnected
+            if event.old_state == ServiceState::Connecting && event.err == libc::EAGAIN =>
+        {
+            debug!("policy: AVRCP Target EAGAIN for {:?}, scheduling retry", addr);
+            let mut state = POLICY_STATE.lock().unwrap();
+            let idx = policy_data_find_or_create(&mut state, &addr);
+            if state.devices[idx].tg_retries < TG_RETRIES {
+                policy_set_tg_timer(&mut state, idx, TG_RETRY_TIMEOUT);
+            } else {
+                state.devices[idx].tg_retries = 0;
             }
         }
         _ => {}
@@ -716,16 +712,16 @@ fn hs_cb(event: &ServiceStateEvent) {
 
             policy_set_sink_timer(&mut state, idx, CONTROL_CONNECT_TIMEOUT);
         }
-        ServiceState::Disconnected => {
-            if event.old_state == ServiceState::Connecting && event.err == libc::EAGAIN {
-                debug!("policy: HSP/HFP EAGAIN for {:?}, scheduling retry", addr);
-                let mut state = POLICY_STATE.lock().unwrap();
-                let idx = policy_data_find_or_create(&mut state, &addr);
-                if state.devices[idx].hs_retries < HS_RETRIES {
-                    policy_set_hs_timer(&mut state, idx, HS_RETRY_TIMEOUT);
-                } else {
-                    state.devices[idx].hs_retries = 0;
-                }
+        ServiceState::Disconnected
+            if event.old_state == ServiceState::Connecting && event.err == libc::EAGAIN =>
+        {
+            debug!("policy: HSP/HFP EAGAIN for {:?}, scheduling retry", addr);
+            let mut state = POLICY_STATE.lock().unwrap();
+            let idx = policy_data_find_or_create(&mut state, &addr);
+            if state.devices[idx].hs_retries < HS_RETRIES {
+                policy_set_hs_timer(&mut state, idx, HS_RETRY_TIMEOUT);
+            } else {
+                state.devices[idx].hs_retries = 0;
             }
         }
         _ => {}

@@ -255,12 +255,12 @@ fn handle_stream_state_change(
         AvdtpStreamState::Streaming => {
             source_set_state(source, SourceState::Playing);
         }
-        AvdtpStreamState::Closing | AvdtpStreamState::Aborting => {
+        AvdtpStreamState::Closing | AvdtpStreamState::Aborting
+            if source.state == SourceState::Playing =>
+        {
             // Stream is closing — if we were playing, go back to connected
             // until the close completes (idle).
-            if source.state == SourceState::Playing {
-                source_set_state(source, SourceState::Connected);
-            }
+            source_set_state(source, SourceState::Connected);
         }
         AvdtpStreamState::Idle => {
             // Stream tore down — full disconnect.

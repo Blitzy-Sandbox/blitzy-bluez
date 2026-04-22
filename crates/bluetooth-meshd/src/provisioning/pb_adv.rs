@@ -1099,8 +1099,7 @@ mod tests {
     /// Verify process_data_segment first segment parses correctly.
     #[test]
     fn test_process_data_first_segment() {
-        let mut session = PbAdvSession::default();
-        session.opened = true;
+        let mut session = PbAdvSession { opened: true, ..Default::default() };
 
         // Build a fake first-segment packet:
         // [AD(1), link_id(4), trans_num(1), GPCF(1), total_len(2), FCS(1), data...]
@@ -1126,16 +1125,22 @@ mod tests {
     /// Verify process_data_segment continuation index validation.
     #[test]
     fn test_process_data_invalid_continuation_index() {
-        let mut session = PbAdvSession::default();
-        session.opened = true;
-        session.exp_len = 50;
-        session.exp_segs = 0x07; // 3 segments expected
+        let mut session = PbAdvSession {
+            opened: true,
+            exp_len: 50,
+            exp_segs: 0x07, // 3 segments expected
+            ..Default::default()
+        };
+
+        // GPCF header byte: continuation seg_idx encoded in high 6 bits
+        // `(seg_idx << 2) | 0x02` with seg_idx = 0 => 0x02 (seg_idx=0, GPCF=0x02)
+        const SEG_IDX0_CONT_HEADER: u8 = 0x02;
 
         // Continuation with seg_idx = 0 is invalid
-        let mut pkt = vec![BT_AD_MESH_PROV, 0, 0, 0, 1, 0x01, (0u8 << 2) | 0x02];
+        let mut pkt = vec![BT_AD_MESH_PROV, 0, 0, 0, 1, 0x01, SEG_IDX0_CONT_HEADER];
         pkt.extend_from_slice(&[0xAA; 10]);
 
-        let result = process_data_segment(&mut session, 0x02, (0u8 << 2) | 0x02, 0x01, &pkt);
+        let result = process_data_segment(&mut session, 0x02, SEG_IDX0_CONT_HEADER, 0x01, &pkt);
         assert!(result.is_none(), "Continuation with seg_idx=0 should be rejected");
     }
 

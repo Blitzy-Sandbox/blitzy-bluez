@@ -1153,7 +1153,10 @@ mod tests {
     #[test]
     fn test_ras_error_opcode_not_supported_in_app_range() {
         // Application-specific ATT errors are in range 0x80..=0xFF.
-        assert!(RAS_ERROR_OPCODE_NOT_SUPPORTED >= 0x80);
+        // `RAS_ERROR_OPCODE_NOT_SUPPORTED` is a compile-time constant, so the
+        // range check is evaluated at const-eval time — keeps the invariant
+        // visible in the test output without a runtime assertion on a constant.
+        const _: () = assert!(RAS_ERROR_OPCODE_NOT_SUPPORTED >= 0x80);
         assert_eq!(RAS_ERROR_OPCODE_NOT_SUPPORTED, 0x80);
     }
 

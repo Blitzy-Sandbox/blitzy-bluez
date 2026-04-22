@@ -963,11 +963,9 @@ fn proxy_added(path: &str, interface: &str, props: HashMap<String, OwnedValue>) 
                 });
             }
         }
-        GATT_SERVICE_IFACE => {
-            if service_is_child(&proxy) {
-                let pi = ProxyInfo::new(path, interface);
-                gatt_add_service(&pi);
-            }
+        GATT_SERVICE_IFACE if service_is_child(&proxy) => {
+            let pi = ProxyInfo::new(path, interface);
+            gatt_add_service(&pi);
         }
         GATT_CHAR_IFACE => {
             let pi = ProxyInfo::new(path, interface);

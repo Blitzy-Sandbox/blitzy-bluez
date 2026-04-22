@@ -1041,19 +1041,25 @@ mod tests {
 
     #[test]
     fn test_role_mask() {
-        let role = GmapRole::from_bits_truncate(0xFF & ROLE_MASK);
+        // ROLE_MASK is already u8 (0x0F), so `0xFF &` is a no-op: this test
+        // simply verifies `from_bits_truncate(ROLE_MASK)` yields every role bit.
+        let role = GmapRole::from_bits_truncate(ROLE_MASK);
         assert_eq!(role, GmapRole::UGG | GmapRole::UGT | GmapRole::BGS | GmapRole::BGR);
     }
 
     #[test]
     fn test_ugg_feat_mask() {
-        let f = GmapUggFeatures::from_bits_truncate(0xFF & UGG_FEAT_MASK);
+        // UGG_FEAT_MASK is u8 (0x07); `from_bits_truncate` of the mask must
+        // yield every UGG feature flag.
+        let f = GmapUggFeatures::from_bits_truncate(UGG_FEAT_MASK);
         assert_eq!(f, GmapUggFeatures::all());
     }
 
     #[test]
     fn test_ugt_feat_mask() {
-        let f = GmapUgtFeatures::from_bits_truncate(0xFF & UGT_FEAT_MASK);
+        // UGT_FEAT_MASK is u8 (0x7F); `from_bits_truncate` of the mask must
+        // yield every UGT feature flag.
+        let f = GmapUgtFeatures::from_bits_truncate(UGT_FEAT_MASK);
         assert_eq!(f, GmapUgtFeatures::all());
     }
 

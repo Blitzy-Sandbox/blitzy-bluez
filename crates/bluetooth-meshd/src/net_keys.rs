@@ -1083,7 +1083,7 @@ fn beacon_timeout_fire(key_id: u32) {
             let seen = key.observe.seen as u32;
             let expected = key.observe.expected as u32;
 
-            let mut interval = if expected > 0 { (period * seen) / expected } else { period };
+            let mut interval = (period * seen).checked_div(expected).unwrap_or(period);
 
             // Limit increases and decreases by 10 seconds up and
             // 20 seconds down each step, to avoid going nearly silent

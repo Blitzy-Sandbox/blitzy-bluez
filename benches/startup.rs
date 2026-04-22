@@ -149,13 +149,14 @@ fn ensure_dbus_for_benchmarks(rt: &Runtime) {
 
     // Connect to the private bus using the explicit address (avoids needing
     // to call the unsafe std::env::set_var in Rust 2024 edition).
+    //
+    // The previous scaffolding used `.and_then(|b| Ok(b))` to reserve a place
+    // for potential future error mapping; clippy flagged this as a no-op,
+    // so we now rely solely on the synchronous `Builder::address`/`map_err`
+    // combinator pair — the subsequent `match` still branches on Ok/Err.
     let conn_result = rt.block_on(async {
         zbus::connection::Builder::address(addr.as_str())
             .map_err(|e| format!("invalid dbus address: {e}"))
-            .and_then(|b| {
-                // The build() call is async — map the outer Result through
-                Ok(b)
-            })
     });
 
     let builder = match conn_result {
